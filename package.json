@@ -1,0 +1,16 @@
+{
+  "name": "eb1a-organizer",
+  "version": "0.1.0",
+  "description": "Local web app that organizes a folder of EB1A evidence into the 10 regulatory criteria with events, letters, and a petition-ready index.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "mock": "node scripts/generate-mock.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "openai": "^4.65.0",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.8.0"
+  }
+}

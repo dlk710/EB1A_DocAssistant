@@ -1,0 +1,8 @@
+node_modules/
+config/settings.local.json
+mock-data/
+*_AIORGANIZED/
+_AIORGANIZED/
+test-output/
+*.log
+.DS_Store

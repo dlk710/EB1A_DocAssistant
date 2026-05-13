@@ -89,6 +89,14 @@ Do not rely only on prompt wording. Keep hard post-classification enforcement.
 
 Prompt sections are not just internal constants. They are editable in the UI, so changes to prompt structure must stay compatible with the prompt library screen.
 
+### Prompt review is part of the workflow
+
+The app now has an AI review step for prompt sections and a reviewed master prompt snapshot. If you change prompt data structures or save flows, preserve that validation path.
+
+### Cleanup is intentional
+
+Files whose names explicitly contain `REMOVE` or `DELETE` are not normal evidence. They should be routed into `CLEANUP/` and kept out of petition-stage outputs unless a human later decides otherwise.
+
 ## Frontend Expectations
 
 The UI should support:

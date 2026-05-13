@@ -1,5 +1,5 @@
 /* ============================================================
-   EB1A Organizer — MVP wireframe
+   EB1A DocAssistant — MVP wireframe
    Same design system as the full-vision wireframe, slimmed
    down to only what the MVP needs.
    ============================================================ */
@@ -573,6 +573,87 @@ button, input, select, textarea { font-family: inherit; font-size: 14px; color: 
   overflow-y: auto;
 }
 .prompt-library-card { width: 940px; max-width: 96vw; }
+.prompt-review-panel {
+  margin: 0 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--blue-50) 0%, var(--ink-0) 88%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.prompt-review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.prompt-review-title {
+  font-weight: 700;
+  color: var(--ink-900);
+  font-size: 14px;
+}
+.prompt-review-sub {
+  color: var(--ink-600);
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+.prompt-review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.prompt-review-status {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--ink-100);
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+.prompt-review-status-green {
+  background: #E6F3EC;
+  color: var(--ok);
+}
+.prompt-review-status-yellow {
+  background: #FFF1D6;
+  color: var(--warn);
+}
+.prompt-review-status-red {
+  background: #FDE8E8;
+  color: var(--bad);
+}
+.prompt-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.prompt-review-timestamp {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+.prompt-review-list {
+  background: var(--ink-0);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.prompt-review-list-title {
+  font-weight: 700;
+  color: var(--ink-900);
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.prompt-review-list ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-700);
+  font-size: 12.5px;
+}
+.prompt-review-list li + li {
+  margin-top: 4px;
+}
 .prompt-library-body {
   gap: 16px;
   flex: 1;

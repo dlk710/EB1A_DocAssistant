@@ -8,6 +8,7 @@ const state = {
   workspace: null,
   settings: null,
   folderEstimate: null,
+  promptReviewDraft: null,
 };
 const CRITERION_META = {
   '01 — Awards & Recognition':    { num: '01', cite: '8 C.F.R. § 204.5(h)(3)(i)' },
@@ -73,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
 function openPromptLibrary() {
   renderPromptSections();
+  renderPromptReviewPanel();
   document.getElementById('prompt-library-modal').classList.add('open');
 }
 function closePromptLibrary() {
@@ -164,6 +166,7 @@ function renderPromptSections() {
     `;
     container.append(card);
     container.querySelector(`#prompt-section-${CSS.escape(key)}`).value = value || '';
+    container.querySelector(`#prompt-section-${CSS.escape(key)}`).addEventListener('input', invalidatePromptReviewDraft);
   }
 }
 
@@ -204,6 +207,7 @@ async function saveAllPromptSections() {
 }
 
 async function persistPromptSections(sections) {
+  invalidatePromptReviewDraft();
   await fetch('/api/settings', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -211,6 +215,96 @@ async function persistPromptSections(sections) {
   });
   await loadSettings();
   renderPromptSections();
+  renderPromptReviewPanel();
+}
+
+function invalidatePromptReviewDraft() {
+  state.promptReviewDraft = null;
+  renderPromptReviewPanel();
+}
+
+function renderPromptReviewPanel() {
+  const statusEl = document.getElementById('prompt-review-status');
+  const bodyEl = document.getElementById('prompt-review-body');
+  const saveBtn = document.getElementById('prompt-save-master-btn');
+  if (!statusEl || !bodyEl || !saveBtn) return;
+
+  const savedReview = state.settings?.prompts?.review || null;
+  const review = state.promptReviewDraft || savedReview;
+  saveBtn.disabled = !(state.promptReviewDraft?.approved && state.promptReviewDraft?.status === 'green' && state.promptReviewDraft?.save_ready);
+
+  if (!review) {
+    statusEl.className = 'prompt-review-status';
+    statusEl.textContent = 'No AI review run yet.';
+    bodyEl.innerHTML = '';
+    return;
+  }
+
+  statusEl.className = `prompt-review-status prompt-review-status-${review.status || 'yellow'}`;
+  statusEl.textContent = `${String(review.status || 'yellow').toUpperCase()} · ${review.summary || 'Review complete.'}`;
+  bodyEl.innerHTML = `
+    ${review.reviewed_at ? `<div class="prompt-review-timestamp">Reviewed ${escapeHtml(new Date(review.reviewed_at).toLocaleString())}</div>` : ''}
+    ${renderPromptReviewList('Strengths', review.strengths)}
+    ${renderPromptReviewList('Inconsistencies', review.inconsistencies)}
+    ${renderPromptReviewList('Suggested edits', review.suggested_edits)}
+  `;
+}
+
+function renderPromptReviewList(title, items = []) {
+  if (!items?.length) return '';
+  return `
+    <div class="prompt-review-list">
+      <div class="prompt-review-list-title">${escapeHtml(title)}</div>
+      <ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+    </div>
+  `;
+}
+
+async function runPromptReview() {
+  const statusEl = document.getElementById('prompt-review-status');
+  const bodyEl = document.getElementById('prompt-review-body');
+  statusEl.className = 'prompt-review-status';
+  statusEl.textContent = 'AI review running…';
+  bodyEl.innerHTML = '';
+  const r = await fetch('/api/prompts/review', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ sections: collectPromptSections() }),
+  }).then(res => res.json());
+  if (r.error) {
+    statusEl.className = 'prompt-review-status prompt-review-status-red';
+    statusEl.textContent = `Review failed: ${r.error}`;
+    return;
+  }
+  state.promptReviewDraft = r.review;
+  renderPromptReviewPanel();
+}
+
+async function saveApprovedMasterPrompt() {
+  if (!(state.promptReviewDraft?.approved && state.promptReviewDraft?.status === 'green' && state.promptReviewDraft?.save_ready)) return;
+  const sections = collectPromptSections();
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      prompts: {
+        ...(state.settings?.prompts || {}),
+        sections,
+        review: state.promptReviewDraft,
+        masterPromptSnapshot: {
+          approvedAt: state.promptReviewDraft.reviewed_at,
+          systemPrompt: state.promptReviewDraft.master_system_prompt,
+          userPromptTemplate: state.promptReviewDraft.master_user_prompt,
+          summary: state.promptReviewDraft.summary,
+          status: state.promptReviewDraft.status,
+        },
+      },
+    }),
+  });
+  await loadSettings();
+  state.promptReviewDraft = null;
+  renderPromptSections();
+  renderPromptReviewPanel();
 }
 
 // ---------- start screen ----------
@@ -392,7 +486,7 @@ function appendLiveItem(ev) {
     el('span', { class: 'live-icon' }, '📄'),
     el('span', { class: 'live-name' }, ev.file),
     el('span', { class: 'live-arrow' }, '→'),
-    el('span', { class: 'live-criterion pill ' + (ev.criterion === '_Unclassified' ? 'pill-neutral' : 'pill-blue') }, ev.criterion),
+    el('span', { class: 'live-criterion pill ' + (ev.criterion === '_Unclassified' || ev.criterion === 'CLEANUP' ? 'pill-neutral' : 'pill-blue') }, ev.criterion),
   );
   list.prepend(li);
   while (list.children.length > 8) list.removeChild(list.lastChild);
@@ -410,7 +504,7 @@ function renderReview(run) {
   document.getElementById('review-title').textContent =
     `Organized ${c.outputFiles} files into ${c.events} event${c.events === 1 ? '' : 's'} across ${c.criteriaWithEvidence} criteria`;
   document.getElementById('review-sub').textContent =
-    `${c.unclassified} need your review · ${c.duplicates} duplicates · ${c.reference} reference files · cost ~$${(stats.cost_usd || 0).toFixed(4)}${scoped ? ` · scoped to ${activeCriteria.length} categories` : ''}`;
+    `${c.unclassified} need your review · ${c.cleanup || 0} cleanup · ${c.duplicates} duplicates · ${c.reference} reference files · cost ~$${(stats.cost_usd || 0).toFixed(4)}${scoped ? ` · scoped to ${activeCriteria.length} categories` : ''}`;
   document.getElementById('output-path-display').textContent = run.outputDir;
 
   // Completion panel
@@ -446,6 +540,9 @@ function renderCompletionPanel(s, run) {
   const dupLine = c.duplicates
     ? `<li><strong>${c.duplicateGroups} duplicate group${c.duplicateGroups === 1 ? '' : 's'}</strong> (${c.duplicates} extra files) flagged in <code>_Duplicates/</code>.</li>`
     : '';
+  const cleanupLine = c.cleanup
+    ? `<li><strong>${c.cleanup} file${c.cleanup === 1 ? '' : 's'}</strong> routed into <code>CLEANUP/</code> because the filename contains REMOVE or DELETE.</li>`
+    : '';
   const ucLine = c.unclassified
     ? `<li><strong>${c.unclassified} file${c.unclassified === 1 ? '' : 's'}</strong> couldn't be classified confidently — flagged in <code>_Unclassified/</code>.</li>`
     : '';
@@ -475,6 +572,7 @@ function renderCompletionPanel(s, run) {
         ${categoryScopeLine}
         ${projectScopeLine}
         ${lettersLine}
+        ${cleanupLine}
         ${dupLine}
         ${ucLine}
       </ul>
@@ -623,6 +721,14 @@ function renderOtherBuckets(s) {
   const c = s.counts;
   const unresolved = state.workspace?.summary?.unresolvedUnclassified ?? c.unclassified;
   const resolved = state.workspace?.summary?.resolvedUnclassified ?? 0;
+
+  const cleanupBtn = el('button', { class: 'bucket bucket-reference', onclick: () => openCleanup() });
+  cleanupBtn.innerHTML = `
+    <div class="bucket-head"><span class="bucket-num">×</span><span class="bucket-count">${c.cleanup || 0}</span></div>
+    <div class="bucket-title">CLEANUP</div>
+    <div class="bucket-cite">Filename contains REMOVE or DELETE</div>
+    <div class="bucket-stats">${c.cleanup ? `Moved automatically into <code>CLEANUP/</code>` : 'No cleanup-marked files found'}</div>`;
+  grid.append(cleanupBtn);
 
   const unclassifiedBtn = el('button', { class: 'bucket bucket-unclassified', onclick: () => openUnclassified() });
   unclassifiedBtn.innerHTML = `
@@ -841,6 +947,31 @@ function openUnclassified() {
   openDrawer();
 }
 
+function openCleanup() {
+  const items = state.summary.audit.filter(r => r.type === 'Cleanup' || r.criterion === 'CLEANUP');
+  document.getElementById('drawer-eyebrow').textContent = 'System bucket';
+  document.getElementById('drawer-title').textContent = 'CLEANUP';
+  document.getElementById('drawer-meta').textContent = `${items.length} file${items.length === 1 ? '' : 's'} flagged by filename`;
+
+  const body = document.getElementById('drawer-body');
+  if (items.length === 0) {
+    body.innerHTML = '<p class="muted" style="text-align:center;padding:32px;">No cleanup-marked files were found in this run.</p>';
+  } else {
+    body.innerHTML = `
+      <div class="workspace-intro">
+        <div class="workspace-intro-title">Automatic cleanup bucket</div>
+        <div class="workspace-intro-sub">These files were not sent through normal EB1A classification because their filenames contain <strong>REMOVE</strong> or <strong>DELETE</strong>.</div>
+      </div>
+      <ul class="file-list">${items.map(r => `
+        <li class="file-row">
+          <span class="file-icon">🧹</span>
+          <div class="file-meta"><div class="file-name">${escapeHtml(r.original.split('/').pop())}</div><div class="file-reason">${escapeHtml(r.reason || 'Filename cleanup rule applied.')}</div></div>
+          <span class="file-confidence high">HIGH</span>
+        </li>`).join('')}</ul>`;
+  }
+  openDrawer();
+}
+
 function openLetters(type) {
   // Pull letters from summary.audit where is_letter && letter_type === type
   const letters = state.summary.audit.filter(r => r.is_letter && r.letter_type === type);
@@ -923,6 +1054,7 @@ function openSummary() {
       <li><span class="ss-num">${c.events}</span><span class="ss-label">events</span></li>
       <li><span class="ss-num">${c.criteriaWithEvidence}</span><span class="ss-label">criteria with evidence</span></li>
       <li><span class="ss-num">${c.unclassified}</span><span class="ss-label">unclassified</span></li>
+      <li><span class="ss-num">${c.cleanup || 0}</span><span class="ss-label">cleanup</span></li>
       <li><span class="ss-num">${c.duplicates}</span><span class="ss-label">duplicates</span></li>
     </ul>
     <div class="summary-actions">
@@ -939,6 +1071,11 @@ function openSummary() {
       for (const f of ev.files) md += `- ${f.name}\n`;
       md += '\n';
     }
+  }
+  if ((c.cleanup || 0) > 0) {
+    md += `## CLEANUP\n*${c.cleanup} file${c.cleanup === 1 ? '' : 's'} routed automatically from filename rules*\n\n`;
+    for (const r of s.audit.filter(row => row.type === 'Cleanup' || row.criterion === 'CLEANUP')) md += `- ${r.original.split('/').pop()}\n`;
+    md += '\n';
   }
   document.getElementById('summary-md').textContent = md;
   document.getElementById('summary-modal').classList.add('open');
@@ -968,7 +1105,7 @@ function openAuditLog() {
         <tr>
           <td><code>${escapeHtml(r.original)}</code></td>
           <td><code>${escapeHtml(r.destination)}</code></td>
-          <td><span class="pill ${r.type === 'Classified' ? 'pill-blue' : r.type === 'Duplicate' ? 'pill-warn' : r.type === 'Reference' ? 'pill-ref' : 'pill-neutral'}">${escapeHtml(r.type)}</span></td>
+          <td><span class="pill ${r.type === 'Classified' ? 'pill-blue' : r.type === 'Duplicate' ? 'pill-warn' : r.type === 'Reference' ? 'pill-ref' : r.type === 'Cleanup' ? 'pill-neutral' : 'pill-neutral'}">${escapeHtml(r.type)}</span></td>
           <td><code class="hash">${escapeHtml((r.hash || '').slice(0,4) + '…' + (r.hash || '').slice(-4))}</code></td>
         </tr>`).join('')}</tbody>
     </table>

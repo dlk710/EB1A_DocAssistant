@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>EB1A Organizer</title>
+<title>EB1A DocAssistant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <span class="brand-mark"></span>
-      <span class="brand-text">EB1A Organizer</span>
+      <span class="brand-text">EB1A DocAssistant</span>
       <span class="version-tag">v0.1</span>
     </div>
     <div class="topbar-actions">
@@ -38,7 +38,7 @@
     <div class="hero">
       <div class="brand brand-large">
         <span class="brand-mark"></span>
-        <span class="brand-text">EB1A Organizer</span>
+        <span class="brand-text">EB1A DocAssistant</span>
       </div>
       <h1 class="hero-title">Organize EB1A evidence</h1>
       <p class="hero-sub">Point the app at a folder of evidence. It reads every file, identifies which of the ten EB1A criteria each one belongs to, and copies it into an organized folder structure. Your original files stay untouched.</p>
@@ -349,6 +349,20 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
     </header>
+    <div class="prompt-review-panel" id="prompt-review-panel">
+      <div class="prompt-review-head">
+        <div>
+          <div class="prompt-review-title">AI prompt validation</div>
+          <div class="prompt-review-sub" id="prompt-review-sub">Review all prompt sections together, flag inconsistencies, and approve the final master prompt before saving.</div>
+        </div>
+        <div class="prompt-review-actions">
+          <button class="btn btn-ghost btn-sm" onclick="runPromptReview()">AI review</button>
+          <button class="btn btn-primary btn-sm" id="prompt-save-master-btn" onclick="saveApprovedMasterPrompt()" disabled>Save approved master prompt</button>
+        </div>
+      </div>
+      <div class="prompt-review-status" id="prompt-review-status">No AI review run yet.</div>
+      <div class="prompt-review-body" id="prompt-review-body"></div>
+    </div>
     <div class="modal-body prompt-library-body" id="prompt-library-sections"></div>
     <footer class="modal-foot prompt-library-foot">
       <button class="btn btn-ghost" onclick="resetAllPromptSections()">Reset all to defaults</button>

@@ -68,6 +68,15 @@ These store:
 
 The app uses structured LLM classification with a configurable prompt library in the UI. Prompt sections are split by function so users can edit behavior without editing source code.
 
+### AI-reviewed prompt assembly
+
+The prompt library now includes an AI review step before saving an approved master prompt. Users can:
+
+- edit prompt sections independently
+- run an AI consistency review across all sections
+- see green / yellow / red validation feedback
+- save an approved master prompt snapshot only when the review is marked save-ready
+
 ### Project-scoped classification
 
 For `05 — Original Contributions` and `08 — Leading Critical Role`, the app can detect client-filled template forms, extract project names, and restrict those criteria to evidence tied to the listed projects only.
@@ -75,6 +84,10 @@ For `05 — Original Contributions` and `08 — Leading Critical Role`, the app 
 ### Category-scoped test runs
 
 Users can limit a run to only selected EB1A categories. This is especially useful for testing one bucket at a time, such as only `04 — Judging`.
+
+### Cleanup routing
+
+If a filename explicitly contains `REMOVE` or `DELETE`, the app bypasses EB1A classification and routes that file into a top-level `CLEANUP/` folder for later disposal or manual review.
 
 ## Run Locally
 
@@ -119,6 +132,7 @@ output/
 ├── 09 — High Salary/
 ├── 10 — Commercial Success/
 ├── 11 — Comparable Evidence/
+├── CLEANUP/
 ├── _Unclassified/
 ├── _Duplicates/
 ├── _Reference/

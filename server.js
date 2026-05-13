@@ -82,6 +82,36 @@ app.post('/api/settings', async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/prompts/review', async (req, res) => {
+  const { sections } = req.body || {};
+  if (!sections || typeof sections !== 'object') {
+    return res.status(400).json({ error: 'sections required' });
+  }
+
+  const settings = await loadSettings();
+  if (!settings.llm.apiKey) {
+    return res.status(400).json({ error: 'No API key configured. Open Settings and add one before running AI prompt review.' });
+  }
+
+  let llm;
+  try {
+    llm = createLLM({ ...settings.llm, prompts: settings.prompts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  if (typeof llm.reviewPromptSections !== 'function') {
+    return res.status(400).json({ error: `${settings.llm.provider} does not support AI prompt review in this build.` });
+  }
+
+  try {
+    const review = await llm.reviewPromptSections(sections);
+    res.json({ ok: true, review });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post('/api/folder/check', async (req, res) => {
   const { inputDir } = req.body || {};
   if (!inputDir) return res.status(400).json({ error: 'inputDir required' });
@@ -256,7 +286,7 @@ app.post('/api/reveal', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n  EB1A Organizer — http://localhost:${PORT}\n`);
+  console.log(`\n  EB1A DocAssistant — http://localhost:${PORT}\n`);
 });
 
 function estimateRunCost(files, llmSettings = {}) {

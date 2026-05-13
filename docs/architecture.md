@@ -25,6 +25,7 @@ Input folder
 - `GET /api/settings`
 - `POST /api/settings`
 - `POST /api/folder/check`
+- `POST /api/prompts/review`
 - `POST /api/runs`
 - `GET /api/runs/:id`
 - `GET /api/workspace`
@@ -46,10 +47,11 @@ Key responsibilities:
 3. duplicate grouping
 4. text preparation
 5. project-form registry extraction
-6. LLM classification
-7. criteria and project scope enforcement
-8. copy with post-copy hash verification
-9. metadata and audit output generation
+6. cleanup filename routing
+7. LLM classification
+8. criteria and project scope enforcement
+9. copy with post-copy hash verification
+10. metadata and audit output generation
 
 ## Text Extraction
 
@@ -76,8 +78,20 @@ The compact excerpt logic is important because classification quality must stay 
 
 - single-file structured classification
 - batch classification
+- AI prompt-section review
 - token/cost accounting
 - quota and auth error normalization
+
+## Prompt Review Layer
+
+The prompt system is no longer just editable text. It now has:
+
+- sectioned prompt storage
+- assembled runtime prompt generation
+- AI review across all sections
+- save gating for approved master prompt snapshots
+
+This keeps prompt experimentation user-facing while still enforcing a structured approval step before a reviewed master prompt is promoted.
 
 ## Event-First Classification Model
 
@@ -124,6 +138,10 @@ This is enforced in two places:
 - prompt context tells the model which criteria are allowed
 - post-classification logic rejects out-of-scope criteria and sends those files to `_Unclassified`
 
+## Cleanup Routing
+
+Some files are explicitly administrative cleanup candidates rather than petition evidence. The pipeline short-circuits any filename containing `REMOVE` or `DELETE` and routes it into `CLEANUP/` without spending LLM tokens on classification.
+
 ## Petition Workspace
 
 [lib/petition-workspace.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/petition-workspace.js) persists next-stage curation data in:
@@ -143,6 +161,7 @@ Main UI stages:
 - progress screen
 - review screen
 - prompt library modal
+- prompt review panel
 - settings modal
 - event / workspace drawers
 

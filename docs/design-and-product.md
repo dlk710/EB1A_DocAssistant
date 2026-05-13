@@ -37,7 +37,11 @@ Reason:
 
 The prompt library exists because users often refine classification logic during real case prep. Splitting prompt sections by function makes the app editable without turning every prompt change into a code change.
 
-## 4. Local-first safety
+## 4. Guarded prompt experimentation
+
+Prompt flexibility is useful, but prompt drift is dangerous. That is why the product now includes an AI review pass that checks prompt sections together for inconsistencies before a reviewed master prompt is saved.
+
+## 5. Local-first safety
 
 This is built for local use with sensitive evidence. The app favors:
 
@@ -46,7 +50,7 @@ This is built for local use with sensitive evidence. The app favors:
 - visible output artifacts
 - reviewable JSON/Markdown outputs
 
-## 5. Petition-stage continuity
+## 6. Petition-stage continuity
 
 Most “AI file organizers” stop after sorting files. This product intentionally continues into the next stage by preserving:
 
@@ -83,6 +87,10 @@ The category scope toggle exists so users can test one criterion at a time befor
 
 Prompt edits should be easy, but the app still needs strong output constraints through structured schema and post-classification gates.
 
+### Avoid spending tokens on obvious non-evidence
+
+Administrative filenames marked with `REMOVE` or `DELETE` should not consume classification budget. Those files belong in a visible cleanup path, not the legal-evidence flow.
+
 ## Current Product Layers
 
 ### Evidence organization layer
@@ -98,6 +106,7 @@ Prompt edits should be easy, but the app still needs strong output constraints t
 - configurable prompts
 - compact excerpts
 - project and category gating
+- prompt review and approved master prompt snapshots
 
 ### Petition-prep layer
 
@@ -105,6 +114,7 @@ Prompt edits should be easy, but the app still needs strong output constraints t
 - audit log
 - petition workspace
 - final-event selection
+- cleanup routing for explicit non-evidence files
 
 ## What “Good” Looks Like
 
@@ -124,3 +134,4 @@ Likely next improvements:
 - editable manual event merge/split operations
 - richer exhibit sequencing controls
 - direct attorney packet export views
+- case-local vector memory for event reuse and manual-review retrieval

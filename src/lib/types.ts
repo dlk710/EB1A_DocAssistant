@@ -172,6 +172,10 @@ export interface SettingsSnapshot {
   summaryPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  triagePrompt: string;
+  strategyPrompt: string;
+  stressTestPrompt: string;
+  draftPrompt: string;
   hasApiKey: boolean;
   apiKeyMask: string | null;
   summaryModel: string;
@@ -351,4 +355,170 @@ export interface LibrarySnapshot {
   manualOverrides: WorkspaceManualOverrideState | null;
   reviewState: WorkspaceReviewState | null;
   settings: SettingsSnapshot;
+}
+
+export type ChatMode = "triage" | "strategy" | "stress-test" | "draft";
+export type ChatTurnRole = "user" | "assistant" | "system";
+export type ChatArtifactKind = "strategy-memo" | "stress-test" | "brief-draft";
+
+export interface ModeClassification {
+  mode: ChatMode;
+  confidence: number;
+  alternateMode: ChatMode | null;
+}
+
+export interface TriageAnswerBlock {
+  text: string;
+  docIds: string[];
+}
+
+export interface TriageAnswer {
+  schemaVersion: "triage-answer/1.0";
+  answer: TriageAnswerBlock[];
+  insufficiencyNote: string | null;
+}
+
+export interface StrategyCriterionRecommendation {
+  criterionCode: string;
+  rationale: string;
+  anchorDocIds: string[];
+}
+
+export interface StrategyMemo {
+  schemaVersion: "strategy-memo/1.0";
+  jobId: string;
+  createdAt: string;
+  petitionType: "EB-1A";
+  pendingDocsConsidered: number;
+  recommendedMix: {
+    primary: StrategyCriterionRecommendation[];
+    supporting: StrategyCriterionRecommendation[];
+    decline: Array<{
+      criterionCode: string;
+      rationale: string;
+    }>;
+  };
+  leadArgument: {
+    criterionCode: string;
+    narrativeSpine: string;
+    anchorDocIds: string[];
+  };
+  gaps: Array<{
+    criterionCode: string;
+    type:
+      | "insufficient-quantity"
+      | "lack-of-independence"
+      | "lack-of-significance"
+      | "missing-context";
+    description: string;
+    suggestedAdditions: string[];
+  }>;
+  risks: Array<{
+    type: string;
+    description: string;
+    severity: "low" | "medium" | "high";
+    affectedDocIds: string[];
+  }>;
+  citations: Array<{
+    docId: string;
+    claim: string;
+  }>;
+}
+
+export interface StressTestReport {
+  schemaVersion: "stress-test/1.0";
+  jobId: string;
+  createdAt: string;
+  scope: "full-petition" | { criterionCode: string };
+  strategyMemoVersion: string | null;
+  pendingDocsConsidered: number;
+  challenges: Array<{
+    criterionCode: string;
+    challengeType:
+      | "insufficiency"
+      | "lack-of-independence"
+      | "lack-of-significance"
+      | "comparability"
+      | "sustained-acclaim";
+    uscisStance: string;
+    atRiskDocIds: string[];
+    currentMitigation: string;
+    suggestedAction: "add-evidence" | "rewrite-brief" | "reorganize" | "accept-risk";
+    suggestedActionDetail: string;
+    severity: "low" | "medium" | "high";
+  }>;
+}
+
+export interface BriefDraftParagraph {
+  text: string;
+  exhibitRefs: string[];
+  citations: Array<{
+    docId: string;
+    supports: string;
+  }>;
+}
+
+export interface BriefDraft {
+  schemaVersion: "brief-draft/1.0";
+  jobId: string;
+  createdAt: string;
+  section:
+    | "statement-of-eligibility"
+    | "criterion-argument"
+    | "final-merits-determination"
+    | "introduction"
+    | "conclusion";
+  targetCriterionCode: string | null;
+  title: string;
+  paragraphs: BriefDraftParagraph[];
+  wordCount: number;
+}
+
+export interface ChatMessageCitation {
+  docId: string;
+  label: string;
+}
+
+export interface ChatAssistantTurnPayload {
+  kind: "triage" | "strategy" | "stress-test" | "draft" | "refusal";
+  triageAnswer?: TriageAnswer | null;
+  strategyMemo?: StrategyMemo | null;
+  stressTestReport?: StressTestReport | null;
+  briefDraft?: BriefDraft | null;
+  refusalMessage?: string | null;
+  pendingDocsDisclosure?: string | null;
+  citations: ChatMessageCitation[];
+}
+
+export interface ChatTurn {
+  id: string;
+  role: ChatTurnRole;
+  mode: ChatMode | null;
+  createdAt: string;
+  message: string;
+  classification: ModeClassification | null;
+  assistantPayload: ChatAssistantTurnPayload | null;
+  usageCostUsd: number;
+}
+
+export interface ChatSession {
+  id: string;
+  jobId: string;
+  createdAt: string;
+  updatedAt: string;
+  turns: ChatTurn[];
+}
+
+export interface ChatArtifactRecord {
+  id: string;
+  jobId: string;
+  kind: ChatArtifactKind;
+  createdAt: string;
+  sessionId: string;
+  turnId: string;
+  version: number;
+  title: string;
+  strategyMemo?: StrategyMemo | null;
+  stressTestReport?: StressTestReport | null;
+  briefDraft?: BriefDraft | null;
 }

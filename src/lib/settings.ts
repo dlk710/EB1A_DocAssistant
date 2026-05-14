@@ -1,8 +1,12 @@
 import { EXPORT_ROOT, QDRANT_COLLECTION, QDRANT_URL } from "@/lib/constants";
 import {
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
+  DEFAULT_DRAFT_PROMPT_TEMPLATE,
   DEFAULT_SUMMARY_PROMPT_TEMPLATE,
   DEFAULT_TAGGING_PROMPT_TEMPLATE,
+  DEFAULT_STRATEGY_PROMPT_TEMPLATE,
+  DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
+  DEFAULT_TRIAGE_PROMPT_TEMPLATE,
   LEGACY_SUMMARY_PROMPT_TEMPLATE,
 } from "@/lib/prompt-library";
 import { debugQdrantStoragePath } from "@/lib/qdrant";
@@ -14,6 +18,10 @@ export interface RuntimeSettings {
   summaryPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  triagePrompt: string;
+  strategyPrompt: string;
+  stressTestPrompt: string;
+  draftPrompt: string;
   openAiApiKey: string | null;
   summaryModel: string;
   embeddingModel: string;
@@ -28,6 +36,10 @@ interface PersistedSettingsState {
   summaryPrompt?: string | null;
   classificationPrompt?: string | null;
   taggingPrompt?: string | null;
+  triagePrompt?: string | null;
+  strategyPrompt?: string | null;
+  stressTestPrompt?: string | null;
+  draftPrompt?: string | null;
   openAiApiKey?: string | null;
   summaryModel?: string | null;
   embeddingModel?: string | null;
@@ -75,6 +87,22 @@ export function getRuntimeSettings(): RuntimeSettings {
       persisted.taggingPrompt?.trim() ||
       process.env.EB1A_TAGGING_PROMPT ||
       DEFAULT_TAGGING_PROMPT_TEMPLATE,
+    triagePrompt:
+      persisted.triagePrompt?.trim() ||
+      process.env.EB1A_TRIAGE_PROMPT ||
+      DEFAULT_TRIAGE_PROMPT_TEMPLATE,
+    strategyPrompt:
+      persisted.strategyPrompt?.trim() ||
+      process.env.EB1A_STRATEGY_PROMPT ||
+      DEFAULT_STRATEGY_PROMPT_TEMPLATE,
+    stressTestPrompt:
+      persisted.stressTestPrompt?.trim() ||
+      process.env.EB1A_STRESS_TEST_PROMPT ||
+      DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
+    draftPrompt:
+      persisted.draftPrompt?.trim() ||
+      process.env.EB1A_DRAFT_PROMPT ||
+      DEFAULT_DRAFT_PROMPT_TEMPLATE,
     openAiApiKey: persisted.openAiApiKey || process.env.OPENAI_API_KEY || null,
     summaryModel:
       persisted.summaryModel || process.env.OPENAI_SUMMARY_MODEL || "gpt-4.1-mini",
@@ -99,6 +127,10 @@ export function saveRuntimeSettings(input: {
   summaryPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  triagePrompt: string;
+  strategyPrompt: string;
+  stressTestPrompt: string;
+  draftPrompt: string;
   apiKey?: string;
   summaryModel: string;
   embeddingModel: string;
@@ -114,6 +146,11 @@ export function saveRuntimeSettings(input: {
     classificationPrompt:
       input.classificationPrompt.trim() || DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
     taggingPrompt: input.taggingPrompt.trim() || DEFAULT_TAGGING_PROMPT_TEMPLATE,
+    triagePrompt: input.triagePrompt.trim() || DEFAULT_TRIAGE_PROMPT_TEMPLATE,
+    strategyPrompt: input.strategyPrompt.trim() || DEFAULT_STRATEGY_PROMPT_TEMPLATE,
+    stressTestPrompt:
+      input.stressTestPrompt.trim() || DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
+    draftPrompt: input.draftPrompt.trim() || DEFAULT_DRAFT_PROMPT_TEMPLATE,
     openAiApiKey: input.apiKey?.trim() ? input.apiKey.trim() : current.openAiApiKey || null,
     summaryModel: input.summaryModel.trim(),
     embeddingModel: input.embeddingModel.trim(),
@@ -130,6 +167,10 @@ export function getPublicSettings(): SettingsSnapshot {
     summaryPrompt: settings.summaryPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
+    triagePrompt: settings.triagePrompt,
+    strategyPrompt: settings.strategyPrompt,
+    stressTestPrompt: settings.stressTestPrompt,
+    draftPrompt: settings.draftPrompt,
     hasApiKey: Boolean(settings.openAiApiKey),
     apiKeyMask: maskSecret(settings.openAiApiKey),
     summaryModel: settings.summaryModel,

@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { ChangeEvent, CSSProperties, FormEvent } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { ChatDock } from "@/components/chat/ChatDock";
 import {
   Archive,
   ArrowUpRight,
@@ -53,8 +54,12 @@ import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
 import {
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
+  DEFAULT_DRAFT_PROMPT_TEMPLATE,
   DEFAULT_SUMMARY_PROMPT_TEMPLATE,
   DEFAULT_TAGGING_PROMPT_TEMPLATE,
+  DEFAULT_STRATEGY_PROMPT_TEMPLATE,
+  DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
+  DEFAULT_TRIAGE_PROMPT_TEMPLATE,
 } from "@/lib/prompt-library";
 
 interface EvidenceWorkbenchProps {
@@ -74,6 +79,10 @@ interface SettingsDraft {
   summaryPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  triagePrompt: string;
+  strategyPrompt: string;
+  stressTestPrompt: string;
+  draftPrompt: string;
   apiKey: string;
   summaryModel: string;
   embeddingModel: string;
@@ -654,6 +663,10 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
     summaryPrompt: settings.summaryPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
+    triagePrompt: settings.triagePrompt,
+    strategyPrompt: settings.strategyPrompt,
+    stressTestPrompt: settings.stressTestPrompt,
+    draftPrompt: settings.draftPrompt,
     apiKey: "",
     summaryModel: settings.summaryModel,
     embeddingModel: settings.embeddingModel,
@@ -2340,6 +2353,10 @@ export function EvidenceWorkbench({
           summaryPrompt: settingsDraft.summaryPrompt,
           classificationPrompt: settingsDraft.classificationPrompt,
           taggingPrompt: settingsDraft.taggingPrompt,
+          triagePrompt: settingsDraft.triagePrompt,
+          strategyPrompt: settingsDraft.strategyPrompt,
+          stressTestPrompt: settingsDraft.stressTestPrompt,
+          draftPrompt: settingsDraft.draftPrompt,
           apiKey: settingsDraft.apiKey,
           summaryModel: settingsDraft.summaryModel,
           embeddingModel: settingsDraft.embeddingModel,
@@ -4690,6 +4707,7 @@ export function EvidenceWorkbench({
                       </div>
                     </div>
                   </div>
+                  <ChatDock jobId={activeJobId} candidateName={candidateDisplayName} />
                 </>
               ) : (
                 <>
@@ -4779,6 +4797,7 @@ export function EvidenceWorkbench({
                       </p>
                     </div>
                   </div>
+                  <ChatDock jobId={activeJobId} candidateName={candidateDisplayName} />
                 </>
               )}
             </aside>
@@ -5288,6 +5307,37 @@ export function EvidenceWorkbench({
                           reset: DEFAULT_TAGGING_PROMPT_TEMPLATE,
                           setter: (value: string) =>
                             setSettingsDraft((current) => ({ ...current, taggingPrompt: value })),
+                        },
+                        {
+                          label: "Chat triage prompt",
+                          value: settingsDraft.triagePrompt,
+                          reset: DEFAULT_TRIAGE_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, triagePrompt: value })),
+                        },
+                        {
+                          label: "Chat strategy prompt",
+                          value: settingsDraft.strategyPrompt,
+                          reset: DEFAULT_STRATEGY_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, strategyPrompt: value })),
+                        },
+                        {
+                          label: "Chat stress-test prompt",
+                          value: settingsDraft.stressTestPrompt,
+                          reset: DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              stressTestPrompt: value,
+                            })),
+                        },
+                        {
+                          label: "Chat draft prompt",
+                          value: settingsDraft.draftPrompt,
+                          reset: DEFAULT_DRAFT_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, draftPrompt: value })),
                         },
                       ].map((prompt) => (
                         <div

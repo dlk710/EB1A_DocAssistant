@@ -3423,6 +3423,18 @@ export function EvidenceWorkbench({
             <main className="space-y-4">
               <section className="setu-panel rounded-[18px] p-4">
                 <div className="flex flex-col gap-4">
+                  {pageMode === "dashboard" ? (
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      multiple
+                      directory=""
+                      webkitdirectory=""
+                      onChange={handleFolderPicked}
+                      className="hidden"
+                    />
+                  ) : null}
+
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
@@ -3443,30 +3455,6 @@ export function EvidenceWorkbench({
                     <div className="flex flex-wrap gap-2">
                       {pageMode === "dashboard" ? (
                         <>
-                          <input
-                            ref={folderInputRef}
-                            type="file"
-                            multiple
-                            directory=""
-                            webkitdirectory=""
-                            onChange={handleFolderPicked}
-                            className="hidden"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => folderInputRef.current?.click()}
-                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium"
-                          >
-                            Choose folder
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleUpload()}
-                            disabled={!canStartIndexing}
-                            className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
-                          >
-                            {isUploading ? "Indexing..." : "Index folder"}
-                          </button>
                           <button
                             type="button"
                             onClick={() => void handleCancelProcess()}
@@ -3494,8 +3482,8 @@ export function EvidenceWorkbench({
                   </div>
 
                   {pageMode === "dashboard" ? (
-                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-                      <label className="block rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-3">
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+                      <label className="block rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
                         <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                           1. Candidate full name
                         </span>
@@ -3508,7 +3496,7 @@ export function EvidenceWorkbench({
                             }))
                           }
                           placeholder="Enter the beneficiary full name"
-                          className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2.5 text-[12px] outline-none transition focus:border-[var(--brand)]"
+                          className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-3 text-[12px] outline-none transition focus:border-[var(--brand)]"
                         />
                         <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
                           This is required before indexing starts and becomes the center point for
@@ -3516,34 +3504,32 @@ export function EvidenceWorkbench({
                         </p>
                       </label>
 
-                      <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                          2. Evidence folder
-                        </p>
-                        <p className="mt-2 text-[12px] font-semibold text-[var(--foreground)]">
-                          {pendingStats?.rootLabel ?? "No folder selected"}
-                        </p>
-                        <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
-                          Choose a folder, then index only when both inputs are present.
-                        </p>
-                      </div>
-                    </div>
-                  ) : null}
+                      <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                              2. Choose folder
+                            </p>
+                            <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                              Pick the evidence folder, then start indexing from this same box.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[var(--border-secondary)] bg-white px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                            {pendingStats ? "Selected" : "Waiting"}
+                          </span>
+                        </div>
 
-                  {pageMode === "dashboard" ? (
-                    <div className="rounded-[16px] border border-dashed border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="text-[12px] font-semibold text-[var(--foreground)]">
-                            Choose a folder of evidence files
+                        <div className="mt-3 rounded-[14px] border border-[var(--border-secondary)] bg-white px-3 py-3">
+                          <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                            Evidence folder
                           </p>
-                          <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                            Each upload becomes its own isolated workspace. Existing folders stay
-                            separate in Qdrant and in every review view.
+                          <p className="mt-1 truncate text-[13px] font-semibold text-[var(--foreground)]">
+                            {pendingStats?.rootLabel ?? "No folder selected"}
                           </p>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 text-[11px]">
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2.5">
                             <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
                               Files
                             </p>
@@ -3551,7 +3537,7 @@ export function EvidenceWorkbench({
                               {pendingStats?.fileCount ?? 0}
                             </p>
                           </div>
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2.5">
                             <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
                               Size
                             </p>
@@ -3559,15 +3545,39 @@ export function EvidenceWorkbench({
                               {pendingStats ? formatBytes(pendingStats.totalBytes) : "0 B"}
                             </p>
                           </div>
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
-                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
-                              Root
-                            </p>
-                            <p className="mt-1 truncate font-semibold text-[var(--foreground)]">
-                              {pendingStats?.rootLabel ?? "Not selected"}
-                            </p>
-                          </div>
                         </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => folderInputRef.current?.click()}
+                            className="setu-ghost-button inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[11px] font-medium"
+                          >
+                            <FolderOpen className="h-3.5 w-3.5" />
+                            Choose folder
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleUpload()}
+                            disabled={!canStartIndexing}
+                            className="setu-primary-button inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
+                          >
+                            {isUploading ? (
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Upload className="h-3.5 w-3.5" />
+                            )}
+                            {isUploading ? "Indexing..." : "Index folder"}
+                          </button>
+                        </div>
+
+                        <p className="mt-3 text-[10px] leading-5 text-[var(--muted)]">
+                          {!candidateNameInput
+                            ? "Enter the candidate name first, then choose a folder to unlock indexing."
+                            : pendingStats
+                              ? "Ready to create a new isolated workspace for this candidate."
+                              : "Choose a folder to unlock indexing for this candidate."}
+                        </p>
                       </div>
                     </div>
                   ) : null}
@@ -5694,16 +5704,16 @@ export function EvidenceWorkbench({
                   <div className="flex items-center gap-2">
                     <Upload className="h-4 w-4 text-[var(--brand-deep)]" />
                     <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-                      Evidence Intake
+                      Workspace staging
                     </p>
                   </div>
                   <h1 className="mt-2 max-w-3xl text-xl font-semibold leading-tight tracking-tight text-[var(--foreground)]">
-                    Review the complete evidence history for{" "}
-                    {workspaceCandidate || "your candidate"} in a readable worksheet.
+                    Monitor the selected candidate and folder before the full review pipeline takes
+                    over.
                   </h1>
                   <p className="mt-2 max-w-3xl text-xs leading-6 text-[var(--muted)]">
-                    Upload a folder, keep every original local, and switch between isolated folder
-                    workspaces without mixing backend data across uploads.
+                    This section reflects the folder staged above, shows what will be indexed, and
+                    makes the current workspace state easy to scan at a glance.
                   </p>
                 </div>
 
@@ -5711,16 +5721,6 @@ export function EvidenceWorkbench({
                   Latest subject date rule active
                 </div>
               </div>
-
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                directory=""
-                webkitdirectory=""
-                onChange={handleFolderPicked}
-                className="hidden"
-              />
 
               <div className="mt-4 grid gap-3 xl:grid-cols-2">
                 <div className="rounded-[22px] border border-white/80 bg-white/84 px-4 py-4">
@@ -5730,24 +5730,18 @@ export function EvidenceWorkbench({
                     </div>
                     <div>
                       <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                        1. Candidate full name
+                        Candidate at center
                       </p>
                       <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                        Required before indexing starts.
+                        The staged workspace will be summarized and reviewed around this name.
                       </p>
                     </div>
                   </div>
-                  <input
-                    value={settingsDraft.candidateName}
-                    onChange={(event) =>
-                      setSettingsDraft((current) => ({
-                        ...current,
-                        candidateName: event.target.value,
-                      }))
-                    }
-                    placeholder="Enter the beneficiary full name"
-                    className="mt-3 w-full rounded-2xl border border-white/80 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand)]"
-                  />
+                  <div className="mt-3 rounded-2xl border border-white/80 bg-white px-3 py-3">
+                    <p className="text-sm font-semibold text-[var(--foreground)]">
+                      {candidateNameInput || "No candidate name entered yet"}
+                    </p>
+                  </div>
                   <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
                     Every summary, date choice, bundle, and review hint will be centered on this
                     candidate.
@@ -5761,30 +5755,20 @@ export function EvidenceWorkbench({
                     </div>
                     <div>
                       <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                        2. Evidence folder
+                        Staged evidence folder
                       </p>
                       <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                        Select the source folder to create a new isolated workspace.
+                        The folder selected in Workspace intake is shown here for confirmation.
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <button
-                      type="button"
-                      onClick={() => folderInputRef.current?.click()}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)] transition hover:border-[var(--brand)]/40"
-                    >
-                      <FolderOpen className="h-3.5 w-3.5" />
-                      Choose folder
-                    </button>
-                    <div className="min-w-0 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2.5 text-right">
-                      <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
-                        Selected root
-                      </p>
-                      <p className="mt-1 truncate text-[12px] font-semibold text-[var(--foreground)]">
-                        {pendingStats?.rootLabel ?? "No folder selected"}
-                      </p>
-                    </div>
+                  <div className="mt-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-3">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                      Selected root
+                    </p>
+                    <p className="mt-1 truncate text-[12px] font-semibold text-[var(--foreground)]">
+                      {pendingStats?.rootLabel ?? "No folder selected"}
+                    </p>
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
                     Nested files are indexed locally into Qdrant with candidate-aware summaries,
@@ -5836,37 +5820,8 @@ export function EvidenceWorkbench({
                   into EB1A categories, and writes a downstream output package. If a file has
                   multiple dates it stores the latest subject-relevant date.
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleUpload()}
-                    disabled={!canStartIndexing}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#5641b0,#5f87f0)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    {isUploading ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Upload className="h-3.5 w-3.5" />
-                    )}
-                    {isUploading ? "Indexing..." : "Index folder"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleCancelProcess()}
-                    disabled={!canCancelSelection && !hasAbortableProcessing}
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/80 bg-white/92 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {(isCancelingProcess || activeJob?.status === "canceling") && hasAbortableProcessing ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <X className="h-3.5 w-3.5" />
-                    )}
-                    {canCancelSelection
-                      ? "Cancel"
-                      : isCancelingProcess || activeJob?.status === "canceling"
-                        ? "Canceling..."
-                        : "Cancel"}
-                  </button>
+                <div className="rounded-full bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  Start actions stay in Workspace intake above
                 </div>
               </div>
 

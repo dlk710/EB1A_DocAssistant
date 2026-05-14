@@ -1,0 +1,4 @@
+interface:
+  display_name: "Setu Studio Continuation"
+  short_description: "Continue the local-first Setu evidence studio safely."
+  default_prompt: "Use $setu-studio-continuation to continue the current Setu evidence studio without breaking the multi-pass pipeline."

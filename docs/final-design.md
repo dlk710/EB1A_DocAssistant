@@ -1,83 +1,102 @@
-# Final Design Document
+# Setu Technical Design
 
 ## 1. Purpose
 
-EB1A Evidence Studio is a local-first evidence intelligence system for EB1A preparation. It turns raw folder uploads into a structured review workspace while preserving the original source files and the intermediate AI reasoning layers.
+Setu is a local-first evidence workbench for immigration petition preparation. The current implementation is optimized for a reviewer who needs to move from raw evidence folders to reviewable legal organization without losing source traceability, workspace isolation, or the ability to override AI decisions.
 
-The current product goal is not just storage. It is to progressively interpret evidence across multiple passes so the reviewer can move from raw files to legal framing without losing traceability:
+The architecture is intentionally layered:
 
-1. individual document understanding
-2. event-level grouping
-3. EB1A criterion grouping
-4. human review and override
+1. raw file intake
+2. document-level understanding
+3. event-level interpretation
+4. criterion-level organization
+5. reviewer overrides and output packaging
 
-## 2. Product principles
+Each layer is preserved instead of collapsed into a single irreversible decision.
 
-The implemented v3 product follows these operating rules:
+## 2. Architectural principles
 
-1. AI does the first pass, the human does the final judgment.
-2. Every uploaded folder is isolated and independently reviewable.
-3. The original documents remain accessible throughout the workflow.
-4. Each AI pass is separately rerunnable.
-5. Later interpretation layers must not destroy earlier layers.
-6. Review actions should be reversible and workspace-scoped.
+The current system follows these rules:
 
-## 3. End-to-end workflow
+1. AI does the first pass; a human does the final judgment.
+2. Every uploaded folder becomes an isolated workspace.
+3. Original files remain accessible through every stage.
+4. Each AI pass is rerunnable without destroying upstream artifacts.
+5. Review actions are reversible and workspace-scoped.
+6. Retrieval primitives and interpretation layers are stored separately.
+7. The UX must preserve readability, use screen space well, and avoid hidden controls.
 
-The live workflow is:
-
-1. The reviewer enters the candidate name.
-2. The reviewer optionally edits the active prompts in Prompt Library.
-3. The reviewer uploads a folder and clicks `Index folder`.
-4. The system runs the pipeline in order:
-   - `Indexing`
-   - `Bundling`
-   - `Classifying`
-   - `Tagging`
-   - `Ready`
-5. Once the workspace reaches `Ready`, the dashboard itself shows the review surface again.
-6. The dedicated review page remains available for focused search and retrieval.
-
-## 4. Architecture overview
+## 3. System overview
 
 ```mermaid
 flowchart LR
-  A["Folder Upload"] --> B["Job record\nstorage/state/jobs.json"]
-  A --> C["Local upload storage\nstorage/uploads/<jobId>"]
+  A["Folder upload"] --> B["Job record\nstorage/state/jobs.json"]
+  A --> C["Workspace files\nstorage/uploads/<jobId>"]
   C --> D["Extraction + normalization\nsrc/lib/file-processing.ts"]
-  D --> E["AI summary pass\nsrc/lib/ai.ts"]
+  D --> E["Summary pass\nsrc/lib/ai.ts"]
   E --> F["Embedding pass\nsrc/lib/ai.ts"]
-  F --> G["Qdrant document store\nmetadata + vectors"]
-  G --> H["Workspace snapshot\nsrc/lib/library.ts"]
+  F --> G["Qdrant document store\nsrc/lib/qdrant.ts"]
+  G --> H["Workspace snapshot assembly\nsrc/lib/library.ts"]
   H --> I["Event bundling pass\nsrc/lib/event-bundles.ts"]
   I --> J["Bundle cache\nstorage/state/event-bundles.json"]
   J --> K["EB1A classification pass\nsrc/lib/eb1a-classification.ts"]
   K --> L["Classification cache\nstorage/state/eb1a-classification.json"]
-  L --> M["Evidence tagging pass\nsrc/lib/criteria-tagging.ts"]
+  L --> M["Criteria tagging pass\nsrc/lib/criteria-tagging.ts"]
   M --> N["Tagging cache\nstorage/state/criteria-tagging.json"]
-  L --> O["Output package builder\nsrc/lib/output-package.ts"]
-  O --> P["storage/exports"]
-  G --> Q["Search API\n/api/search"]
-  G --> R["Document routes\npreview/source"]
-  N --> S["Coverage + review UI\nsrc/components/evidence-workbench.tsx"]
-  J --> S
-  L --> S
-  P --> S
+  J --> O["Manual overrides\nsrc/lib/manual-overrides.ts"]
+  L --> O
+  N --> O
+  O --> P["Review snapshot\nsrc/lib/library.ts"]
+  L --> Q["Output package builder\nsrc/lib/output-package.ts"]
+  Q --> R["storage/exports"]
+  G --> S["Search API\nsrc/app/api/search/route.ts"]
+  G --> T["Preview and source routes"]
+  P --> U["Dashboard review surface\nsrc/components/evidence-workbench.tsx"]
+  P --> V["Dedicated review page\n/review/<jobId>"]
 ```
 
-## 5. Storage model
+## 4. Runtime stack
 
-The system uses three local persistence layers.
+### Frontend
+
+- Next.js 16 app router
+- React 19
+- Tailwind 4 utility styling
+- Setu token system in [src/app/globals.css](../src/app/globals.css)
+
+### Backend inside the app
+
+- Next.js route handlers under `src/app/api`
+- local filesystem persistence
+- Qdrant for vector-backed document retrieval
+- JSON state files for operational and derived state
+
+### AI providers and models
+
+- OpenAI text model for summarization, bundling decisions, classification, and tagging
+- OpenAI embedding model for semantic retrieval
+
+Current defaults come from [src/lib/settings.ts](../src/lib/settings.ts):
+
+- summary model: `gpt-4.1-mini`
+- embedding model: `text-embedding-3-small`
+- embedding dimensions: `1024`
+
+## 5. Persistence design
+
+The system intentionally uses multiple local persistence layers rather than forcing all concerns into one store.
 
 ### 5.1 Qdrant
 
-Qdrant stores the document record and embedding together. Each point includes:
+Qdrant stores the retrieval-oriented document record and embedding together. It is the canonical store for evidence documents after indexing.
+
+Each stored point includes:
 
 - workspace identity
 - candidate name
 - file metadata
 - processing state
-- summary payload
+- document summary payload
 - criteria tags
 - review status
 - notes and pin state
@@ -85,61 +104,63 @@ Qdrant stores the document record and embedding together. Each point includes:
 
 Qdrant powers:
 
-- workspace retrieval
 - semantic search
-- persistent vector storage
-- evidence-level review metadata
+- workspace-level evidence retrieval
+- persistence of embeddings
+- document metadata hydration for review surfaces
 
 ### 5.2 JSON state
 
-Derived and operational state is stored under `storage/state`.
+Operational and interpretation-layer state lives under `storage/state`.
 
 - `settings.json`
   - candidate name
   - active prompts
-  - model config
+  - model settings
   - output root
 - `jobs.json`
   - indexing jobs
-  - progress
+  - stage progress
   - cancellation state
 - `event-bundles.json`
-  - per-workspace event bundling output
+  - per-workspace bundle output
 - `eb1a-classification.json`
-  - per-workspace EB1A classification output
+  - per-workspace EB1A decisions and bucketing
 - `criteria-tagging.json`
-  - per-workspace document tagging output
+  - per-workspace evidence-level tags and review suggestions
 - `manual-overrides.json`
-  - event and category overrides
+  - human overrides for event assignment, bucket placement, and review state
 - `review-state.json`
-  - sub-bundles and review-specific UI state
+  - sub-bundles and review-specific organization
 
-### 5.3 Filesystem
+These files are deliberately easy to inspect and back up.
+
+### 5.3 Filesystem artifacts
 
 The filesystem stores:
 
 - original uploads in `storage/uploads`
-- preview artifacts in `storage/previews`
-- output packages in `storage/exports`
-- Qdrant local files in `storage/qdrant`
+- preview assets in `storage/previews`
+- export packages in `storage/exports`
+- local Qdrant files in `storage/qdrant`
 
 ## 6. Workspace isolation
 
-Every uploaded folder becomes its own isolated workspace identified by `jobId`.
+Every uploaded folder becomes its own isolated workspace keyed by `jobId`.
 
 Isolation is enforced in:
 
 - document retrieval
 - semantic search
-- preview routes
-- source file routes
-- event bundle caches
+- preview and source access
+- event bundling caches
 - classification caches
-- tagging caches
+- criteria tagging caches
 - manual overrides
+- review state
 - output package generation
 
-This means `folder1` evidence never appears in `folder2` review output unless the reviewer explicitly switches workspaces.
+This means evidence from `folder1` never appears in `folder2` unless the reviewer explicitly switches workspaces.
 
 ## 7. Multi-pass intelligence
 
@@ -152,28 +173,33 @@ The summary pass produces:
 - title
 - short summary
 - detailed summary
-- entities
-- tags
+- evidence value
+- recommended use
 - document type
-- primary date
 - confidence
+- primary date
+- people
+- organizations
+- tags
+- risk flags
 
-The document pass is deliberately EB1A-light. It captures grounded meaning first.
+This stage is evidence-first. It captures grounded meaning before heavier legal organization.
 
 ### 7.2 Pass 2: event bundling
 
-The bundling pass groups related files into real-world events such as:
+The bundling pass groups related documents into real-world events such as:
 
 - speaking engagements
 - judging activity
 - employment roles
-- research and authorship efforts
 - project or initiative evidence
+- authorship or publication efforts
 
 Bundle output includes:
 
 - bundle name
-- short and detailed summary
+- short summary
+- detailed summary
 - event type
 - latest relevant date
 - organizations
@@ -182,239 +208,153 @@ Bundle output includes:
 - lead document
 - evidence document ids
 
-The bundle layer is stored outside Qdrant because it is a workspace interpretation layer, not a retrieval primitive.
+Special rules currently supported:
+
+- structured role documents can spawn multiple separate events
+- same initiative may remain separate across `CR`, `LR`, and `OC` framing
+- filename rules route `archive`, `delete`, and `remove` files into cleanup buckets
 
 ### 7.3 Pass 3: bundle-level EB1A classification
 
 Completed event bundles are assigned into:
 
-- standard EB1A criteria
+- standard EB1A criteria buckets
 - `Archive Category`
 - `Unwanted`
 - `Human Review`
 
-This pass also generates the output package metadata used for downstream export.
+This pass is still downstream of evidence and event interpretation. It does not replace earlier layers.
 
-### 7.4 Pass 4: document-level evidence tagging
+### 7.4 Pass 4: document-level criteria tagging
 
-The V3 rebuild adds a final AI tagging pass after bundle classification.
-
-This pass works at the individual evidence file level and produces:
+The tagging pass works at the individual evidence file level and produces:
 
 - criterion tags
-- tag role
+- role
   - `primary`
   - `supporting`
 - AI confidence
-- AI reasoning
+- rationale
 - default review state
   - `kept`
   - `pending`
   - `archived`
 
-The tagging layer is downstream of classification, but it does not replace the earlier bundle or criterion layers. It enriches them for human review.
+This gives the reviewer a finer-grained inspection layer inside each event bundle.
 
-## 8. Criteria and review model
+## 8. Search and retrieval
 
-The review system now has three nested lenses:
+Setu supports two retrieval modes.
 
-1. `criterion`
-2. `event bundle`
-3. `evidence file`
+### Semantic search
 
-This allows the reviewer to inspect:
+Semantic search is vector-backed and scoped to the active workspace. It is intended for concept-level lookup when the exact words may vary.
 
-- the legal bucket
-- the real-world event
-- the exact file supporting it
+### Keyword filtering
 
-Each evidence file can also carry its own criteria suggestions and status independent of the parent bundle.
+Keyword filtering is a local UI filter over the active review payload. It is intended for rapid narrowing by visible text such as:
 
-## 9. Review UX
+- bundle name
+- document title
+- path
+- tag
+- organization
 
-### 9.1 Dashboard
+Search is not global across all workspaces by default.
+
+## 9. Review model
+
+The current review hierarchy is:
+
+1. criterion
+2. event bundle
+3. evidence file
+
+Reviewers can:
+
+- drag evidence between bundles
+- drag bundles between criteria
+- mark evidence as kept, pending, archived, or removed via applicable controls
+- create and manage sub-bundles
+- open quick previews
+- use right-click actions for dense review workflows
+
+Manual overrides are stored per workspace and must survive reloads.
+
+## 10. Output packaging
+
+The classification layer feeds the export packager in [src/lib/output-package.ts](../src/lib/output-package.ts).
+
+Generated output packages include:
+
+- criterion folders
+- copied evidence artifacts
+- summary indexes
+- classification summaries
+- human review notes
+- source reference maps
+
+This is designed to support downstream drafting without requiring the reviewer to manually rebuild the evidence tree.
+
+## 11. Dashboard and review UX architecture
+
+### Dashboard responsibilities
 
 The dashboard is responsible for:
 
 - candidate identity
-- workspace picker
-- folder upload
-- pipeline progress
+- folder selection and indexing
+- workspace switching
+- progress visibility
 - high-level metrics
-- review surface once the workspace is truly ready
+- ready-state review rendering
 
-The dashboard intentionally hides the full review surface until the `Ready` stage is complete.
+The ready review section returns to the main landing page once the workspace is in `Ready`.
 
-### 9.2 Dedicated review page
+### Dedicated review page responsibilities
 
-The dedicated review page remains available at `/review/<jobId>` for:
+The dedicated review page exists for:
 
-- semantic search
-- keyword filtering
-- deeper review interaction
+- deeper semantic retrieval
 - focused override work
+- dense review sessions
+- search-driven navigation
 
-### 9.3 View modes
+### Prompt Library
 
-The ready review surface supports:
+Prompt Library is a full-height, scrollable editing surface for the active prompts. It is intentionally modal to avoid accidental edits during review.
 
-- `By bundle`
-- `By criterion`
+## 12. Setu v4 design system constraints
 
-### 9.4 Evidence actions
+The Setu shell is not decorative only. It encodes concrete implementation rules:
 
-Evidence rows support:
+- use shared tokens from [src/app/globals.css](../src/app/globals.css)
+- preserve the charcoal-and-amber hierarchy
+- use warm neutral panels for evidence-heavy reading surfaces
+- keep the top-level brand block prominent
+- avoid reintroducing the older lilac-led identity in this branch
 
-- quick peek
-- keep
-- archive
-- remove
-- drag/drop reassignment
-- criteria editing
-- right-click actions
-- multi-select bulk actions
+Desktop layout constraints:
 
-### 9.5 Sub-bundles
+- left and right rails are draggable
+- prompt library must scroll internally
+- empty space should be minimized through denser layout and stronger typographic hierarchy
+- ready-state review must remain visible on the landing page
+- context menus must clamp to the viewport and avoid hidden bottom-right overflow
 
-Users can create review-only sub-bundles inside a parent event bundle for cleaner drill-down, for example:
+## 13. Operational safeguards
 
-- production systems
-- metrics evidence
-- supporting correspondence
+The implementation should continue to honor these safeguards:
 
-Sub-bundles are user-authored organization state, not AI-generated event state.
+- original uploads are never edited
+- workspaces remain isolated
+- cleanup routing rules remain deterministic
+- chosen primary dates prefer the latest date relevant to the actual subject or event
+- cancellation should stop work at safe boundaries
+- historical workspaces should remain readable after downstream logic changes
 
-## 10. Coverage model
+## 14. Known limitations
 
-The coverage rail is driven from document-level criteria tags.
-
-Each criterion is marked as:
-
-- `strong`
-- `partial`
-- `empty`
-
-The current implemented rule set is:
-
-- `strong`
-  - at least one kept primary document
-  - or at least two kept supporting documents
-- `partial`
-  - at least one kept supporting document only
-- `empty`
-  - no kept tagged evidence
-
-This lets the reviewer track first-prong criterion coverage while still working through evidence.
-
-## 11. Prompt library
-
-The Prompt Library now has three active prompt types:
-
-- summary prompt
-- classification prompt
-- tagging prompt
-
-Only the active prompt text is stored. Historical prompt versions are intentionally not persisted.
-
-Prompt changes invalidate the relevant downstream state and trigger regeneration when the workspace is reopened.
-
-## 12. Manual override model
-
-Humans can override at any time.
-
-Supported overrides:
-
-- move a file into a different event bundle
-- move a bundle into a different EB1A category
-- change evidence criteria
-- keep, archive, or remove evidence
-- create or rename sub-bundles
-- add notes or pin evidence
-
-Overrides are stored separately from the AI-generated base layers so the system can preserve both the machine interpretation and the human correction.
-
-## 13. Filename routing rules
-
-Deterministic filename routing still applies before final review:
-
-- filenames containing `archive` -> `Archive Category`
-- filenames containing `delete` or `remove` -> `Unwanted`
-
-These rules intentionally win over AI classification for cleanup-oriented files.
-
-## 14. Output packaging
-
-The classification layer writes a downstream package under `storage/exports`.
-
-Each output package contains:
-
-- criterion-organized evidence folders
-- copied source references
-- index files
-- classification summary
-- human review summary
-- source reference map
-
-Manual overrides regenerate the effective output package without rewriting the original files.
-
-## 15. Migration behavior
-
-Older workspaces are preserved, but downstream caches now re-run automatically when needed.
-
-Examples:
-
-- bundling version changes
-- classification prompt changes
-- tagging version changes
-- event bundle timestamp changes
-- classification timestamp changes
-
-This allows new UI and tagging capabilities to be applied to existing indexed workspaces without re-uploading the original folders.
-
-## 16. API surface
-
-Key route groups:
-
-- ingestion
-  - `/api/ingest`
-- workspace snapshot and search
-  - `/api/library`
-  - `/api/search`
-  - `/api/coverage`
-- tagging
-  - `/api/tag/start`
-  - `/api/tag/retry`
-  - `/api/tag/status`
-- evidence review
-  - `/api/evidence/:id/status`
-  - `/api/evidence/bulk-status`
-  - `/api/evidence/:id/criteria`
-  - `/api/evidence/:id/criteria/:code`
-  - `/api/evidence/:id`
-  - `/api/evidence/:id/move`
-  - `/api/evidence/bulk-move`
-- sub-bundles
-  - `/api/bundles/:id/sub-bundles`
-  - `/api/sub-bundles/:id`
-
-## 17. Validation completed for this version
-
-This V3 rebuild was validated with:
-
-- `npm run lint`
-- `npm run build`
-- live dashboard validation at `http://localhost:3001`
-- live dedicated review validation at `http://localhost:3001/review/<jobId>`
-- semantic search
-- evidence status patch and revert
-- criteria add/delete
-- notes and pin save/revert
-- sub-bundle create/rename/delete
-- cross-bundle move and revert
-- tagging status endpoint verification
-
-## 18. Known limitations
-
-- OCR quality still depends on the extracted text available from the source file or preview pipeline.
-- Evidence tagging is intentionally downstream of EB1A classification, so a workspace is not considered fully ready until that final pass completes.
-- Older workspaces may perform one catch-up rerun of newer downstream passes when opened after versioned pipeline changes.
+- OCR quality depends on extractable text or available preview layers
+- full conversational `Ask the studio` behavior from the wireframe is not yet implemented
+- some internal filenames and package identifiers still carry earlier product naming, but the current user-facing product is Setu

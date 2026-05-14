@@ -1,46 +1,50 @@
-# EB1A Evidence Studio
+# setu
 
-Local-first Next.js application for turning raw evidence folders into a reviewable EB1A workspace without losing the original documents or the intermediate AI reasoning.
+Setu is a local-first evidence studio for immigration petition preparation. It turns raw folder uploads into a structured review workspace while preserving the original files, the intermediate AI reasoning layers, and the human override path.
 
-The current product keeps the original multi-pass intelligence intact:
+The current implementation is built for a practical review flow:
 
-1. Document indexing and summarization
-2. Event bundling
-3. Bundle-level EB1A classification
-4. Document-level evidence tagging for review
+1. upload a folder of evidence
+2. summarize each document
+3. bundle related files into real-world events
+4. classify those bundles into EB1A criteria and review buckets
+5. tag individual evidence files for human review
+6. let a reviewer override anything before downstream drafting
 
-The v3 rebuild adds a denser review UX, document-level keep/archive triage, evidence criteria tagging, sub-bundles, bulk review actions, coverage tracking, and a dashboard/review split that still runs on the same Qdrant + JSON-state backend.
+## Core objective
 
-## Documentation
+Setu exists to make evidence preparation faster, more traceable, and more defensible without turning the process into a black box.
 
-- Design document: [docs/final-design.md](docs/final-design.md)
+The product objective is:
 
-## Core capabilities
+- keep the workflow local-first
+- preserve every original file
+- let AI do the first interpretation pass
+- let a human make the final judgment
+- keep every review layer reversible and inspectable
 
-- Upload a folder from the browser, including nested directories.
-- Treat every upload as an isolated workspace keyed by `jobId`.
-- Save originals under `storage/uploads/<jobId>/`.
-- Store searchable document vectors and payloads in local Qdrant.
-- Summarize each file with OpenAI and extract review metadata, tags, entities, dates, and preview context.
-- Group related files into AI-generated event bundles.
-- Classify event bundles into EB1A criteria plus review buckets such as `Archive Category`, `Unwanted`, and `Human Review`.
-- Run a final AI tagging pass on individual evidence files to assign review-ready criterion hints plus `kept` / `pending` / `archived` defaults.
-- Show review in two layouts:
-  - `By bundle`
-  - `By criterion`
-- Support manual overrides at any time:
-  - move files between bundles
-  - move bundles between EB1A categories
-  - change evidence criteria
-  - keep / archive / remove evidence
-  - create sub-bundles for drill-down organization
-- Open original document previews from the review workspace with `Quick peek`.
-- Track OpenAI cost across summarization, bundling, classification, and tagging.
-- Export a classified output package with references for downstream petition drafting.
+## Current product scope
 
-## Current review pipeline
+The live application at `http://localhost:3001` currently supports:
 
-The live V3 pipeline is:
+- folder-based workspace ingestion from the browser
+- isolated workspaces per upload, keyed by `jobId`
+- OpenAI-powered document summarization
+- Qdrant-backed semantic retrieval
+- AI event bundling
+- AI EB1A bundle classification
+- AI document-level criteria tagging
+- `kept` / `pending` / `archived` review state
+- manual overrides for evidence, event bundles, and criteria placement
+- sub-bundles for reviewer organization
+- original-file preview and source access
+- prompt editing through Prompt Library
+- tracked OpenAI cost by pipeline stage
+- local export package generation for downstream drafting
+
+## Product workflow
+
+The implemented multi-pass pipeline is:
 
 1. `Indexing`
 2. `Bundling`
@@ -48,59 +52,113 @@ The live V3 pipeline is:
 4. `Tagging`
 5. `Ready`
 
-Behavior:
+Design rules for the pipeline:
 
-- The dashboard shows progress immediately after `Index folder`.
-- The dedicated review page is available for deeper search while later passes are still running.
-- The main landing page only restores the full review surface once the workspace truly reaches `Ready`.
-- Cancellation is cooperative and stops at the next safe AI boundary.
+- each pass is independently rerunnable
+- downstream passes do not destroy upstream outputs
+- historical workspaces can be reinterpreted by newer downstream logic
+- cancellation is cooperative and stops at the next safe boundary
+- workspace isolation is preserved throughout search, preview, review, and export
 
-## Review UX highlights
+## Main surfaces
 
-- Candidate identity stays visible throughout the workspace.
-- Historical workspaces live in a compact dropdown.
-- Semantic search is scoped to the selected workspace only.
-- A normal keyword filter is available alongside semantic retrieval.
-- Evidence rows support multi-select, bulk actions, right-click context actions, and drag/drop overrides.
-- Criteria chips preserve AI confidence plus manual override state.
-- Coverage remains visible so the reviewer can see which EB1A criteria are currently strong, partial, or empty.
+### Dashboard
 
-## Prompt library
+The dashboard is the intake and oversight surface. It includes:
 
-The Prompt Library now manages three editable active prompts:
+- Setu-branded top shell
+- candidate identity
+- folder workspace picker with recent run history
+- pipeline visibility and stage status
+- cost and coverage summaries
+- draggable side rails on desktop
+- ready-state review surface once the workspace is actually reviewable
 
-- Document summary prompt
-- Bundle classification prompt
-- Evidence tagging prompt
+### Dedicated review page
 
-Only the current active prompt text is saved. Prompt history is intentionally not stored.
+The review page at `/review/<jobId>` is the focused retrieval and override surface. It supports:
 
-## Storage layout
+- semantic search scoped to the active workspace
+- keyword filtering
+- criterion-first and bundle-first review
+- drag/drop overrides
+- right-click actions
+- evidence quick peek
+
+### Prompt Library
+
+Prompt Library is a large scrollable modal used to edit the active prompts for:
+
+- document summarization
+- bundle classification
+- criteria tagging
+
+Only the active prompt text is stored. Prompt history is intentionally not stored.
+
+## Setu brand direction
+
+Setu now uses the v4 charcoal-and-amber identity:
+
+- dominant brand color: charcoal `#1A1A1F`
+- primary accent: amber `#BA7517`
+- supporting paper tones: warm neutrals for workspace readability
+
+Implementation rules:
+
+- use app-wide tokens from [src/app/globals.css](src/app/globals.css)
+- do not add raw hex values in component code unless a token is introduced first
+- use amber sparingly for emphasis rather than large washes
+- preserve the `setu` wordmark and deck treatment in the application chrome
+
+## Documentation map
+
+- Business and product overview: [docs/business-product-overview.md](docs/business-product-overview.md)
+- Technical and system design: [docs/final-design.md](docs/final-design.md)
+- Operations and maintenance playbook: [docs/operating-playbook.md](docs/operating-playbook.md)
+- Repo-local continuation skill for future AI work: [skills/setu-studio-continuation/SKILL.md](skills/setu-studio-continuation/SKILL.md)
+
+## Repo map
+
+Key implementation files:
+
+- Main UI: [src/components/evidence-workbench.tsx](src/components/evidence-workbench.tsx)
+- Global tokens and shell styling: [src/app/globals.css](src/app/globals.css)
+- Root metadata: [src/app/layout.tsx](src/app/layout.tsx)
+- Snapshot assembly: [src/lib/library.ts](src/lib/library.ts)
+- Ingestion pipeline: [src/lib/ingestion.ts](src/lib/ingestion.ts)
+- Summarization and embeddings: [src/lib/ai.ts](src/lib/ai.ts)
+- Event bundling: [src/lib/event-bundles.ts](src/lib/event-bundles.ts)
+- EB1A classification: [src/lib/eb1a-classification.ts](src/lib/eb1a-classification.ts)
+- Criteria tagging: [src/lib/criteria-tagging.ts](src/lib/criteria-tagging.ts)
+- Manual overrides: [src/lib/manual-overrides.ts](src/lib/manual-overrides.ts)
+- Local vector store integration: [src/lib/qdrant.ts](src/lib/qdrant.ts)
+
+## Persistence model
+
+### Local files
 
 - `storage/uploads`
-  - uploaded originals per workspace
+  - original uploaded evidence by workspace
 - `storage/previews`
   - generated preview assets
+- `storage/exports`
+  - downstream export packages
 - `storage/qdrant`
   - local Qdrant persistence
-- `storage/exports`
-  - review-ready output packages
+
+### Local JSON state
+
 - `storage/state/settings.json`
-  - runtime settings and active prompts
 - `storage/state/jobs.json`
-  - indexing jobs and progress
 - `storage/state/event-bundles.json`
-  - per-workspace event bundling state
 - `storage/state/eb1a-classification.json`
-  - per-workspace EB1A classification state
 - `storage/state/criteria-tagging.json`
-  - per-workspace document tagging state
 - `storage/state/manual-overrides.json`
-  - category and event override state
 - `storage/state/review-state.json`
-  - sub-bundles and review-only UI state
 
 ## Local setup
+
+Development run:
 
 ```bash
 colima start
@@ -108,16 +166,14 @@ npm install
 npm run dev
 ```
 
-The app runs locally at [http://localhost:3001](http://localhost:3001).
-
-Production-style local run:
+Local production-style run:
 
 ```bash
 npm run build
 npm start
 ```
 
-`npm start` and `npm run dev` both ensure local Qdrant is available first.
+The app runs on [http://localhost:3001](http://localhost:3001).
 
 ## Environment
 
@@ -131,34 +187,45 @@ OPENAI_EMBEDDING_DIMENSIONS=1024
 QDRANT_URL=http://127.0.0.1:6333
 ```
 
-## API surface
+Notes:
 
-Key routes:
+- `predev` and `prestart` run `scripts/ensure-qdrant.mjs`, so local startup will attempt to ensure Qdrant is available.
+- the package name is still `eb1a-evidence-studio` for continuity, but the user-facing product brand is now `setu`.
 
-- `POST /api/ingest`
-- `GET /api/library`
-- `GET /api/search`
-- `GET /api/coverage`
-- `POST /api/tag/start`
-- `POST /api/tag/retry`
-- `GET /api/tag/status`
-- `PATCH /api/evidence/:id/status`
-- `POST /api/evidence/bulk-status`
-- `POST /api/evidence/:id/criteria`
-- `PATCH /api/evidence/:id/criteria/:code`
-- `DELETE /api/evidence/:id/criteria/:code`
-- `POST /api/evidence/:id/move`
-- `POST /api/evidence/bulk-move`
-- `POST /api/bundles/:id/sub-bundles`
-- `PATCH /api/sub-bundles/:id`
-- `DELETE /api/sub-bundles/:id`
+## Validation
 
-## Notes
+Baseline validation for most changes:
 
-- Filename rules still win over AI for cleanup cases:
+```bash
+npm run lint
+npm run build
+```
+
+For UI work, also verify:
+
+- dashboard on `http://localhost:3001`
+- review page on `http://localhost:3001/review/<jobId>`
+- prompt library scrolling
+- desktop panel resizing
+- viewport-safe context menus
+- ready-state review rendering
+
+## Non-negotiable guardrails
+
+- workspace isolation is mandatory
+- original uploads are never modified
+- filename rules still win for cleanup routing:
   - `archive` -> `Archive Category`
   - `delete` / `remove` -> `Unwanted`
-- If a file contains multiple dates, the summarizer uses the latest date relevant to the actual subject or event, not a scan timestamp.
-- Original source files are never modified.
-- Hidden system files such as `.DS_Store` are filtered out of normal evidence review.
-- Older workspaces automatically re-run newer downstream passes when the review-state version or prompt fingerprint changes.
+- if a file has multiple dates, the chosen primary date should be the latest one relevant to the actual subject or event
+- semantic search must stay scoped to the active workspace
+- prompt library must remain scrollable
+- context menus must stay inside the viewport
+- dashboard and review rails remain draggable on desktop
+- real estate should be used intentionally; large dead areas should be treated as regressions
+
+## Current boundaries
+
+- OCR quality still depends on extractable text or preview-layer availability
+- the current Setu shell is live, but the full `Ask the studio` dock from the wireframe is not yet a production feature
+- some internal file names and package identifiers still carry earlier product naming, but this branch documents the current Setu product state

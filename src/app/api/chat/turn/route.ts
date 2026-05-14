@@ -101,34 +101,48 @@ function clampStringArray(value: unknown, maxItems: number, maxLength: number) {
     .slice(0, maxItems);
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function canonicalizeCriterionCode(value: unknown, fallback = "") {
   const normalized = clampString(value, 80).toLowerCase();
+  const spaced = normalized
+    .replace(/[()[\],.:;/-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  if (!normalized) {
+  if (!spaced) {
     return fallback;
   }
 
-  const numericMatch = normalized.match(/\b(0[1-9]|1[01])\b/);
+  const numericMatch = spaced.match(/\b(0[1-9]|1[01])\b/);
 
   if (numericMatch?.[1]) {
     return numericMatch[1];
   }
 
   for (const criterion of EB1A_CRITERIA_DEFINITIONS) {
-    const aliases = [
-      criterion.code,
-      criterion.legalCode.toLowerCase(),
-      criterion.legalCode.replace(/[()]/g, "").toLowerCase(),
+    const legalCode = criterion.legalCode.replace(/[()]/g, "").toLowerCase();
+    const romanMatcher = new RegExp(`(?:^|\\b)${escapeRegex(legalCode)}(?:$|\\b)`, "i");
+    const codeMatcher = new RegExp(`(?:^|\\b)${escapeRegex(criterion.code)}(?:$|\\b)`, "i");
+    const nameAliases = [
       criterion.name.toLowerCase(),
       criterion.name.toLowerCase().replace(/\s+or\s+/g, " "),
       criterion.name.toLowerCase().replace(/\s*&\s*/g, " and "),
     ];
 
     if (criterion.code === "08") {
-      aliases.push("critical role", "leading role");
+      nameAliases.push("critical role", "leading role");
     }
 
-    if (aliases.some((alias) => alias && normalized.includes(alias))) {
+    if (
+      codeMatcher.test(spaced) ||
+      romanMatcher.test(spaced) ||
+      spaced.includes(`criterion ${legalCode}`) ||
+      spaced.includes(`criterion ${criterion.code}`) ||
+      nameAliases.some((alias) => alias && spaced.includes(alias))
+    ) {
       return criterion.code;
     }
   }
@@ -412,6 +426,14 @@ function buildStrategyMessage(memo: StrategyMemo) {
   ].join(" ");
 }
 
+function hasUsableStrategyMemo(memo: StrategyMemo) {
+  return (
+    memo.recommendedMix.primary.length > 0 &&
+    memo.leadArgument.anchorDocIds.length > 0 &&
+    memo.citations.length > 0
+  );
+}
+
 function buildStressTestMessage(report: StressTestReport) {
   const highestSeverity = report.challenges.some((challenge) => challenge.severity === "high")
     ? "high"
@@ -436,34 +458,15 @@ function buildStrategyMemoBlock(memo: StrategyMemo) {
   ].join("\n");
 }
 
+function getCriterionName(criterionCode: string | null | undefined) {
+  return (
+    EB1A_CRITERIA_DEFINITIONS.find((criterion) => criterion.code === criterionCode)?.name ??
+    "the selected criterion"
+  );
+}
+
 function resolveCriterionCodeFromMessage(message: string) {
-  const normalized = message.toLowerCase();
-  const numericMatch = normalized.match(/\b(0[1-9]|1[01])\b/);
-
-  if (numericMatch?.[1]) {
-    return numericMatch[1];
-  }
-
-  for (const criterion of EB1A_CRITERIA_DEFINITIONS) {
-    const aliases = [
-      criterion.name.toLowerCase(),
-      criterion.name.toLowerCase().replace(/\s+or\s+/g, " "),
-      criterion.name.toLowerCase().replace(/\s*&\s*/g, " and "),
-    ];
-
-    if (criterion.code === "08") {
-      aliases.push("critical role", "leading role");
-    }
-
-    if (
-      normalized.includes(criterion.legalCode.toLowerCase()) ||
-      aliases.some((alias) => normalized.includes(alias))
-    ) {
-      return criterion.code;
-    }
-  }
-
-  return null;
+  return canonicalizeCriterionCode(message) || null;
 }
 
 function resolveDraftIntent(message: string, strategyMemo: StrategyMemo) {
@@ -558,39 +561,78 @@ async function generateTriageAnswer(input: {
     retrievedDocsBlock: buildRetrievedDocsBlock(input.documents),
   });
 
-  const response = await client.responses.create({
-    model: settings.summaryModel,
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: `${prompt} Return strict JSON only.` }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: input.message }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "setu_chat_triage_answer",
-        strict: true,
-        schema: triageAnswerJsonSchema,
-      },
-    },
-  });
+  let totalCostUsd = 0;
 
-  const parsed = triageAnswerSchema.parse(sanitizeTriageCandidate(parseOutputJson(response.output_text)));
-  const normalized = normalizeTriageAnswer(parsed, input.documents);
-  const citations = buildChatCitations(
-    normalized.answer.flatMap((block) => block.docIds),
-    input.documents,
-  );
+  for (const instruction of [
+    `${prompt} Return strict JSON only.`,
+    `${prompt} Return strict JSON only. Use only the exact [doc:...] ids shown in the retrieved docs block for every answer block.`,
+  ]) {
+    const response = await client.responses.create({
+      model: settings.summaryModel,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: instruction }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: input.message }],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "setu_chat_triage_answer",
+          strict: true,
+          schema: triageAnswerJsonSchema,
+        },
+      },
+    });
+
+    totalCostUsd += buildUsageCost(settings.summaryModel, response.usage);
+
+    const parsed = triageAnswerSchema.parse(
+      sanitizeTriageCandidate(parseOutputJson(response.output_text)),
+    );
+    const normalized = normalizeTriageAnswer(parsed, input.documents);
+    const citations = buildChatCitations(
+      normalized.answer.flatMap((block) => block.docIds),
+      input.documents,
+    );
+
+    if (normalized.answer.length > 0) {
+      return {
+        answer: normalized,
+        citations,
+        costUsd: totalCostUsd,
+      };
+    }
+  }
+
+  const fallbackDocuments = input.documents.slice(0, 3);
+  const fallbackAnswer: TriageAnswer = {
+    schemaVersion: "triage-answer/1.0",
+    answer: fallbackDocuments.length
+      ? [
+          {
+            text: `Setu could not safely synthesize a fuller answer from the retrieved evidence, but these indexed exhibits appear most relevant to your question about ${input.candidateName || "the candidate"}.`,
+            docIds: fallbackDocuments.map((document) => document.id),
+          },
+        ]
+      : [],
+    insufficiencyNote:
+      fallbackDocuments.length > 0
+        ? "Review the cited exhibits first, then ask a narrower follow-up for a more grounded answer."
+        : "No retrieved evidence was available for this question.",
+  };
 
   return {
-    answer: normalized,
-    citations,
-    costUsd: buildUsageCost(settings.summaryModel, response.usage),
+    answer: fallbackAnswer,
+    citations: buildChatCitations(
+      fallbackDocuments.map((document) => document.id),
+      input.documents,
+    ),
+    costUsd: totalCostUsd,
   };
 }
 
@@ -612,52 +654,64 @@ async function generateStrategyMemo(input: {
       "strategy-memo/1.0 with recommendedMix, leadArgument, gaps, risks, and citations.",
   });
 
-  const response = await client.responses.create({
-    model: settings.summaryModel,
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: `${prompt} Return strict JSON only.` }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: input.message }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "setu_strategy_memo",
-        strict: true,
-        schema: strategyMemoJsonSchema,
-      },
-    },
-  });
+  let totalCostUsd = 0;
 
-  const parsed = strategyMemoSchema.parse(
-    sanitizeStrategyCandidate(parseOutputJson(response.output_text), input.jobId),
-  );
-  const normalized = normalizeStrategyMemo(
-    parsed,
-    input.documents,
-  );
+  for (const instruction of [
+    `${prompt} Return strict JSON only.`,
+    `${prompt} Return strict JSON only. Use only criterion codes 01-11 and only the exact [doc:...] ids shown in the evidence blocks for anchorDocIds and citations. Every primary recommendation must include 2-4 valid anchorDocIds.`,
+  ]) {
+    const response = await client.responses.create({
+      model: settings.summaryModel,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: instruction }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: input.message }],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "setu_strategy_memo",
+          strict: true,
+          schema: strategyMemoJsonSchema,
+        },
+      },
+    });
 
-  const citations = buildChatCitations(
-    [
-      ...normalized.citations.map((entry) => entry.docId),
-      ...normalized.recommendedMix.primary.flatMap((entry) => entry.anchorDocIds),
-      ...normalized.recommendedMix.supporting.flatMap((entry) => entry.anchorDocIds),
-      ...normalized.leadArgument.anchorDocIds,
-      ...normalized.risks.flatMap((entry) => entry.affectedDocIds),
-    ],
-    input.documents,
-  );
+    totalCostUsd += buildUsageCost(settings.summaryModel, response.usage);
 
-  return {
-    memo: normalized,
-    citations,
-    costUsd: buildUsageCost(settings.summaryModel, response.usage),
-  };
+    const parsed = strategyMemoSchema.parse(
+      sanitizeStrategyCandidate(parseOutputJson(response.output_text), input.jobId),
+    );
+    const normalized = normalizeStrategyMemo(parsed, input.documents);
+
+    const citations = buildChatCitations(
+      [
+        ...normalized.citations.map((entry) => entry.docId),
+        ...normalized.recommendedMix.primary.flatMap((entry) => entry.anchorDocIds),
+        ...normalized.recommendedMix.supporting.flatMap((entry) => entry.anchorDocIds),
+        ...normalized.leadArgument.anchorDocIds,
+        ...normalized.risks.flatMap((entry) => entry.affectedDocIds),
+      ],
+      input.documents,
+    );
+
+    if (hasUsableStrategyMemo(normalized)) {
+      return {
+        memo: normalized,
+        citations,
+        costUsd: totalCostUsd,
+      };
+    }
+  }
+
+  throw new Error(
+    "Setu could not prepare a citable strategy memo from the current evidence. Try again after more documents are reviewed or ask a narrower strategy question.",
+  );
 }
 
 async function generateStressTestReport(input: {
@@ -676,49 +730,71 @@ async function generateStressTestReport(input: {
     stressTestSchema: "stress-test/1.0 with challenges and atRiskDocIds.",
   });
 
-  const response = await client.responses.create({
-    model: settings.summaryModel,
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: `${prompt} Return strict JSON only.` }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: input.message }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "setu_stress_test_report",
-        strict: true,
-        schema: stressTestReportJsonSchema,
-      },
-    },
-  });
+  let totalCostUsd = 0;
 
-  const parsed = stressTestReportSchema.parse(
-    sanitizeStressTestCandidate(
-      parseOutputJson(response.output_text),
-      input.jobId,
-      input.strategyMemo.createdAt,
-    ),
-  );
-  const normalized = normalizeStressTestReport(
-    parsed,
-    input.documents,
-  );
+  for (const instruction of [
+    `${prompt} Return strict JSON only.`,
+    `${prompt} Return strict JSON only. Use only the exact [doc:...] ids shown in the evidence block for atRiskDocIds and current mitigation references. Each challenge must cite at least one valid atRiskDocId.`,
+  ]) {
+    const response = await client.responses.create({
+      model: settings.summaryModel,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: instruction }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: input.message }],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "setu_stress_test_report",
+          strict: true,
+          schema: stressTestReportJsonSchema,
+        },
+      },
+    });
 
-  const citations = buildChatCitations(
-    normalized.challenges.flatMap((challenge) => challenge.atRiskDocIds),
-    input.documents,
-  );
+    totalCostUsd += buildUsageCost(settings.summaryModel, response.usage);
+
+    const parsed = stressTestReportSchema.parse(
+      sanitizeStressTestCandidate(
+        parseOutputJson(response.output_text),
+        input.jobId,
+        input.strategyMemo.createdAt,
+      ),
+    );
+    const normalized = normalizeStressTestReport(parsed, input.documents);
+
+    const citations = buildChatCitations(
+      normalized.challenges.flatMap((challenge) => challenge.atRiskDocIds),
+      input.documents,
+    );
+
+    if (normalized.challenges.length > 0) {
+      return {
+        report: normalized,
+        citations,
+        costUsd: totalCostUsd,
+      };
+    }
+  }
 
   return {
-    report: normalized,
-    citations,
-    costUsd: buildUsageCost(settings.summaryModel, response.usage),
+    report: {
+      schemaVersion: "stress-test/1.0" as const,
+      jobId: input.jobId,
+      createdAt: new Date().toISOString(),
+      scope: "full-petition" as const,
+      strategyMemoVersion: input.strategyMemo.createdAt,
+      pendingDocsConsidered: 0,
+      challenges: [],
+    },
+    citations: [],
+    costUsd: totalCostUsd,
   };
 }
 
@@ -746,52 +822,101 @@ async function generateBriefDraft(input: {
       "brief-draft/1.0 with paragraphs, exhibitRefs, citations, and wordCount.",
   });
 
-  const response = await client.responses.create({
-    model: settings.summaryModel,
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: `${prompt} Return strict JSON only.` }],
+  let totalCostUsd = 0;
+
+  for (const instruction of [
+    `${prompt} Return strict JSON only.`,
+    `${prompt} Return strict JSON only. Use only the exact [doc:...] ids shown in the evidence block for citations and exhibitRefs. Every paragraph must include at least one valid citation docId and one exhibitRef that matches a cited docId.`,
+  ]) {
+    const response = await client.responses.create({
+      model: settings.summaryModel,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: instruction }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: input.message }],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "setu_brief_draft",
+          strict: true,
+          schema: briefDraftJsonSchema,
+        },
       },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: input.message }],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "setu_brief_draft",
-        strict: true,
-        schema: briefDraftJsonSchema,
-      },
-    },
+    });
+
+    totalCostUsd += buildUsageCost(settings.summaryModel, response.usage);
+
+    const parsed = briefDraftSchema.parse(
+      sanitizeBriefDraftCandidate(
+        parseOutputJson(response.output_text),
+        input.jobId,
+        draftIntent.section,
+        draftIntent.targetCriterionCode,
+      ),
+    );
+    const normalized = normalizeBriefDraft(parsed, evidenceDocuments);
+
+    const citations = buildChatCitations(
+      normalized.paragraphs.flatMap((paragraph) =>
+        paragraph.citations.map((citation) => citation.docId),
+      ),
+      evidenceDocuments,
+    );
+
+    if (normalized.paragraphs.length > 0) {
+      return {
+        draft: normalized,
+        citations,
+        costUsd: totalCostUsd,
+      };
+    }
+  }
+
+  const fallbackDocuments = evidenceDocuments.slice(0, 3);
+  const criterionName = getCriterionName(draftIntent.targetCriterionCode);
+  const fallbackParagraphs = fallbackDocuments.map((document) => {
+    const supportText =
+      document.summary?.shortSummary ||
+      document.summary?.detailedSummary ||
+      `${document.summary?.title || document.fileName} is indexed as evidence relevant to ${criterionName}.`;
+
+    return {
+      text: `${input.candidateName || "The candidate"} relies on ${document.summary?.title || document.fileName} as part of the ${criterionName} showing. ${supportText}`,
+      exhibitRefs: [document.id],
+      citations: [
+        {
+          docId: document.id,
+          supports: supportText.slice(0, 320),
+        },
+      ],
+    };
   });
 
-  const parsed = briefDraftSchema.parse(
-    sanitizeBriefDraftCandidate(
-      parseOutputJson(response.output_text),
-      input.jobId,
-      draftIntent.section,
-      draftIntent.targetCriterionCode,
-    ),
-  );
-  const normalized = normalizeBriefDraft(
-    parsed,
-    evidenceDocuments,
-  );
-
-  const citations = buildChatCitations(
-    normalized.paragraphs.flatMap((paragraph) =>
-      paragraph.citations.map((citation) => citation.docId),
-    ),
-    evidenceDocuments,
-  );
-
   return {
-    draft: normalized,
-    citations,
-    costUsd: buildUsageCost(settings.summaryModel, response.usage),
+    draft: {
+      schemaVersion: "brief-draft/1.0" as const,
+      jobId: input.jobId,
+      createdAt: new Date().toISOString(),
+      section: draftIntent.section,
+      targetCriterionCode: draftIntent.targetCriterionCode,
+      title: `${criterionName} evidence-led draft`,
+      paragraphs: fallbackParagraphs,
+      wordCount: fallbackParagraphs.reduce(
+        (total, paragraph) => total + paragraph.text.split(/\s+/).filter(Boolean).length,
+        0,
+      ),
+    },
+    citations: buildChatCitations(
+      fallbackDocuments.map((document) => document.id),
+      evidenceDocuments,
+    ),
+    costUsd: totalCostUsd,
   };
 }
 

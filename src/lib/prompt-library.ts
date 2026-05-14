@@ -44,6 +44,52 @@ export const DEFAULT_TAGGING_PROMPT_TEMPLATE = [
   "Return a concise keep/pending/archive suggestion based on how usable this one file is in petition drafting.",
 ].join(" ");
 
+export const DEFAULT_TRIAGE_PROMPT_TEMPLATE = [
+  "You are answering a workspace-scoped question about indexed evidence.",
+  "The candidate is {{candidateName}}.",
+  "Available documents (top semantic matches): {{retrievedDocsBlock}}.",
+  "Answer in plain English. Cite every factual claim with [doc:<id>].",
+  "If the available documents do not support an answer, say so. Do not speculate.",
+  "Do not give legal advice. Do not predict adjudication outcomes.",
+].join(" ");
+
+export const DEFAULT_STRATEGY_PROMPT_TEMPLATE = [
+  "You are recommending a petition strategy for {{candidateName}}'s EB1A workspace.",
+  "Use the criterion catalog: {{criteriaCatalog}}.",
+  "Workspace coverage state: {{coverageBlock}}.",
+  "Kept documents and their tags: {{keptDocsBlock}}.",
+  "Pending (not yet human-reviewed) documents: {{pendingDocsBlock}}.",
+  "Produce a StrategyMemo JSON object matching the schema {{strategySchema}}.",
+  "Recommend at most 5 criteria total across primary and supporting.",
+  "For each primary recommendation, identify 2-3 anchor docs that carry the argument.",
+  "Flag any gap where evidence is thin, missing, or non-independent.",
+  "Disclose in pendingDocsConsidered how many pending docs informed the recommendation.",
+  "Do not give legal advice. Do not predict outcomes.",
+].join(" ");
+
+export const DEFAULT_STRESS_TEST_PROMPT_TEMPLATE = [
+  "You are role-playing a USCIS adjudicator reviewing {{candidateName}}'s petition.",
+  "You are skeptical. Your job is to find the weakest claims and articulate the strongest challenge to each.",
+  "Strategy under review: {{strategyMemoBlock}} (or {{adHocScope}} if no memo).",
+  "Available evidence: {{retrievedDocsBlock}}.",
+  "Produce a StressTestReport matching schema {{stressTestSchema}}.",
+  "Each challenge must specify at least one at-risk document by id.",
+  "Be specific. 'The evidence is weak' is not a challenge; 'Exhibit 3A is internal-only and lacks third-party validation' is.",
+  "Do not predict actual case outcomes.",
+].join(" ");
+
+export const DEFAULT_DRAFT_PROMPT_TEMPLATE = [
+  "You are drafting petition prose for {{candidateName}}.",
+  "Section: {{sectionKey}}. Target criterion (if any): {{criterionCode}}.",
+  "Strategy memo: {{strategyMemoBlock}}.",
+  "Available evidence for this section: {{evidenceBlock}}.",
+  "Every paragraph must reference at least one exhibit.",
+  "Do not introduce facts not present in the evidence block.",
+  "Do not paraphrase source quotes beyond 15 words; cite, don't reproduce.",
+  "Produce a BriefDraft JSON object matching schema {{briefDraftSchema}}.",
+  "Write in the voice of an immigration attorney: declarative, evidence-led, sparing on adjectives.",
+].join(" ");
+
 export function fillPromptTemplate(
   template: string,
   replacements: Record<string, string>,

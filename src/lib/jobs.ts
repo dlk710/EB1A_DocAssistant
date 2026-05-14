@@ -134,3 +134,9 @@ export function clearJobCancellationRequest(jobId: string) {
     status: job.status === "canceling" ? "processing" : job.status,
   }));
 }
+
+export function removeJob(jobId: string) {
+  const state = readJobsState();
+  state.jobs = state.jobs.filter((job) => job.id !== jobId);
+  writeJobsState(state);
+}

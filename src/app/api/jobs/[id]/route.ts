@@ -2,6 +2,7 @@ import { buildLibrarySnapshot } from "@/lib/library";
 import { getJob, listJobs, requestJobCancellation } from "@/lib/jobs";
 import { sanitizeDocument } from "@/lib/library";
 import { getJobDocuments } from "@/lib/qdrant";
+import { deleteWorkspaceData } from "@/lib/workspace-cleanup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,4 +79,47 @@ export async function PATCH(
   requestJobCancellation(params.id);
 
   return Response.json(await buildLibrarySnapshot({ jobId: params.id }));
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const params = await context.params;
+  const job = getJob(params.id);
+
+  if (!job) {
+    return Response.json(
+      {
+        error: "Job not found.",
+      },
+      { status: 404 },
+    );
+  }
+
+  const snapshot = await buildLibrarySnapshot({ jobId: params.id });
+  const hasAbortableWork =
+    snapshot.activeJob?.status === "queued" ||
+    snapshot.activeJob?.status === "processing" ||
+    snapshot.activeJob?.status === "canceling" ||
+    snapshot.eventBundles?.status === "queued" ||
+    snapshot.eventBundles?.status === "processing" ||
+    snapshot.eb1aClassification?.status === "queued" ||
+    snapshot.eb1aClassification?.status === "processing" ||
+    snapshot.criteriaTagging?.status === "queued" ||
+    snapshot.criteriaTagging?.status === "processing";
+
+  if (hasAbortableWork) {
+    return Response.json(
+      {
+        error:
+          "This workspace is still being processed. Cancel the active pipeline before deleting it.",
+      },
+      { status: 400 },
+    );
+  }
+
+  await deleteWorkspaceData(params.id);
+
+  return Response.json(await buildLibrarySnapshot());
 }

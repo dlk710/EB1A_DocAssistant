@@ -448,6 +448,18 @@ export async function clearQdrantCollection(dimensions: number) {
   await ensureQdrantCollection(dimensions);
 }
 
+export async function deleteJobDocuments(jobId: string) {
+  await qdrantFetch<{ operation_id: number; status: string }>(
+    `/collections/${QDRANT_COLLECTION}/points/delete?wait=true`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: buildJobFilter(jobId),
+      }),
+    },
+  );
+}
+
 export async function getOverview(jobId?: string | null): Promise<LibraryOverview> {
   const documents = await listDocuments(1000, jobId);
   const totalOpenAiCostUsd = roundUsd(

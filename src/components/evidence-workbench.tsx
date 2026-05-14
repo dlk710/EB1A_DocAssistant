@@ -31,7 +31,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
@@ -311,6 +310,34 @@ function formatDateTime(value: string | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatElapsedTime(startValue: string | null, endValue?: string | null) {
+  if (!startValue) {
+    return "Not started";
+  }
+
+  const start = new Date(startValue).getTime();
+  const end = endValue ? new Date(endValue).getTime() : Date.now();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return "Not started";
+  }
+
+  const totalSeconds = Math.max(0, Math.floor((end - start) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
 }
 
 function getJobLastRunAt(job: JobRecord) {
@@ -1784,6 +1811,7 @@ export function EvidenceWorkbench({
   );
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isCancelingProcess, setIsCancelingProcess] = useState(false);
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [activeDropTarget, setActiveDropTarget] = useState<{
     kind: "bucket" | "bundle";
@@ -1908,9 +1936,26 @@ export function EvidenceWorkbench({
   const workspaceCandidate =
     settingsDraft.candidateName.trim() || library.settings.candidateName.trim();
   const candidateDisplayName = workspaceCandidate || "Candidate not set";
+  const candidateNameInput = settingsDraft.candidateName.trim();
   const activeWorkspaceRunAt = activeJob ? formatDateTime(getJobLastRunAt(activeJob)) : "Not yet";
   const reviewWorkspaceHref = activeJobId ? `/review/${activeJobId}` : null;
   const activeWorkspaceDocuments = library.overview.totalDocuments;
+  const indexProgressDocuments = useMemo(
+    () =>
+      [...library.documents].sort((left, right) => {
+        const activityComparison = right.updatedAt.localeCompare(left.updatedAt);
+
+        if (activityComparison !== 0) {
+          return activityComparison;
+        }
+
+        return left.fileName.localeCompare(right.fileName);
+      }),
+    [library.documents],
+  );
+  const indexingElapsedLabel = activeJob
+    ? formatElapsedTime(activeJob.startedAt, activeJob.completedAt)
+    : "Not started";
   const workspaceTotalAiCost =
     library.overview.totalOpenAiCostUsd +
     (library.eventBundles?.totalCostUsd ?? 0) +
@@ -2033,8 +2078,25 @@ export function EvidenceWorkbench({
         library.criteriaTagging?.status === "queued" ||
         library.criteriaTagging?.status === "processing"),
   );
+  const canStartIndexing = Boolean(
+    pendingFiles.length &&
+      pendingStats &&
+      candidateNameInput &&
+      !isUploading &&
+      !hasAbortableProcessing &&
+      !isCancelingProcess,
+  );
   const canCancelSelection =
     pendingFiles.length > 0 && !isUploading && !hasAbortableProcessing && !isCancelingProcess;
+  const canDeleteSelectedWorkspace = Boolean(
+    activeJobId &&
+      !isDeletingWorkspace &&
+      !hasAbortableProcessing &&
+      activeJob &&
+      activeJob.status !== "queued" &&
+      activeJob.status !== "processing" &&
+      activeJob.status !== "canceling",
+  );
   const hasExpandedBucketSelection = Object.values(expandedBucketIds).some(Boolean);
   const hasExpandedBundleSelection = Object.values(expandedBundleIds).some(Boolean);
   const panelGridStyle = useMemo(() => {
@@ -2290,6 +2352,89 @@ export function EvidenceWorkbench({
       );
     } finally {
       setIsCancelingProcess(false);
+    }
+  };
+
+  const handleDeleteSelectedWorkspace = async () => {
+    if (!activeJobId || !activeJob) {
+      setBannerMessage("Select a folder workspace before deleting backend data.");
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      `Delete the workspace "${activeJob.folderLabel}" for ${activeJob.candidateName || "this candidate"}?\n\nThis removes uploaded files, vector data, previews, exports, and saved review state for this folder workspace.`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingWorkspace(true);
+    setBannerMessage(null);
+
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(activeJobId)}`, {
+        method: "DELETE",
+      });
+      const snapshot = (await response.json()) as LibrarySnapshot | { error?: string };
+
+      if (!response.ok || !("documents" in snapshot)) {
+        throw new Error(
+          ("error" in snapshot && snapshot.error) || "Unable to delete the selected workspace.",
+        );
+      }
+
+      const deletedFolderLabel = activeJob.folderLabel;
+      const nextJobId = snapshot.activeJobId;
+
+      startTransition(() => {
+        setLibrary(snapshot);
+        setActiveJobId(nextJobId);
+        setSemanticResults(null);
+        setSemanticQuery("");
+        setQuickFilter("");
+        setSelectedDocumentId(snapshot.documents[0]?.id ?? null);
+        setIsPreviewOpen(false);
+        setDragState(null);
+        setActiveDropTarget(null);
+        setExpandedBucketIds({});
+        setExpandedBundleIds({});
+        setExpandedBundleSummaryIds({});
+        setExpandedSubBundleIds({});
+        setSelectedEvidenceIds([]);
+        setSelectionAnchorId(null);
+        setCriterionFilter(null);
+        setStatusFilter("all");
+        setContextMenu({
+          open: false,
+          x: 0,
+          y: 0,
+          mode: null,
+          documentIds: [],
+          bundleId: null,
+          criterionCode: null,
+          submenu: null,
+        });
+        if (!settingsOpen) {
+          setSettingsDraft(buildSettingsDraft(snapshot.settings));
+        }
+      });
+
+      if (pageMode === "review") {
+        if (nextJobId) {
+          router.push(`/review/${nextJobId}`);
+        } else {
+          router.push("/");
+        }
+      }
+
+      setBannerMessage(`Deleted backend data for ${deletedFolderLabel}.`);
+    } catch (error) {
+      setBannerMessage(
+        error instanceof Error ? error.message : "Unable to delete the selected workspace.",
+      );
+    } finally {
+      setIsDeletingWorkspace(false);
     }
   };
 
@@ -3276,6 +3421,209 @@ export function EvidenceWorkbench({
             </aside>
 
             <main className="space-y-4">
+              <section className="setu-panel rounded-[18px] p-4">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        {pageMode === "review" ? "Detailed review" : "Workspace intake"}
+                      </p>
+                      <h1 className="mt-1 text-[22px] font-semibold leading-tight text-[var(--foreground)]">
+                        {pageMode === "review"
+                          ? activeJob?.folderLabel || "Select a workspace"
+                          : "Upload a folder and let the studio prepare review-ready evidence"}
+                      </h1>
+                      <p className="mt-2 max-w-3xl text-[12px] leading-6 text-[var(--muted)]">
+                        The current product still runs in the same multi-pass order: document
+                        parsing, event bundling, bundle-level EB1A classification, then
+                        document-level review tagging for keep/archive and criterion hints.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {pageMode === "dashboard" ? (
+                        <>
+                          <input
+                            ref={folderInputRef}
+                            type="file"
+                            multiple
+                            directory=""
+                            webkitdirectory=""
+                            onChange={handleFolderPicked}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => folderInputRef.current?.click()}
+                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium"
+                          >
+                            Choose folder
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleUpload()}
+                            disabled={!canStartIndexing}
+                            className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
+                          >
+                            {isUploading ? "Indexing..." : "Index folder"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelProcess()}
+                            disabled={!canCancelSelection && !hasAbortableProcessing}
+                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium disabled:opacity-40"
+                          >
+                            {activeJob?.status === "canceling" ? "Canceling..." : "Cancel"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSelectedWorkspace()}
+                            disabled={!canDeleteSelectedWorkspace}
+                            className="inline-flex items-center gap-2 rounded-[6px] border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {isDeletingWorkspace ? (
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            {isDeletingWorkspace ? "Deleting..." : "Delete workspace"}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {pageMode === "dashboard" ? (
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+                      <label className="block rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-3">
+                        <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                          1. Candidate full name
+                        </span>
+                        <input
+                          value={settingsDraft.candidateName}
+                          onChange={(event) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              candidateName: event.target.value,
+                            }))
+                          }
+                          placeholder="Enter the beneficiary full name"
+                          className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2.5 text-[12px] outline-none transition focus:border-[var(--brand)]"
+                        />
+                        <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
+                          This is required before indexing starts and becomes the center point for
+                          summaries, bundling, and review.
+                        </p>
+                      </label>
+
+                      <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                          2. Evidence folder
+                        </p>
+                        <p className="mt-2 text-[12px] font-semibold text-[var(--foreground)]">
+                          {pendingStats?.rootLabel ?? "No folder selected"}
+                        </p>
+                        <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
+                          Choose a folder, then index only when both inputs are present.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {pageMode === "dashboard" ? (
+                    <div className="rounded-[16px] border border-dashed border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-[12px] font-semibold text-[var(--foreground)]">
+                            Choose a folder of evidence files
+                          </p>
+                          <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                            Each upload becomes its own isolated workspace. Existing folders stay
+                            separate in Qdrant and in every review view.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
+                              Files
+                            </p>
+                            <p className="mt-1 font-semibold text-[var(--foreground)]">
+                              {pendingStats?.fileCount ?? 0}
+                            </p>
+                          </div>
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
+                              Size
+                            </p>
+                            <p className="mt-1 font-semibold text-[var(--foreground)]">
+                              {pendingStats ? formatBytes(pendingStats.totalBytes) : "0 B"}
+                            </p>
+                          </div>
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
+                              Root
+                            </p>
+                            <p className="mt-1 truncate font-semibold text-[var(--foreground)]">
+                              {pendingStats?.rootLabel ?? "Not selected"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {pipelineCards.map((step, index) => (
+                      <div key={step.key} className="flex items-center gap-2">
+                        <div
+                          className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                            step.status === "done" || step.status === "active"
+                              ? "bg-[var(--brand-charcoal)] text-white"
+                              : step.status === "problem"
+                                ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
+                                : "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]"
+                          }`}
+                        >
+                          {index + 1}. {step.label}
+                        </div>
+                        {index < pipelineCards.length - 1 ? (
+                          <span className={`h-[2px] w-4 ${step.status === "done" ? "bg-[var(--brand)]" : "bg-[var(--border-secondary)]"}`} />
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-2 lg:grid-cols-5">
+                    {pipelineCards.map((step) => (
+                      <div
+                        key={`detail-${step.key}`}
+                        className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                            {step.label}
+                          </p>
+                          <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
+                            step.status === "active"
+                              ? "processing"
+                              : step.status === "done"
+                                ? "completed"
+                                : step.status === "problem"
+                                  ? "failed"
+                                  : "pending",
+                          )}`}>
+                            {step.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[10px] leading-5 text-[var(--muted)]">
+                          {step.detail}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
               {pageMode === "dashboard" ? (
                 <section className="grid gap-4 xl:items-start xl:grid-cols-[minmax(0,1.15fr)_340px]">
                   <div className="setu-paper-panel rounded-[18px] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
@@ -3390,208 +3738,95 @@ export function EvidenceWorkbench({
                 </section>
               ) : null}
 
-              <section className="setu-panel rounded-[18px] p-4">
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                        {pageMode === "review" ? "Detailed review" : "Workspace intake"}
-                      </p>
-                      <h1 className="mt-1 text-[22px] font-semibold leading-tight text-[var(--foreground)]">
-                        {pageMode === "review"
-                          ? activeJob?.folderLabel || "Select a workspace"
-                          : "Upload a folder and let the studio prepare review-ready evidence"}
-                      </h1>
-                      <p className="mt-2 max-w-3xl text-[12px] leading-6 text-[var(--muted)]">
-                        The current product still runs in the same multi-pass order: document
-                        parsing, event bundling, bundle-level EB1A classification, then
-                        document-level review tagging for keep/archive and criterion hints.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {pageMode === "dashboard" ? (
-                        <>
-                          <input
-                            ref={folderInputRef}
-                            type="file"
-                            multiple
-                            directory=""
-                            webkitdirectory=""
-                            onChange={handleFolderPicked}
-                            className="hidden"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => folderInputRef.current?.click()}
-                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium"
-                          >
-                            Choose folder
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleUpload()}
-                            disabled={
-                              !pendingFiles.length ||
-                              isUploading ||
-                              hasAbortableProcessing ||
-                              isCancelingProcess
-                            }
-                            className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
-                          >
-                            {isUploading ? "Indexing..." : "Index folder"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleCancelProcess()}
-                            disabled={!canCancelSelection && !hasAbortableProcessing}
-                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium disabled:opacity-40"
-                          >
-                            {activeJob?.status === "canceling" ? "Canceling..." : "Cancel"}
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {pageMode === "dashboard" ? (
-                    <div className="rounded-[16px] border border-dashed border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="text-[12px] font-semibold text-[var(--foreground)]">
-                            Choose a folder of evidence files
-                          </p>
-                          <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                            Each upload becomes its own isolated workspace. Existing folders stay
-                            separate in Qdrant and in every review view.
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-[11px]">
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
-                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
-                              Files
-                            </p>
-                            <p className="mt-1 font-semibold text-[var(--foreground)]">
-                              {pendingStats?.fileCount ?? 0}
-                            </p>
-                          </div>
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
-                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
-                              Size
-                            </p>
-                            <p className="mt-1 font-semibold text-[var(--foreground)]">
-                              {pendingStats ? formatBytes(pendingStats.totalBytes) : "0 B"}
-                            </p>
-                          </div>
-                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
-                            <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
-                              Root
-                            </p>
-                            <p className="mt-1 truncate font-semibold text-[var(--foreground)]">
-                              {pendingStats?.rootLabel ?? "Not selected"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {pipelineCards.map((step, index) => (
-                      <div key={step.key} className="flex items-center gap-2">
-                        <div
-                          className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                            step.status === "done" || step.status === "active"
-                              ? "bg-[var(--brand-charcoal)] text-white"
-                              : step.status === "problem"
-                                ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
-                                : "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]"
-                          }`}
-                        >
-                          {index + 1}. {step.label}
-                        </div>
-                        {index < pipelineCards.length - 1 ? (
-                          <span className={`h-[2px] w-4 ${step.status === "done" ? "bg-[var(--brand)]" : "bg-[var(--border-secondary)]"}`} />
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid gap-2 lg:grid-cols-5">
-                    {pipelineCards.map((step) => (
-                      <div
-                        key={`detail-${step.key}`}
-                        className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                            {step.label}
-                          </p>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
-                            step.status === "active"
-                              ? "processing"
-                              : step.status === "done"
-                                ? "completed"
-                                : step.status === "problem"
-                                  ? "failed"
-                                  : "pending",
-                          )}`}>
-                            {step.status}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[10px] leading-5 text-[var(--muted)]">
-                          {step.detail}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
               {activeJob && !showReviewSurface ? (
                 <section className="setu-panel rounded-[18px] p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                    Indexing progress
-                  </p>
+                  <div className="flex flex-col gap-3 border-b border-[var(--border-secondary)] pb-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        Indexing progress
+                      </p>
+                      <p className="mt-1 text-[12px] leading-5 text-[var(--muted)]">
+                        Latest updated evidence appears first. Scroll this pane to review completed
+                        files while indexing continues.
+                      </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Processed
+                        </p>
+                        <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+                          {activeJob.processedFiles}/{activeJob.totalFiles}
+                        </p>
+                      </div>
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Initial indexing elapsed
+                        </p>
+                        <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+                          {indexingElapsedLabel}
+                        </p>
+                      </div>
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Progress
+                        </p>
+                        <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+                          {Math.round(activeJobProgress)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                   <div className="mt-3 overflow-hidden rounded-[14px] border border-[var(--border-secondary)]">
-                    <table className="min-w-full text-left text-[12px]">
-                      <thead className="bg-[var(--paper-tertiary)] text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold">Evidence</th>
-                          <th className="px-3 py-2 font-semibold">Status</th>
-                          <th className="px-3 py-2 font-semibold">Summary</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {library.documents.slice(0, 12).map((document) => (
-                          <tr key={document.id} className="border-t border-[var(--border-secondary)]">
-                            <td className="px-3 py-2">
-                              <p className="font-semibold text-[var(--foreground)]">
-                                {document.summary?.title || document.fileName}
-                              </p>
-                              <p className="text-[10px] text-[var(--muted)]">
-                                {document.relativePath}
-                              </p>
-                            </td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${documentStatusTone(
-                                  document.processingStatus,
-                                )}`}
-                              >
-                                {document.processingStatus}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-[11px] text-[var(--muted)]">
-                              {truncateText(
-                                document.summary?.shortSummary || "Waiting for AI summary.",
-                                120,
-                              )}
-                            </td>
+                    <div className="max-h-[25rem] overflow-auto">
+                      <table className="min-w-full text-left text-[12px]">
+                        <thead className="sticky top-0 z-10 bg-[var(--paper-tertiary)] text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                          <tr>
+                            <th className="px-3 py-2 font-semibold">Evidence</th>
+                            <th className="px-3 py-2 font-semibold">Status</th>
+                            <th className="px-3 py-2 font-semibold">Updated</th>
+                            <th className="px-3 py-2 font-semibold">Summary</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {indexProgressDocuments.map((document) => (
+                            <tr key={document.id} className="border-t border-[var(--border-secondary)]">
+                              <td className="px-3 py-2 align-top">
+                                <p className="font-semibold text-[var(--foreground)]">
+                                  {document.summary?.title || document.fileName}
+                                </p>
+                                <p className="text-[10px] text-[var(--muted)]">
+                                  {document.relativePath}
+                                </p>
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${documentStatusTone(
+                                    document.processingStatus,
+                                  )}`}
+                                >
+                                  {document.processingStatus}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 align-top text-[11px] text-[var(--muted)]">
+                                {formatDateTime(document.updatedAt)}
+                              </td>
+                              <td className="px-3 py-2 align-top text-[11px] text-[var(--muted)]">
+                                {truncateText(
+                                  document.summary?.shortSummary ||
+                                    (document.processingStatus === "failed"
+                                      ? document.error || "This file failed during indexing."
+                                      : document.processingStatus === "completed"
+                                        ? "Summary completed."
+                                        : "Waiting for AI summary."),
+                                  150,
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </section>
               ) : null}
@@ -4320,42 +4555,6 @@ export function EvidenceWorkbench({
                 <>
                   <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                      Pipeline
-                    </p>
-                    <p className="mt-2 text-[13px] font-medium text-[var(--foreground)]">
-                      {workspaceActivity.title}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                      {workspaceActivity.detail}
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {reviewPipeline.stages.map((stage, index) => (
-                        <div
-                          key={`rail-stage-${stage.id}`}
-                          className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[11px] font-medium text-[var(--foreground)]">
-                              {index + 1}. {stage.label}
-                            </p>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
-                                stage.status,
-                              )}`}
-                            >
-                              {stageStatusLabel(stage.status)}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[10px] leading-5 text-[var(--muted)]">
-                            {stage.detail}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                       Workspace cost
                     </p>
                     <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]">
@@ -5017,21 +5216,17 @@ export function EvidenceWorkbench({
                         </p>
                       </div>
 
-                      <label className="block rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
-                        <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
+                      <div className="rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <p className="text-[11px] font-semibold text-[var(--foreground)]">
                           Candidate name
-                        </span>
-                        <input
-                          value={settingsDraft.candidateName}
-                          onChange={(event) =>
-                            setSettingsDraft((current) => ({
-                              ...current,
-                              candidateName: event.target.value,
-                            }))
-                          }
-                          className="w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 text-[12px] outline-none"
-                        />
-                      </label>
+                        </p>
+                        <p className="mt-2 rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 text-[12px] text-[var(--foreground)]">
+                          {candidateDisplayName}
+                        </p>
+                        <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                          Managed from `Workspace intake` on the landing page.
+                        </p>
+                      </div>
 
                       <label className="block rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
                         <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
@@ -5321,45 +5516,18 @@ export function EvidenceWorkbench({
               </div>
             )}
 
-            <label className="mt-3 block">
-              <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
+            <div className="mt-3 rounded-[18px] border border-white/80 bg-white/82 px-3 py-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                 Candidate name
-              </span>
-              <input
-                value={settingsDraft.candidateName}
-                onChange={(event) =>
-                  setSettingsDraft((current) => ({
-                    ...current,
-                    candidateName: event.target.value,
-                  }))
-                }
-                placeholder="Enter the beneficiary name"
-                className="w-full rounded-2xl border border-white/80 bg-white/88 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand)]"
-              />
-            </label>
-
-            <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-              Every new summary, date choice, tag set, and embedding is framed around this
-              candidate.
-            </p>
-
-            <button
-              type="button"
-              disabled={isSavingSettings}
-              onClick={() =>
-                void persistSettings({
-                  successMessage: "Candidate profile saved locally.",
-                })
-              }
-              className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--foreground)] px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-[#2a2940] disabled:opacity-60"
-            >
-              {isSavingSettings ? (
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ShieldCheck className="h-3.5 w-3.5" />
-              )}
-              Save candidate
-            </button>
+              </p>
+              <p className="mt-2 text-sm font-semibold text-[var(--foreground)]">
+                {candidateDisplayName}
+              </p>
+              <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                Managed from the `Workspace intake` section so indexing always starts with the
+                candidate name and folder together.
+              </p>
+            </div>
 
             {pageMode === "dashboard" ? (
               <>
@@ -5462,6 +5630,27 @@ export function EvidenceWorkbench({
                     </select>
                   </label>
 
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteSelectedWorkspace()}
+                      disabled={!canDeleteSelectedWorkspace}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {isDeletingWorkspace ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      {isDeletingWorkspace ? "Deleting..." : "Delete selected workspace"}
+                    </button>
+                    {!canDeleteSelectedWorkspace && activeJob ? (
+                      <p className="text-[10px] leading-5 text-[var(--muted)]">
+                        Active processing must finish or be canceled before cleanup.
+                      </p>
+                    ) : null}
+                  </div>
+
                   {pageMode === "dashboard" ? (
                     <div className="rounded-[18px] border border-white/80 bg-white/82 px-3 py-3">
                       <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
@@ -5472,13 +5661,15 @@ export function EvidenceWorkbench({
                         evidence review for this folder only.
                       </p>
                       {reviewWorkspaceHref ? (
-                        <Link
-                          href={reviewWorkspaceHref}
-                          className="mt-3 inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#5641b0,#5f87f0)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-95"
-                        >
-                          <Search className="h-3.5 w-3.5" />
-                          Open search & review
-                        </Link>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link
+                            href={reviewWorkspaceHref}
+                            className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#5641b0,#5f87f0)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-95"
+                          >
+                            <Search className="h-3.5 w-3.5" />
+                            Open search & review
+                          </Link>
+                        </div>
                       ) : (
                         <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-dashed border-white/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                           Select a workspace first
@@ -5531,22 +5722,76 @@ export function EvidenceWorkbench({
                 className="hidden"
               />
 
-              <button
-                type="button"
-                onClick={() => folderInputRef.current?.click()}
-                className="mt-4 flex w-full flex-col items-center justify-center rounded-[22px] border border-dashed border-[var(--brand)]/25 bg-white/80 px-4 py-7 text-center transition hover:border-[var(--brand)]/50 hover:bg-white"
-              >
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-[var(--brand-soft)] text-[var(--brand-deep)]">
-                  <FolderOpen className="h-5 w-5" />
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                <div className="rounded-[22px] border border-white/80 bg-white/84 px-4 py-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--brand-soft)] text-[var(--brand-deep)]">
+                      <UserRound className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        1. Candidate full name
+                      </p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                        Required before indexing starts.
+                      </p>
+                    </div>
+                  </div>
+                  <input
+                    value={settingsDraft.candidateName}
+                    onChange={(event) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        candidateName: event.target.value,
+                      }))
+                    }
+                    placeholder="Enter the beneficiary full name"
+                    className="mt-3 w-full rounded-2xl border border-white/80 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[var(--brand)]"
+                  />
+                  <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                    Every summary, date choice, bundle, and review hint will be centered on this
+                    candidate.
+                  </p>
                 </div>
-                <p className="text-sm font-semibold text-[var(--foreground)]">
-                  Choose a folder of evidence files
-                </p>
-                <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                  Nested files are indexed locally into Qdrant with candidate-aware summaries,
-                  tags, dates, metadata, and cost tracking.
-                </p>
-              </button>
+
+                <div className="rounded-[22px] border border-white/80 bg-white/84 px-4 py-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--brand-soft)] text-[var(--brand-deep)]">
+                      <FolderOpen className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        2. Evidence folder
+                      </p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                        Select the source folder to create a new isolated workspace.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      type="button"
+                      onClick={() => folderInputRef.current?.click()}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)] transition hover:border-[var(--brand)]/40"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Choose folder
+                    </button>
+                    <div className="min-w-0 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2.5 text-right">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                        Selected root
+                      </p>
+                      <p className="mt-1 truncate text-[12px] font-semibold text-[var(--foreground)]">
+                        {pendingStats?.rootLabel ?? "No folder selected"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
+                    Nested files are indexed locally into Qdrant with candidate-aware summaries,
+                    tags, dates, metadata, and cost tracking.
+                  </p>
+                </div>
+              </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-[18px] border border-white/80 bg-white/82 px-3 py-2.5">
@@ -5595,12 +5840,7 @@ export function EvidenceWorkbench({
                   <button
                     type="button"
                     onClick={() => void handleUpload()}
-                    disabled={
-                      !pendingFiles.length ||
-                      isUploading ||
-                      hasAbortableProcessing ||
-                      isCancelingProcess
-                    }
+                    disabled={!canStartIndexing}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#5641b0,#5f87f0)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-55"
                   >
                     {isUploading ? (
@@ -5629,6 +5869,16 @@ export function EvidenceWorkbench({
                   </button>
                 </div>
               </div>
+
+              {!candidateNameInput || !pendingStats ? (
+                <div className="mt-3 rounded-[16px] border border-dashed border-[var(--border-primary)] bg-white/72 px-3 py-2.5 text-[11px] leading-5 text-[var(--muted)]">
+                  {candidateNameInput
+                    ? "Choose a folder to unlock indexing."
+                    : pendingStats
+                      ? "Enter the candidate full name to unlock indexing."
+                      : "Enter the candidate full name and choose a folder to unlock indexing."}
+                </div>
+              ) : null}
 
               <div className="mt-4 rounded-[18px] border border-white/80 bg-[#f8fbff] px-3 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">

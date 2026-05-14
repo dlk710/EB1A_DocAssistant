@@ -534,22 +534,45 @@ export function normalizeStrategyMemo(
 ) {
   const allowedDocIds = new Set(documents.map((document) => document.id));
   const filterDocIds = (docIds: string[]) => docIds.filter((docId) => allowedDocIds.has(docId));
+  const dedupeRecommendations = (
+    entries: StrategyMemo["recommendedMix"]["primary"],
+    excludeCodes = new Set<string>(),
+  ) => {
+    const seen = new Set<string>(excludeCodes);
+
+    return entries.filter((entry) => {
+      if (!entry.criterionCode || seen.has(entry.criterionCode)) {
+        return false;
+      }
+
+      seen.add(entry.criterionCode);
+      return true;
+    });
+  };
+
+  const primary = dedupeRecommendations(
+    memo.recommendedMix.primary
+      .map((entry) => ({
+        ...entry,
+        anchorDocIds: filterDocIds(entry.anchorDocIds),
+      }))
+      .filter((entry) => entry.anchorDocIds.length > 0),
+  );
+  const supporting = dedupeRecommendations(
+    memo.recommendedMix.supporting
+      .map((entry) => ({
+        ...entry,
+        anchorDocIds: filterDocIds(entry.anchorDocIds),
+      }))
+      .filter((entry) => entry.anchorDocIds.length > 0),
+    new Set(primary.map((entry) => entry.criterionCode)),
+  );
 
   return {
     ...memo,
     recommendedMix: {
-      primary: memo.recommendedMix.primary
-        .map((entry) => ({
-          ...entry,
-          anchorDocIds: filterDocIds(entry.anchorDocIds),
-        }))
-        .filter((entry) => entry.anchorDocIds.length > 0),
-      supporting: memo.recommendedMix.supporting
-        .map((entry) => ({
-          ...entry,
-          anchorDocIds: filterDocIds(entry.anchorDocIds),
-        }))
-        .filter((entry) => entry.anchorDocIds.length > 0),
+      primary,
+      supporting,
       decline: memo.recommendedMix.decline,
     },
     leadArgument: {

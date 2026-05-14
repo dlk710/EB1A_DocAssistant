@@ -80,6 +80,308 @@ function buildUsageCost(
   );
 }
 
+function clampString(value: unknown, maxLength: number, fallback = "") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length <= maxLength ? trimmed : trimmed.slice(0, maxLength).trim();
+}
+
+function clampStringArray(value: unknown, maxItems: number, maxLength: number) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => clampString(entry, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function canonicalizeCriterionCode(value: unknown, fallback = "") {
+  const normalized = clampString(value, 80).toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  const numericMatch = normalized.match(/\b(0[1-9]|1[01])\b/);
+
+  if (numericMatch?.[1]) {
+    return numericMatch[1];
+  }
+
+  for (const criterion of EB1A_CRITERIA_DEFINITIONS) {
+    const aliases = [
+      criterion.code,
+      criterion.legalCode.toLowerCase(),
+      criterion.legalCode.replace(/[()]/g, "").toLowerCase(),
+      criterion.name.toLowerCase(),
+      criterion.name.toLowerCase().replace(/\s+or\s+/g, " "),
+      criterion.name.toLowerCase().replace(/\s*&\s*/g, " and "),
+    ];
+
+    if (criterion.code === "08") {
+      aliases.push("critical role", "leading role");
+    }
+
+    if (aliases.some((alias) => alias && normalized.includes(alias))) {
+      return criterion.code;
+    }
+  }
+
+  return fallback;
+}
+
+function parseOutputJson(outputText: string) {
+  try {
+    return JSON.parse(outputText) as Record<string, unknown>;
+  } catch {
+    throw new Error("Setu received a malformed model response and could not parse it.");
+  }
+}
+
+function sanitizeTriageCandidate(raw: unknown) {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  return {
+    schemaVersion: "triage-answer/1.0" as const,
+    answer: Array.isArray(value.answer)
+      ? value.answer
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+          .map((entry) => ({
+            text: clampString(entry.text, 600, "Setu could not safely summarize this answer block."),
+            docIds: clampStringArray(entry.docIds, 6, 80),
+          }))
+      : [],
+    insufficiencyNote:
+      value.insufficiencyNote === null
+        ? null
+        : clampString(value.insufficiencyNote, 500) || null,
+  };
+}
+
+function sanitizeStrategyCandidate(raw: unknown, jobId: string) {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const normalizeRecommendation = (entry: unknown) => {
+    const candidate =
+      entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+
+    return {
+      criterionCode: canonicalizeCriterionCode(candidate.criterionCode),
+      rationale: clampString(candidate.rationale, 700, "Rationale unavailable."),
+      anchorDocIds: clampStringArray(candidate.anchorDocIds, 4, 80),
+    };
+  };
+
+  const normalizeGap = (entry: unknown) => {
+    const candidate =
+      entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const type = clampString(candidate.type, 40);
+
+    return {
+      criterionCode: canonicalizeCriterionCode(candidate.criterionCode),
+      type:
+        type === "insufficient-quantity" ||
+        type === "lack-of-independence" ||
+        type === "lack-of-significance" ||
+        type === "missing-context"
+          ? type
+          : "missing-context",
+      description: clampString(candidate.description, 600, "Gap description unavailable."),
+      suggestedAdditions: clampStringArray(candidate.suggestedAdditions, 6, 260),
+    };
+  };
+
+  const normalizeRisk = (entry: unknown) => {
+    const candidate =
+      entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const severity = clampString(candidate.severity, 20);
+
+    return {
+      type: clampString(candidate.type, 120, "general-risk"),
+      description: clampString(candidate.description, 600, "Risk description unavailable."),
+      severity:
+        severity === "low" || severity === "medium" || severity === "high"
+          ? severity
+          : "medium",
+      affectedDocIds: clampStringArray(candidate.affectedDocIds, 6, 80),
+    };
+  };
+
+  const normalizeCitation = (entry: unknown) => {
+    const candidate =
+      entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+
+    return {
+      docId: clampString(candidate.docId, 80),
+      claim: clampString(candidate.claim, 500, "Claim citation unavailable."),
+    };
+  };
+
+  return {
+    schemaVersion: "strategy-memo/1.0" as const,
+    jobId,
+    createdAt: new Date().toISOString(),
+    petitionType: "EB-1A" as const,
+    pendingDocsConsidered:
+      typeof value.pendingDocsConsidered === "number"
+        ? Math.max(0, Math.round(value.pendingDocsConsidered))
+        : 0,
+    recommendedMix: {
+      primary: Array.isArray(value.recommendedMix && (value.recommendedMix as Record<string, unknown>).primary)
+        ? ((value.recommendedMix as Record<string, unknown>).primary as unknown[]).map(normalizeRecommendation)
+        : [],
+      supporting: Array.isArray(value.recommendedMix && (value.recommendedMix as Record<string, unknown>).supporting)
+        ? ((value.recommendedMix as Record<string, unknown>).supporting as unknown[]).map(normalizeRecommendation)
+        : [],
+      decline: Array.isArray(value.recommendedMix && (value.recommendedMix as Record<string, unknown>).decline)
+        ? ((value.recommendedMix as Record<string, unknown>).decline as unknown[])
+            .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+            .map((entry) => ({
+              criterionCode: canonicalizeCriterionCode(entry.criterionCode),
+              rationale: clampString(entry.rationale, 500, "Decline rationale unavailable."),
+            }))
+        : [],
+    },
+    leadArgument: {
+      criterionCode: canonicalizeCriterionCode(
+        value.leadArgument && typeof value.leadArgument === "object"
+          ? (value.leadArgument as Record<string, unknown>).criterionCode
+          : "",
+        "08",
+      ),
+      narrativeSpine: clampString(
+        value.leadArgument && typeof value.leadArgument === "object"
+          ? (value.leadArgument as Record<string, unknown>).narrativeSpine
+          : "",
+        1400,
+        "Narrative spine unavailable.",
+      ),
+      anchorDocIds: clampStringArray(
+        value.leadArgument && typeof value.leadArgument === "object"
+          ? (value.leadArgument as Record<string, unknown>).anchorDocIds
+          : [],
+        5,
+        80,
+      ),
+    },
+    gaps: Array.isArray(value.gaps) ? value.gaps.map(normalizeGap) : [],
+    risks: Array.isArray(value.risks) ? value.risks.map(normalizeRisk) : [],
+    citations: Array.isArray(value.citations) ? value.citations.map(normalizeCitation) : [],
+  };
+}
+
+function sanitizeStressTestCandidate(raw: unknown, jobId: string, strategyMemoVersion: string | null) {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  return {
+    schemaVersion: "stress-test/1.0" as const,
+    jobId,
+    createdAt: new Date().toISOString(),
+    scope:
+      value.scope === "full-petition"
+        ? "full-petition"
+        : {
+            criterionCode: clampString(
+              value.scope && typeof value.scope === "object"
+                ? (value.scope as Record<string, unknown>).criterionCode
+                : "",
+              8,
+              "08",
+            ),
+          },
+    strategyMemoVersion,
+    pendingDocsConsidered:
+      typeof value.pendingDocsConsidered === "number"
+        ? Math.max(0, Math.round(value.pendingDocsConsidered))
+        : 0,
+    challenges: Array.isArray(value.challenges)
+      ? value.challenges
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+          .map((entry) => {
+            const challengeType = clampString(entry.challengeType, 40);
+            const severity = clampString(entry.severity, 20);
+            const suggestedAction = clampString(entry.suggestedAction, 30);
+
+            return {
+              criterionCode: canonicalizeCriterionCode(entry.criterionCode, "08"),
+              challengeType:
+                challengeType === "insufficiency" ||
+                challengeType === "lack-of-independence" ||
+                challengeType === "lack-of-significance" ||
+                challengeType === "comparability" ||
+                challengeType === "sustained-acclaim"
+                  ? challengeType
+                  : "insufficiency",
+              uscisStance: clampString(entry.uscisStance, 900, "Challenge unavailable."),
+              atRiskDocIds: clampStringArray(entry.atRiskDocIds, 8, 80),
+              currentMitigation: clampString(
+                entry.currentMitigation,
+                700,
+                "Current mitigation unavailable.",
+              ),
+              suggestedAction:
+                suggestedAction === "add-evidence" ||
+                suggestedAction === "rewrite-brief" ||
+                suggestedAction === "reorganize" ||
+                suggestedAction === "accept-risk"
+                  ? suggestedAction
+                  : "add-evidence",
+              suggestedActionDetail: clampString(
+                entry.suggestedActionDetail,
+                700,
+                "Suggested action detail unavailable.",
+              ),
+              severity:
+                severity === "low" || severity === "medium" || severity === "high"
+                  ? severity
+                  : "medium",
+            };
+          })
+      : [],
+  };
+}
+
+function sanitizeBriefDraftCandidate(
+  raw: unknown,
+  jobId: string,
+  section: BriefDraft["section"],
+  targetCriterionCode: string | null,
+) {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  return {
+    schemaVersion: "brief-draft/1.0" as const,
+    jobId,
+    createdAt: new Date().toISOString(),
+    section,
+    targetCriterionCode,
+    title: clampString(value.title, 240, "Draft section"),
+    paragraphs: Array.isArray(value.paragraphs)
+      ? value.paragraphs
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+          .map((entry) => ({
+            text: clampString(entry.text, 1800, "Draft paragraph unavailable."),
+            exhibitRefs: clampStringArray(entry.exhibitRefs, 6, 80),
+            citations: Array.isArray(entry.citations)
+              ? entry.citations
+                  .filter((citation): citation is Record<string, unknown> => Boolean(citation) && typeof citation === "object")
+                  .map((citation) => ({
+                    docId: clampString(citation.docId, 80),
+                    supports: clampString(citation.supports, 320, "Support note unavailable."),
+                  }))
+              : [],
+          }))
+      : [],
+    wordCount:
+      typeof value.wordCount === "number" ? Math.max(1, Math.round(value.wordCount)) : 1,
+  };
+}
+
 function buildTriageMessage(answer: TriageAnswer, documents: ClientDocument[]) {
   const labelLookup = new Map(
     documents.map((document) => [document.id, document.summary?.title || document.fileName]),
@@ -278,7 +580,7 @@ async function generateTriageAnswer(input: {
     },
   });
 
-  const parsed = triageAnswerSchema.parse(JSON.parse(response.output_text));
+  const parsed = triageAnswerSchema.parse(sanitizeTriageCandidate(parseOutputJson(response.output_text)));
   const normalized = normalizeTriageAnswer(parsed, input.documents);
   const citations = buildChatCitations(
     normalized.answer.flatMap((block) => block.docIds),
@@ -332,13 +634,11 @@ async function generateStrategyMemo(input: {
     },
   });
 
-  const parsed = strategyMemoSchema.parse(JSON.parse(response.output_text));
+  const parsed = strategyMemoSchema.parse(
+    sanitizeStrategyCandidate(parseOutputJson(response.output_text), input.jobId),
+  );
   const normalized = normalizeStrategyMemo(
-    {
-      ...parsed,
-      jobId: input.jobId,
-      createdAt: new Date().toISOString(),
-    },
+    parsed,
     input.documents,
   );
 
@@ -398,14 +698,15 @@ async function generateStressTestReport(input: {
     },
   });
 
-  const parsed = stressTestReportSchema.parse(JSON.parse(response.output_text));
+  const parsed = stressTestReportSchema.parse(
+    sanitizeStressTestCandidate(
+      parseOutputJson(response.output_text),
+      input.jobId,
+      input.strategyMemo.createdAt,
+    ),
+  );
   const normalized = normalizeStressTestReport(
-    {
-      ...parsed,
-      jobId: input.jobId,
-      createdAt: new Date().toISOString(),
-      strategyMemoVersion: input.strategyMemo.createdAt,
-    },
+    parsed,
     input.documents,
   );
 
@@ -467,15 +768,16 @@ async function generateBriefDraft(input: {
     },
   });
 
-  const parsed = briefDraftSchema.parse(JSON.parse(response.output_text));
+  const parsed = briefDraftSchema.parse(
+    sanitizeBriefDraftCandidate(
+      parseOutputJson(response.output_text),
+      input.jobId,
+      draftIntent.section,
+      draftIntent.targetCriterionCode,
+    ),
+  );
   const normalized = normalizeBriefDraft(
-    {
-      ...parsed,
-      jobId: input.jobId,
-      createdAt: new Date().toISOString(),
-      section: draftIntent.section,
-      targetCriterionCode: draftIntent.targetCriterionCode,
-    },
+    parsed,
     evidenceDocuments,
   );
 
@@ -494,54 +796,55 @@ async function generateBriefDraft(input: {
 }
 
 export async function POST(request: Request) {
-  const parsed = turnInputSchema.safeParse(await request.json());
+  try {
+    const parsed = turnInputSchema.safeParse(await request.json());
 
-  if (!parsed.success) {
-    return Response.json({ error: "Invalid chat turn payload." }, { status: 400 });
-  }
+    if (!parsed.success) {
+      return Response.json({ error: "Invalid chat turn payload." }, { status: 400 });
+    }
 
-  const snapshot = await buildLibrarySnapshot({ jobId: parsed.data.jobId });
-  const readiness = getChatReadiness(snapshot);
+    const snapshot = await buildLibrarySnapshot({ jobId: parsed.data.jobId });
+    const readiness = getChatReadiness(snapshot);
 
-  if (!readiness.ready) {
-    return Response.json(
-      {
-        error: readiness.reason || "This workspace is not ready for Ask the Studio yet.",
-      },
-      { status: 409 },
+    if (!readiness.ready) {
+      return Response.json(
+        {
+          error: readiness.reason || "This workspace is not ready for Ask the Studio yet.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const session =
+      parsed.data.sessionId && parsed.data.sessionId.trim()
+        ? getChatSession(parsed.data.jobId, parsed.data.sessionId)
+        : createChatSession(parsed.data.jobId);
+
+    const userTurn: ChatTurn = {
+      id: crypto.randomUUID(),
+      role: "user",
+      mode: parsed.data.modeHint ?? null,
+      createdAt: new Date().toISOString(),
+      message: parsed.data.message.trim(),
+      classification: null,
+      assistantPayload: null,
+      usageCostUsd: 0,
+    };
+
+    const classificationResult = await classifyChatMode({
+      message: parsed.data.message,
+      modeHint: parsed.data.modeHint as ChatMode | undefined,
+    });
+
+    const completedDocuments = snapshot.documents.filter(
+      (document) => document.processingStatus === "completed",
     );
-  }
+    const chatDocuments = completedDocuments.filter(
+      (document) => document.reviewStatus === "kept" || document.reviewStatus === "pending",
+    );
+    const pinnedStrategyMemo = getLatestPinnedStrategyMemo(parsed.data.jobId);
 
-  const session =
-    parsed.data.sessionId && parsed.data.sessionId.trim()
-      ? getChatSession(parsed.data.jobId, parsed.data.sessionId)
-      : createChatSession(parsed.data.jobId);
-
-  const userTurn: ChatTurn = {
-    id: crypto.randomUUID(),
-    role: "user",
-    mode: parsed.data.modeHint ?? null,
-    createdAt: new Date().toISOString(),
-    message: parsed.data.message.trim(),
-    classification: null,
-    assistantPayload: null,
-    usageCostUsd: 0,
-  };
-
-  const classificationResult = await classifyChatMode({
-    message: parsed.data.message,
-    modeHint: parsed.data.modeHint as ChatMode | undefined,
-  });
-
-  const completedDocuments = snapshot.documents.filter(
-    (document) => document.processingStatus === "completed",
-  );
-  const chatDocuments = completedDocuments.filter(
-    (document) => document.reviewStatus === "kept" || document.reviewStatus === "pending",
-  );
-  const pinnedStrategyMemo = getLatestPinnedStrategyMemo(parsed.data.jobId);
-
-  let assistantTurn: ChatTurn;
+    let assistantTurn: ChatTurn;
 
   if (classificationResult.classification.mode === "triage") {
     const matches = (await semanticSearch(parsed.data.message, 18, parsed.data.jobId)).filter(
@@ -640,25 +943,37 @@ export async function POST(request: Request) {
           strategyMemo: pinnedStrategyMemo,
         });
 
-        assistantTurn = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          mode: "stress-test",
-          createdAt: new Date().toISOString(),
-          message: buildStressTestMessage(stressTest.report),
-          classification: classificationResult.classification,
-          usageCostUsd: classificationResult.costUsd + stressTest.costUsd,
-          assistantPayload: {
-            kind: "stress-test",
-            triageAnswer: null,
-            strategyMemo: null,
-            stressTestReport: stressTest.report,
-            briefDraft: null,
-            refusalMessage: null,
-            pendingDocsDisclosure: buildPendingDisclosure(chatDocuments),
-            citations: stressTest.citations,
-          },
-        };
+        if (!stressTest.report.challenges.length) {
+          assistantTurn = buildRefusalTurn({
+            mode: "stress-test",
+            classification: classificationResult.classification,
+            usageCostUsd: classificationResult.costUsd + stressTest.costUsd,
+            message:
+              "Setu could not produce citable stress-test challenges from the currently retrieved evidence. Try pinning a different strategy memo or narrowing the question to a specific criterion.",
+            refusalMessage:
+              "No citable stress-test challenges were produced from the available evidence.",
+          });
+        } else {
+          assistantTurn = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            mode: "stress-test",
+            createdAt: new Date().toISOString(),
+            message: buildStressTestMessage(stressTest.report),
+            classification: classificationResult.classification,
+            usageCostUsd: classificationResult.costUsd + stressTest.costUsd,
+            assistantPayload: {
+              kind: "stress-test",
+              triageAnswer: null,
+              strategyMemo: null,
+              stressTestReport: stressTest.report,
+              briefDraft: null,
+              refusalMessage: null,
+              pendingDocsDisclosure: buildPendingDisclosure(chatDocuments),
+              citations: stressTest.citations,
+            },
+          };
+        }
       }
     }
   } else {
@@ -694,34 +1009,57 @@ export async function POST(request: Request) {
           strategyMemo: pinnedStrategyMemo,
         });
 
-        assistantTurn = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          mode: "draft",
-          createdAt: new Date().toISOString(),
-          message: buildBriefDraftMessage(draft.draft),
-          classification: classificationResult.classification,
-          usageCostUsd: classificationResult.costUsd + draft.costUsd,
-          assistantPayload: {
-            kind: "draft",
-            triageAnswer: null,
-            strategyMemo: null,
-            stressTestReport: null,
-            briefDraft: draft.draft,
-            refusalMessage: null,
-            pendingDocsDisclosure: null,
-            citations: draft.citations,
-          },
-        };
+        if (!draft.draft.paragraphs.length) {
+          assistantTurn = buildRefusalTurn({
+            mode: "draft",
+            classification: classificationResult.classification,
+            usageCostUsd: classificationResult.costUsd + draft.costUsd,
+            message:
+              "Setu could not produce a citable draft section from the currently retrieved evidence. Try asking for a specific criterion argument or pin a stronger strategy memo first.",
+            refusalMessage:
+              "No citable draft paragraphs were produced from the available evidence.",
+          });
+        } else {
+          assistantTurn = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            mode: "draft",
+            createdAt: new Date().toISOString(),
+            message: buildBriefDraftMessage(draft.draft),
+            classification: classificationResult.classification,
+            usageCostUsd: classificationResult.costUsd + draft.costUsd,
+            assistantPayload: {
+              kind: "draft",
+              triageAnswer: null,
+              strategyMemo: null,
+              stressTestReport: null,
+              briefDraft: draft.draft,
+              refusalMessage: null,
+              pendingDocsDisclosure: null,
+              citations: draft.citations,
+            },
+          };
+        }
       }
     }
   }
 
-  const nextSession = appendChatTurns(parsed.data.jobId, session.id, [userTurn, assistantTurn]);
+    const nextSession = appendChatTurns(parsed.data.jobId, session.id, [userTurn, assistantTurn]);
 
-  return Response.json({
-    session: nextSession,
-    userTurn,
-    assistantTurn,
-  });
+    return Response.json({
+      session: nextSession,
+      userTurn,
+      assistantTurn,
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Setu could not complete that chat turn. Please try again.",
+      },
+      { status: 500 },
+    );
+  }
 }

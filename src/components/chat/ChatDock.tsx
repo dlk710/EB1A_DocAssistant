@@ -43,6 +43,20 @@ interface ChatTurnResponse {
   assistantTurn: ChatTurn;
 }
 
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const raw = await response.text();
+
+  if (!raw.trim()) {
+    throw new Error("Setu returned an empty response.");
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error("Setu returned an unreadable response.");
+  }
+}
+
 export function ChatDock(props: {
   jobId: string | null;
   candidateName: string;
@@ -116,8 +130,8 @@ export function ChatDock(props: {
           }),
         ]);
 
-        const readyPayload = (await readyResponse.json()) as ChatReadyResponse;
-        const artifactsPayload = (await artifactsResponse.json()) as ChatArtifactsResponse;
+        const readyPayload = await readJsonResponse<ChatReadyResponse>(readyResponse);
+        const artifactsPayload = await readJsonResponse<ChatArtifactsResponse>(artifactsResponse);
 
         if (cancelled) {
           return;
@@ -145,7 +159,9 @@ export function ChatDock(props: {
             }),
           });
 
-          const sessionPayload = (await sessionResponse.json()) as ChatSessionResponse | { error?: string };
+          const sessionPayload = await readJsonResponse<ChatSessionResponse | { error?: string }>(
+            sessionResponse,
+          );
 
           if (!cancelled && "session" in sessionPayload) {
             setSession(sessionPayload.session);
@@ -189,7 +205,7 @@ export function ChatDock(props: {
         }),
       });
 
-      const payload = (await response.json()) as ChatTurnResponse | { error?: string };
+      const payload = await readJsonResponse<ChatTurnResponse | { error?: string }>(response);
 
       if (!response.ok || !("session" in payload)) {
         throw new Error(("error" in payload && payload.error) || "Unable to send chat turn.");
@@ -239,9 +255,10 @@ export function ChatDock(props: {
         }),
       });
 
-      const payload = (await response.json()) as
+      const payload = await readJsonResponse<
         | { artifacts: ChatArtifactRecord[] }
-        | { error?: string };
+        | { error?: string }
+      >(response);
 
       if (!response.ok || !("artifacts" in payload)) {
         throw new Error(("error" in payload && payload.error) || "Unable to pin artifact.");
@@ -275,9 +292,10 @@ export function ChatDock(props: {
         }),
       });
 
-      const payload = (await response.json()) as
+      const payload = await readJsonResponse<
         | { artifacts: ChatArtifactRecord[] }
-        | { error?: string };
+        | { error?: string }
+      >(response);
 
       if (!response.ok || !("artifacts" in payload)) {
         throw new Error(("error" in payload && payload.error) || "Unable to unpin artifact.");

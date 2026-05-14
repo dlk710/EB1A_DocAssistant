@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   startTransition,
   useCallback,
+  useMemo,
   useEffect,
   useDeferredValue,
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   Archive,
@@ -153,6 +154,8 @@ type EvidenceStatusFilter = "all" | "kept" | "pending" | "archived";
 type ReadyViewMode = "by-bundle" | "by-criterion";
 type PeekTab = "summary" | "criteria" | "citations" | "notes";
 
+type ResizablePanel = "left" | "right";
+
 interface ReviewSubBundleView {
   id: string;
   name: string;
@@ -179,6 +182,14 @@ interface ContextMenuState {
   bundleId: string | null;
   criterionCode: string | null;
   submenu: "criterion" | "bundle" | null;
+}
+
+interface ContextMenuLayout {
+  left: number;
+  top: number;
+  submenuDirection: "left" | "right";
+  criterionTop: number;
+  bundleTop: number;
 }
 
 interface ReviewBucketTone {
@@ -260,6 +271,17 @@ const REVIEW_BUCKET_TONES: Record<string, ReviewBucketTone> = {
   },
 };
 
+const CONTEXT_MENU_VIEWPORT_PADDING = 12;
+const CONTEXT_SUBMENU_GAP = 4;
+const CONTEXT_SUBMENU_WIDTH = 250;
+const DASHBOARD_LEFT_PANEL_DEFAULT_WIDTH = 268;
+const REVIEW_LEFT_PANEL_DEFAULT_WIDTH = 232;
+const REVIEW_RIGHT_PANEL_DEFAULT_WIDTH = 296;
+const LEFT_PANEL_MIN_WIDTH = 220;
+const LEFT_PANEL_MAX_WIDTH = 420;
+const RIGHT_PANEL_MIN_WIDTH = 248;
+const RIGHT_PANEL_MAX_WIDTH = 420;
+
 const HIERARCHY_TONES = {
   criteria: "border border-slate-200 bg-slate-50 text-slate-700",
   bundle: "border border-slate-200 bg-slate-50 text-slate-700",
@@ -289,6 +311,34 @@ function formatDateTime(value: string | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function getJobLastRunAt(job: JobRecord) {
+  return job.completedAt || job.startedAt || job.createdAt;
+}
+
+function formatJobHistoryLabel(job: JobRecord) {
+  return `${job.folderLabel} · ${formatDateTime(getJobLastRunAt(job))}`;
+}
+
+function jobStatusBadgeClassName(status: JobRecord["status"]) {
+  if (status === "completed") {
+    return "bg-[var(--brand-soft)] text-[var(--brand-deep)]";
+  }
+
+  if (status === "completed_with_errors") {
+    return "bg-[var(--state-warning-soft)] text-[var(--state-warning)]";
+  }
+
+  if (status === "failed" || status === "canceled") {
+    return "bg-[var(--state-danger-soft)] text-[var(--state-danger)]";
+  }
+
+  if (status === "processing" || status === "queued" || status === "canceling") {
+    return "bg-[var(--state-info-soft)] text-[var(--state-info)]";
+  }
+
+  return "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]";
 }
 
 function formatPrimaryDate(value: string | null | undefined) {
@@ -373,30 +423,30 @@ function statusTone(status: JobRecord["status"]) {
 
 function documentStatusTone(status: ClientDocument["processingStatus"]) {
   if (status === "completed") {
-    return "bg-emerald-50 text-emerald-700";
+    return "bg-[var(--brand-soft)] text-[var(--brand-deep)]";
   }
 
   if (status === "failed") {
-    return "bg-rose-50 text-rose-700";
+    return "bg-[var(--state-danger-soft)] text-[var(--state-danger)]";
   }
 
   if (status === "processing") {
-    return "bg-sky-50 text-sky-700";
+    return "bg-[var(--state-info-soft)] text-[var(--state-info)]";
   }
 
-  return "bg-slate-100 text-slate-600";
+  return "bg-[var(--paper-secondary)] text-[var(--ink-tertiary)]";
 }
 
 function reviewStatusTone(status: ClientDocument["reviewStatus"]) {
   if (status === "archived") {
-    return "bg-slate-100 text-slate-600";
+    return "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]";
   }
 
   if (status === "pending") {
-    return "bg-amber-100 text-amber-800";
+    return "bg-[var(--state-warning-soft)] text-[var(--state-warning)]";
   }
 
-  return "bg-[#efeaff] text-[var(--brand-deep)]";
+  return "bg-[var(--brand-soft)] text-[var(--brand-deep)]";
 }
 
 function confidenceBand(confidence: number) {
@@ -415,12 +465,12 @@ function criterionChipTone(role: "primary" | "supporting", source: "ai" | "manua
   if (source === "manual") {
     return role === "primary"
       ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-      : "border-amber-200 bg-amber-50 text-amber-800";
+      : "border-[var(--border-primary)] bg-[var(--paper-secondary)] text-[var(--ink-secondary)]";
   }
 
   return role === "primary"
-    ? "border-transparent bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-    : "border-transparent bg-slate-100 text-slate-700";
+    ? "border-[var(--brand-charcoal)] bg-[var(--brand-charcoal)] text-white"
+    : "border-[var(--border-primary)] bg-[var(--paper-secondary)] text-[var(--ink-secondary)]";
 }
 
 function filterDocumentByReviewState(
@@ -601,30 +651,30 @@ function evidenceActionButtonClassName(
     "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] transition";
 
   if (disabled) {
-    return `${base} cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400`;
+    return `${base} cursor-not-allowed border-[var(--border-secondary)] bg-[var(--paper-secondary)] text-[var(--ink-tertiary)]`;
   }
 
   if (tone === "preview") {
     return active
-      ? `${base} border-[var(--brand)]/30 bg-[var(--brand-soft)] text-[var(--brand-deep)]`
-      : `${base} border-white/80 bg-white text-[var(--foreground)] hover:bg-[#f5f8ff]`;
+      ? `${base} border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]`
+      : `${base} border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)] hover:bg-[var(--paper-secondary)]`;
   }
 
   if (tone === "keep") {
     return active
-      ? `${base} border-emerald-200 bg-emerald-50 text-emerald-700`
-      : `${base} border-white/80 bg-white text-[var(--foreground)] hover:bg-emerald-50`;
+      ? `${base} border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]`
+      : `${base} border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)] hover:bg-[var(--brand-soft)]`;
   }
 
   if (tone === "archive") {
     return active
-      ? `${base} border-slate-300 bg-slate-100 text-slate-700`
-      : `${base} border-white/80 bg-white text-[var(--foreground)] hover:bg-slate-100`;
+      ? `${base} border-[var(--border-primary)] bg-[var(--paper-secondary)] text-[var(--ink-secondary)]`
+      : `${base} border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)] hover:bg-[var(--paper-secondary)]`;
   }
 
   return active
-    ? `${base} border-rose-200 bg-rose-50 text-rose-700`
-    : `${base} border-white/80 bg-white text-[var(--foreground)] hover:bg-rose-50`;
+    ? `${base} border-[var(--state-danger)] bg-[var(--state-danger-soft)] text-[var(--state-danger)]`
+    : `${base} border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)] hover:bg-[var(--state-danger-soft)]`;
 }
 
 function truncateText(value: string | null | undefined, maxLength: number) {
@@ -940,14 +990,16 @@ function bundleMetadataCardClassName(bundleKind: EventBundleKind) {
 
 function evidenceRowClassName(selected: boolean) {
   if (selected) {
-    return "border-[var(--brand)]/25 bg-[var(--brand-soft)]/55";
+    return "setu-selected-row border-[var(--brand)]/18 bg-[var(--paper-secondary)]";
   }
 
-  return "border-[#eceff6] bg-white/96 hover:bg-slate-50/70";
+  return "border-[var(--border-secondary)] bg-[var(--paper-primary)] hover:bg-[var(--paper-secondary)]";
 }
 
 function evidenceTableRowClassName(selected: boolean) {
-  return selected ? "bg-[var(--brand-soft)]/50" : "bg-white/96 hover:bg-slate-50/70";
+  return selected
+    ? "setu-selected-row bg-[var(--paper-secondary)]"
+    : "bg-[var(--paper-primary)] hover:bg-[var(--paper-secondary)]";
 }
 
 function findBundleDecision(
@@ -987,18 +1039,18 @@ function stageStatusLabel(status: ReviewPipelineStageStatus) {
 
 function stageStatusClassName(status: ReviewPipelineStageStatus) {
   if (status === "completed") {
-    return "bg-emerald-50 text-emerald-700";
+    return "bg-[var(--brand-charcoal)] text-white";
   }
 
   if (status === "processing" || status === "queued") {
-    return "bg-sky-50 text-sky-700";
+    return "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]";
   }
 
   if (status === "failed") {
-    return "bg-rose-50 text-rose-700";
+    return "bg-[var(--state-danger-soft)] text-[var(--state-danger)]";
   }
 
-  return "bg-slate-100 text-slate-600";
+  return "bg-[var(--paper-secondary)] text-[var(--ink-tertiary)]";
 }
 
 function normalizeBundlingStatus(
@@ -1704,6 +1756,11 @@ export function EvidenceWorkbench({
   pageMode = "dashboard",
 }: EvidenceWorkbenchProps) {
   const router = useRouter();
+  const leftPanelStorageKey =
+    pageMode === "review"
+      ? "eb1a-evidence-studio.review.left-panel-width"
+      : "eb1a-evidence-studio.dashboard.left-panel-width";
+  const rightPanelStorageKey = "eb1a-evidence-studio.review.right-panel-width";
   const [library, setLibrary] = useState(initialSnapshot);
   const [activeJobId, setActiveJobId] = useState<string | null>(
     initialSnapshot.activeJobId ?? null,
@@ -1752,6 +1809,13 @@ export function EvidenceWorkbench({
     criterionCode: null,
     submenu: null,
   });
+  const [contextMenuLayout, setContextMenuLayout] = useState<ContextMenuLayout>({
+    left: 0,
+    top: 0,
+    submenuDirection: "right",
+    criterionTop: 0,
+    bundleTop: 0,
+  });
   const [subBundleDialog, setSubBundleDialog] = useState<{
     open: boolean;
     bundleId: string | null;
@@ -1762,7 +1826,48 @@ export function EvidenceWorkbench({
     documentIds: [],
   });
   const [subBundleNameDraft, setSubBundleNameDraft] = useState("");
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    const fallbackWidth =
+      pageMode === "review" ? REVIEW_LEFT_PANEL_DEFAULT_WIDTH : DASHBOARD_LEFT_PANEL_DEFAULT_WIDTH;
+
+    if (typeof window === "undefined") {
+      return fallbackWidth;
+    }
+
+    const storedWidth = window.localStorage.getItem(leftPanelStorageKey);
+    const parsed = storedWidth ? Number.parseInt(storedWidth, 10) : Number.NaN;
+
+    if (!Number.isFinite(parsed)) {
+      return fallbackWidth;
+    }
+
+    return Math.min(LEFT_PANEL_MAX_WIDTH, Math.max(LEFT_PANEL_MIN_WIDTH, parsed));
+  });
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return REVIEW_RIGHT_PANEL_DEFAULT_WIDTH;
+    }
+
+    const storedWidth = window.localStorage.getItem(rightPanelStorageKey);
+    const parsed = storedWidth ? Number.parseInt(storedWidth, 10) : Number.NaN;
+
+    if (!Number.isFinite(parsed)) {
+      return REVIEW_RIGHT_PANEL_DEFAULT_WIDTH;
+    }
+
+    return Math.min(RIGHT_PANEL_MAX_WIDTH, Math.max(RIGHT_PANEL_MIN_WIDTH, parsed));
+  });
+  const [resizingPanel, setResizingPanel] = useState<{
+    panel: ResizablePanel;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const criterionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const bundleMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const criterionSubmenuRef = useRef<HTMLDivElement | null>(null);
+  const bundleSubmenuRef = useRef<HTMLDivElement | null>(null);
 
   const deferredFilter = useDeferredValue(quickFilter.trim());
   const semanticResultIds = semanticResults
@@ -1789,7 +1894,12 @@ export function EvidenceWorkbench({
     visibleDocuments.find((document) => document.id === selectedDocumentId) ?? null;
   const activeJob = library.activeJob;
   const activeJobProgress = getJobProgress(activeJob);
-  const workspaceJobs = library.jobs;
+  const workspaceJobs = [...library.jobs].sort(
+    (left, right) =>
+      new Date(getJobLastRunAt(right)).getTime() - new Date(getJobLastRunAt(left)).getTime(),
+  );
+  const recentWorkspaceRuns = workspaceJobs.slice(0, 2);
+  const additionalWorkspaceHistoryCount = Math.max(0, workspaceJobs.length - 2);
   const selectedDocument =
     selectedDocumentFromBundles ??
     selectedVisibleDocument ??
@@ -1798,6 +1908,7 @@ export function EvidenceWorkbench({
   const workspaceCandidate =
     settingsDraft.candidateName.trim() || library.settings.candidateName.trim();
   const candidateDisplayName = workspaceCandidate || "Candidate not set";
+  const activeWorkspaceRunAt = activeJob ? formatDateTime(getJobLastRunAt(activeJob)) : "Not yet";
   const reviewWorkspaceHref = activeJobId ? `/review/${activeJobId}` : null;
   const activeWorkspaceDocuments = library.overview.totalDocuments;
   const workspaceTotalAiCost =
@@ -1926,6 +2037,12 @@ export function EvidenceWorkbench({
     pendingFiles.length > 0 && !isUploading && !hasAbortableProcessing && !isCancelingProcess;
   const hasExpandedBucketSelection = Object.values(expandedBucketIds).some(Boolean);
   const hasExpandedBundleSelection = Object.values(expandedBundleIds).some(Boolean);
+  const panelGridStyle = useMemo(() => {
+    return {
+      "--left-panel-width": `${leftPanelWidth}px`,
+      "--right-panel-width": `${rightPanelWidth}px`,
+    } as CSSProperties;
+  }, [leftPanelWidth, rightPanelWidth]);
 
   const refreshLibrary = useCallback(
     async (requestedJobId?: string | null) => {
@@ -1945,6 +2062,68 @@ export function EvidenceWorkbench({
     },
     [activeJobId, settingsOpen],
   );
+
+  const startPanelResize = useCallback(
+    (panel: ResizablePanel, event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      setResizingPanel({
+        panel,
+        startX: event.clientX,
+        startWidth: panel === "left" ? leftPanelWidth : rightPanelWidth,
+      });
+    },
+    [leftPanelWidth, rightPanelWidth],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(leftPanelStorageKey, String(leftPanelWidth));
+  }, [leftPanelStorageKey, leftPanelWidth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || pageMode !== "review") {
+      return;
+    }
+
+    window.localStorage.setItem(rightPanelStorageKey, String(rightPanelWidth));
+  }, [pageMode, rightPanelStorageKey, rightPanelWidth]);
+
+  useEffect(() => {
+    if (!resizingPanel) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (resizingPanel.panel === "left") {
+        const nextWidth = resizingPanel.startWidth + (event.clientX - resizingPanel.startX);
+
+        setLeftPanelWidth(Math.min(LEFT_PANEL_MAX_WIDTH, Math.max(LEFT_PANEL_MIN_WIDTH, nextWidth)));
+        return;
+      }
+
+      const nextWidth = resizingPanel.startWidth - (event.clientX - resizingPanel.startX);
+      setRightPanelWidth(Math.min(RIGHT_PANEL_MAX_WIDTH, Math.max(RIGHT_PANEL_MIN_WIDTH, nextWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setResizingPanel(null);
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingPanel]);
 
   useEffect(() => {
     let active = true;
@@ -2578,6 +2757,85 @@ export function EvidenceWorkbench({
     };
   }, [contextMenu.open]);
 
+  useEffect(() => {
+    if (!contextMenu.open) {
+      return;
+    }
+
+    let frame = 0;
+
+    const updateLayout = () => {
+      frame = window.requestAnimationFrame(() => {
+        const menuRect = contextMenuRef.current?.getBoundingClientRect();
+
+        if (!menuRect) {
+          return;
+        }
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const nextLeft = Math.min(
+          Math.max(CONTEXT_MENU_VIEWPORT_PADDING, contextMenu.x),
+          viewportWidth - menuRect.width - CONTEXT_MENU_VIEWPORT_PADDING,
+        );
+        const nextTop = Math.min(
+          Math.max(CONTEXT_MENU_VIEWPORT_PADDING, contextMenu.y),
+          viewportHeight - menuRect.height - CONTEXT_MENU_VIEWPORT_PADDING,
+        );
+        const submenuDirection =
+          nextLeft + menuRect.width + CONTEXT_SUBMENU_GAP + CONTEXT_SUBMENU_WIDTH >
+          viewportWidth - CONTEXT_MENU_VIEWPORT_PADDING
+            ? "left"
+            : "right";
+
+        const criterionTriggerRect =
+          criterionMenuTriggerRef.current?.getBoundingClientRect() ?? null;
+        const bundleTriggerRect = bundleMenuTriggerRef.current?.getBoundingClientRect() ?? null;
+        const criterionSubmenuHeight =
+          criterionSubmenuRef.current?.getBoundingClientRect().height ?? menuRect.height;
+        const bundleSubmenuHeight =
+          bundleSubmenuRef.current?.getBoundingClientRect().height ?? menuRect.height;
+        const criterionViewportTop = criterionTriggerRect
+          ? Math.min(
+              Math.max(CONTEXT_MENU_VIEWPORT_PADDING, criterionTriggerRect.top),
+              viewportHeight - criterionSubmenuHeight - CONTEXT_MENU_VIEWPORT_PADDING,
+            )
+          : nextTop;
+        const bundleViewportTop = bundleTriggerRect
+          ? Math.min(
+              Math.max(CONTEXT_MENU_VIEWPORT_PADDING, bundleTriggerRect.top),
+              viewportHeight - bundleSubmenuHeight - CONTEXT_MENU_VIEWPORT_PADDING,
+            )
+          : nextTop;
+        const nextLayout: ContextMenuLayout = {
+          left: nextLeft,
+          top: nextTop,
+          submenuDirection,
+          criterionTop: criterionViewportTop - nextTop,
+          bundleTop: bundleViewportTop - nextTop,
+        };
+
+        setContextMenuLayout((current) =>
+          current.left === nextLayout.left &&
+          current.top === nextLayout.top &&
+          current.submenuDirection === nextLayout.submenuDirection &&
+          current.criterionTop === nextLayout.criterionTop &&
+          current.bundleTop === nextLayout.bundleTop
+            ? current
+            : nextLayout,
+        );
+      });
+    };
+
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateLayout);
+    };
+  }, [contextMenu.open, contextMenu.submenu, contextMenu.x, contextMenu.y]);
+
   const renderEvidenceActionStrip = (
     document: ClientDocument,
     bundleKind: EventBundleKind | null,
@@ -2810,38 +3068,49 @@ export function EvidenceWorkbench({
 
   if (useWireframeV3) {
     return (
-      <div className="min-h-screen bg-[var(--background)] px-4 py-5">
-        <div className="mx-auto max-w-[1440px]">
-          <header className="glass-panel rounded-[18px] border border-white/70 px-4 py-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-soft)] text-[var(--brand-deep)]">
-                  <Sparkles className="h-4 w-4" />
+      <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
+        <div className="mx-auto max-w-[1780px] 2xl:max-w-[1880px]">
+          <header className="setu-topbar rounded-[18px] px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="setu-brand-block">
+                <div className="flex flex-wrap items-center gap-4">
+                  <span className="setu-wordmark" aria-label="setu">
+                    <span className="setu-wordmark-letters">setu</span>
+                    <span className="setu-wordmark-deck" aria-hidden="true" />
+                  </span>
+                  <span className="setu-scope-chip">
+                    <span className="setu-scope-dot" />
+                    <span>{activeJob?.folderLabel || "No workspace yet"}</span>
+                  </span>
                 </div>
-                <div>
-                  <p className="text-[13px] font-semibold text-[var(--foreground)]">
-                    EB1A Evidence Studio
+                <div className="space-y-1">
+                  <p className="setu-brand-tagline">
+                    Confident petitions, faster.
                   </p>
-                  <p className="text-[11px] text-[var(--muted)]">
-                    Candidate-centered, local-first evidence workbench
+                  <p className="setu-brand-meta">
+                    Candidate-centered, local-first review studio for organized evidence work.
+                  </p>
+                  <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-[var(--brand-deep)]">
+                    The studio for immigration practice
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                <span className="setu-scope-chip">
+                  <UserRound className="h-3.5 w-3.5 text-[var(--brand)]" />
                   Candidate · {candidateDisplayName}
                 </span>
                 {pageMode === "review" ? (
                   <Link
                     href="/"
-                    className="rounded-full border border-white/80 bg-white/88 px-3 py-1.5 text-[11px] font-semibold text-[var(--foreground)]"
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                   >
                     Back to dashboard
                   </Link>
                 ) : reviewWorkspaceHref ? (
                   <Link
                     href={reviewWorkspaceHref}
-                    className="rounded-full border border-white/80 bg-white/88 px-3 py-1.5 text-[11px] font-semibold text-[var(--foreground)]"
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                   >
                     Detailed review
                   </Link>
@@ -2849,15 +3118,17 @@ export function EvidenceWorkbench({
                 <button
                   type="button"
                   onClick={() => setSettingsOpen(true)}
-                  className="rounded-full border border-white/80 bg-white/88 px-3 py-1.5 text-[11px] font-semibold text-[var(--foreground)]"
+                  className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                 >
-                  Prompt library
+                  <Settings2 className="h-3.5 w-3.5 text-[var(--brand)]" />
+                  Prompts
                 </button>
                 <button
                   type="button"
                   onClick={() => void refreshLibrary()}
-                  className="rounded-full border border-white/80 bg-white/88 px-3 py-1.5 text-[11px] font-semibold text-[var(--foreground)]"
+                  className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                 >
+                  <RefreshCw className="h-3.5 w-3.5 text-[var(--brand)]" />
                   Refresh
                 </button>
               </div>
@@ -2870,14 +3141,17 @@ export function EvidenceWorkbench({
             </div>
           ) : null}
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)_240px]">
-            <aside className="rounded-[18px] border border-white/80 bg-[#fbfaf7] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="space-y-4">
+          <div
+            className="mt-4 grid gap-4 xl:grid-cols-[var(--left-panel-width)_minmax(0,1fr)_var(--right-panel-width)]"
+            style={panelGridStyle}
+          >
+            <aside className="setu-paper-panel relative rounded-[18px] p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              <div className="space-y-3.5">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                     Candidate
                   </p>
-                  <div className="mt-2 rounded-[12px] border border-white/90 bg-white px-3 py-2.5 text-[12px] text-[var(--foreground)]">
+                  <div className="mt-2 rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2.5 text-[12px] text-[var(--foreground)]">
                     {candidateDisplayName}
                   </div>
                 </div>
@@ -2893,18 +3167,76 @@ export function EvidenceWorkbench({
                         void handleSelectJob(event.target.value);
                       }
                     }}
-                    className="mt-2 w-full rounded-[12px] border border-white/90 bg-white px-3 py-2 text-[12px] outline-none"
+                    className="mt-2 w-full rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2 text-[12px] outline-none"
                   >
                     {workspaceJobs.length ? null : <option value="">No workspace yet</option>}
                     {workspaceJobs.map((job) => (
                       <option key={job.id} value={job.id}>
-                        {job.folderLabel}
+                        {formatJobHistoryLabel(job)}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
+                    Active workspace last run: {activeWorkspaceRunAt}
+                  </p>
                 </div>
 
-                <div className="grid gap-2">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Recent history
+                    </p>
+                    {additionalWorkspaceHistoryCount > 0 ? (
+                      <span className="rounded-full bg-[var(--paper-primary)] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                        +{additionalWorkspaceHistoryCount} more
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {recentWorkspaceRuns.length ? (
+                      recentWorkspaceRuns.map((job) => {
+                        const isActive = job.id === activeJobId;
+
+                        return (
+                          <button
+                            key={`recent-${job.id}`}
+                            type="button"
+                            onClick={() => void handleSelectJob(job.id)}
+                            className={`w-full rounded-[14px] border px-3 py-2.5 text-left transition ${
+                              isActive
+                                ? "border-[var(--brand)]/20 bg-[var(--brand-soft)]/7"
+                                : "border-[var(--border-secondary)] bg-[var(--paper-primary)] hover:bg-[var(--paper-secondary)]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-[11px] font-semibold text-[var(--foreground)]">
+                                  {job.folderLabel}
+                                </p>
+                                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                                  {formatDateTime(getJobLastRunAt(job))}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${jobStatusBadgeClassName(
+                                  job.status,
+                                )}`}
+                              >
+                                {job.status.replaceAll("_", " ")}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2.5 text-[10px] text-[var(--muted)]">
+                        No workspace runs yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     ["Indexed", String(library.overview.completedDocuments)],
                     ["Bundles", String(library.eventBundles?.bundles.length ?? 0)],
@@ -2913,7 +3245,7 @@ export function EvidenceWorkbench({
                   ].map(([label, value]) => (
                     <div
                       key={label}
-                      className="rounded-[12px] border border-white/90 bg-white px-3 py-2"
+                      className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2"
                     >
                       <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                         {label}
@@ -2925,10 +3257,140 @@ export function EvidenceWorkbench({
                   ))}
                 </div>
               </div>
+              <button
+                type="button"
+                aria-label="Resize left panel"
+                onMouseDown={(event) => startPanelResize("left", event)}
+                className="absolute -right-2 top-0 hidden h-full w-4 cursor-col-resize items-center justify-center xl:flex"
+              >
+                <span
+                    className={`setu-resize-handle flex h-16 w-2 items-center justify-center rounded-full border transition ${
+                      resizingPanel?.panel === "left"
+                        ? "is-active"
+                        : ""
+                    }`}
+                >
+                  <GripVertical className="h-3 w-3" />
+                </span>
+              </button>
             </aside>
 
             <main className="space-y-4">
-              <section className="rounded-[18px] border border-white/80 bg-white/94 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
+              {pageMode === "dashboard" ? (
+                <section className="grid gap-4 xl:items-start xl:grid-cols-[minmax(0,1.15fr)_340px]">
+                  <div className="setu-paper-panel rounded-[18px] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          Coverage
+                        </p>
+                        <div className="mt-2 flex items-end gap-3">
+                          <p className="text-[34px] leading-none font-semibold text-[var(--brand-deep)]">
+                            {library.coverage?.strongCount ?? 0}
+                          </p>
+                          <p className="pb-1 text-[12px] leading-5 text-[var(--muted)]">
+                            of{" "}
+                            {library.coverage?.criteria.length ??
+                              EB1A_CRITERIA_DEFINITIONS.length}{" "}
+                            criteria strong
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          library.coverage?.meetsMinimum
+                            ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+                            : "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+                        }`}
+                      >
+                        {library.coverage?.meetsMinimum
+                          ? "Meets 3-of-10 minimum"
+                          : "Below minimum"}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                      {(library.coverage?.criteria ?? []).map((criterion) => (
+                        <button
+                          key={criterion.code}
+                          type="button"
+                          onClick={() => {
+                            setCriterionFilter(criterion.code);
+                            if (classificationReady) {
+                              setReadyView("by-criterion");
+                            }
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-[13px] ${
+                            criterionFilter === criterion.code
+                              ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+                              : "bg-[var(--paper-primary)] hover:bg-[var(--paper-secondary)]"
+                          }`}
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              criterion.state === "strong"
+                                ? "bg-[var(--brand)]"
+                                : criterion.state === "partial"
+                                  ? "bg-[var(--state-warning)]"
+                                  : "bg-[var(--border-primary)]"
+                            }`}
+                          />
+                          <span className="font-mono text-[11px] text-[var(--muted)]">
+                            {criterion.legalCode}
+                          </span>
+                          <span className="flex-1 truncate">{criterion.name}</span>
+                          <span className="font-mono text-[11px] text-[var(--muted)]">
+                            {criterion.keptCount}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="setu-paper-panel rounded-[18px] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Workspace state
+                    </p>
+                    <div className="mt-3 grid gap-2 text-[12px] leading-5 text-[var(--foreground)]">
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Folder
+                        </p>
+                        <p className="mt-1 font-semibold text-[var(--foreground)]">
+                          {activeJob?.folderLabel || "No folder selected"}
+                        </p>
+                      </div>
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Last indexed
+                        </p>
+                        <p className="mt-1 font-semibold text-[var(--foreground)]">
+                          {formatDateTime(library.overview.latestCompletionAt)}
+                        </p>
+                      </div>
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Models
+                        </p>
+                        <p className="mt-1 text-[12px] text-[var(--foreground)]">
+                          {library.settings.summaryModel}
+                          <br />
+                          {library.settings.embeddingModel}
+                        </p>
+                      </div>
+                      <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                          Tagging cost
+                        </p>
+                        <p className="mt-1 font-semibold text-[var(--foreground)]">
+                          {formatCurrency(library.criteriaTagging?.totalCostUsd ?? 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="setu-panel rounded-[18px] p-4">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
@@ -2962,7 +3424,7 @@ export function EvidenceWorkbench({
                           <button
                             type="button"
                             onClick={() => folderInputRef.current?.click()}
-                            className="rounded-full border border-white/80 bg-white px-3 py-2 text-[11px] font-semibold text-[var(--foreground)]"
+                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium"
                           >
                             Choose folder
                           </button>
@@ -2975,7 +3437,7 @@ export function EvidenceWorkbench({
                               hasAbortableProcessing ||
                               isCancelingProcess
                             }
-                            className="rounded-full bg-[var(--brand)] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-40"
+                            className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
                           >
                             {isUploading ? "Indexing..." : "Index folder"}
                           </button>
@@ -2983,7 +3445,7 @@ export function EvidenceWorkbench({
                             type="button"
                             onClick={() => void handleCancelProcess()}
                             disabled={!canCancelSelection && !hasAbortableProcessing}
-                            className="rounded-full border border-white/80 bg-white px-3 py-2 text-[11px] font-semibold text-[var(--foreground)] disabled:opacity-40"
+                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-medium disabled:opacity-40"
                           >
                             {activeJob?.status === "canceling" ? "Canceling..." : "Cancel"}
                           </button>
@@ -2993,7 +3455,7 @@ export function EvidenceWorkbench({
                   </div>
 
                   {pageMode === "dashboard" ? (
-                    <div className="rounded-[16px] border border-dashed border-[var(--brand)]/22 bg-[#faf9f5] px-4 py-5">
+                    <div className="rounded-[16px] border border-dashed border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-[12px] font-semibold text-[var(--foreground)]">
@@ -3005,7 +3467,7 @@ export function EvidenceWorkbench({
                           </p>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
-                          <div className="rounded-[12px] border border-white/90 bg-white px-3 py-2">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
                             <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
                               Files
                             </p>
@@ -3013,7 +3475,7 @@ export function EvidenceWorkbench({
                               {pendingStats?.fileCount ?? 0}
                             </p>
                           </div>
-                          <div className="rounded-[12px] border border-white/90 bg-white px-3 py-2">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
                             <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
                               Size
                             </p>
@@ -3021,7 +3483,7 @@ export function EvidenceWorkbench({
                               {pendingStats ? formatBytes(pendingStats.totalBytes) : "0 B"}
                             </p>
                           </div>
-                          <div className="rounded-[12px] border border-white/90 bg-white px-3 py-2">
+                          <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
                             <p className="text-[9px] uppercase tracking-[0.15em] text-[var(--muted)]">
                               Root
                             </p>
@@ -3039,19 +3501,17 @@ export function EvidenceWorkbench({
                       <div key={step.key} className="flex items-center gap-2">
                         <div
                           className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                            step.status === "done"
-                              ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-                              : step.status === "active"
-                                ? "bg-[#edf4ff] text-[#2b62b5]"
-                                : step.status === "problem"
-                                  ? "bg-[#fff0f0] text-[#b33f3f]"
-                                  : "bg-slate-100 text-slate-600"
+                            step.status === "done" || step.status === "active"
+                              ? "bg-[var(--brand-charcoal)] text-white"
+                              : step.status === "problem"
+                                ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
+                                : "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]"
                           }`}
                         >
                           {index + 1}. {step.label}
                         </div>
                         {index < pipelineCards.length - 1 ? (
-                          <span className="h-px w-3 bg-slate-200" />
+                          <span className={`h-[2px] w-4 ${step.status === "done" ? "bg-[var(--brand)]" : "bg-[var(--border-secondary)]"}`} />
                         ) : null}
                       </div>
                     ))}
@@ -3061,13 +3521,21 @@ export function EvidenceWorkbench({
                     {pipelineCards.map((step) => (
                       <div
                         key={`detail-${step.key}`}
-                        className="rounded-[14px] border border-[#ebe9e2] bg-[#fcfbf8] px-3 py-2.5"
+                        className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-2.5"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[11px] font-semibold text-[var(--foreground)]">
                             {step.label}
                           </p>
-                          <span className="text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                          <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
+                            step.status === "active"
+                              ? "processing"
+                              : step.status === "done"
+                                ? "completed"
+                                : step.status === "problem"
+                                  ? "failed"
+                                  : "pending",
+                          )}`}>
                             {step.status}
                           </span>
                         </div>
@@ -3081,13 +3549,13 @@ export function EvidenceWorkbench({
               </section>
 
               {activeJob && !showReviewSurface ? (
-                <section className="rounded-[18px] border border-white/80 bg-white/94 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
+                <section className="setu-panel rounded-[18px] p-4">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                     Indexing progress
                   </p>
-                  <div className="mt-3 overflow-hidden rounded-[14px] border border-[#ebe9e2]">
+                  <div className="mt-3 overflow-hidden rounded-[14px] border border-[var(--border-secondary)]">
                     <table className="min-w-full text-left text-[12px]">
-                      <thead className="bg-[#faf9f5] text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                      <thead className="bg-[var(--paper-tertiary)] text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
                         <tr>
                           <th className="px-3 py-2 font-semibold">Evidence</th>
                           <th className="px-3 py-2 font-semibold">Status</th>
@@ -3096,7 +3564,7 @@ export function EvidenceWorkbench({
                       </thead>
                       <tbody>
                         {library.documents.slice(0, 12).map((document) => (
-                          <tr key={document.id} className="border-t border-[#f0eee7]">
+                          <tr key={document.id} className="border-t border-[var(--border-secondary)]">
                             <td className="px-3 py-2">
                               <p className="font-semibold text-[var(--foreground)]">
                                 {document.summary?.title || document.fileName}
@@ -3129,8 +3597,8 @@ export function EvidenceWorkbench({
               ) : null}
 
               {showReviewSurface ? (
-                <section className="rounded-[18px] border border-white/80 bg-white/94 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-col gap-3 border-b border-[#f0eee7] pb-4">
+                <section className="setu-panel rounded-[18px] p-4">
+                  <div className="flex flex-col gap-3 border-b border-[var(--border-secondary)] pb-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
@@ -3153,12 +3621,12 @@ export function EvidenceWorkbench({
                             value={semanticQuery}
                             onChange={(event) => setSemanticQuery(event.target.value)}
                             placeholder="Search by meaning inside this workspace"
-                            className="min-w-0 flex-1 rounded-full border border-[#e7e3d9] bg-[#faf9f5] px-4 py-2 text-[12px] outline-none"
+                            className="min-w-0 flex-1 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-2 text-[12px] outline-none"
                           />
                           <button
                             type="submit"
                             disabled={isSearching}
-                            className="rounded-full bg-[var(--foreground)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+                            className="setu-primary-button rounded-[6px] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
                           >
                             {isSearching ? "Searching" : "Search meaning"}
                           </button>
@@ -3166,14 +3634,14 @@ export function EvidenceWorkbench({
                       ) : reviewWorkspaceHref ? (
                         <Link
                           href={reviewWorkspaceHref}
-                          className="rounded-full border border-white/80 bg-white px-3 py-2 text-[11px] font-semibold text-[var(--foreground)]"
+                          className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-semibold"
                         >
                           Open detailed search
                         </Link>
                       ) : null}
                     </div>
 
-                    <div className="rounded-[14px] border border-[var(--brand)]/15 bg-[var(--brand-soft)] px-4 py-3">
+                    <div className="rounded-[14px] border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-4 py-3">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="grid gap-2 sm:grid-cols-3">
                           <div className="pr-4">
@@ -3208,14 +3676,14 @@ export function EvidenceWorkbench({
                               void persistEvidenceStatus(confidentDocumentIds, "kept");
                               setStatusFilter("pending");
                             }}
-                            className="rounded-full bg-[var(--brand)] px-3 py-2 text-[11px] font-semibold text-white"
+                            className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-semibold text-white"
                           >
                             Accept confident
                           </button>
                           <button
                             type="button"
                             onClick={() => setStatusFilter("pending")}
-                            className="rounded-full border border-white/80 bg-white px-3 py-2 text-[11px] font-semibold text-[var(--foreground)]"
+                            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-semibold"
                           >
                             Review uncertain
                           </button>
@@ -3225,18 +3693,18 @@ export function EvidenceWorkbench({
 
                     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex overflow-hidden rounded-[10px] border border-[#e7e3d9] bg-white">
+                        <div className="inline-flex overflow-hidden rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)]">
                           <button
                             type="button"
                             onClick={() => setReadyView("by-bundle")}
-                            className={`px-3 py-1.5 text-[11px] font-semibold ${effectiveReadyView === "by-bundle" ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "text-[var(--muted)]"}`}
+                            className={`px-3 py-1.5 text-[11px] font-semibold ${effectiveReadyView === "by-bundle" ? "bg-[var(--paper-secondary)] text-[var(--foreground)]" : "text-[var(--muted)]"}`}
                           >
                             By bundle
                           </button>
                           <button
                             type="button"
                             onClick={() => classificationReady && setReadyView("by-criterion")}
-                            className={`border-l border-[#e7e3d9] px-3 py-1.5 text-[11px] font-semibold ${effectiveReadyView === "by-criterion" ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "text-[var(--muted)]"}`}
+                            className={`border-l border-[var(--border-primary)] px-3 py-1.5 text-[11px] font-semibold ${effectiveReadyView === "by-criterion" ? "bg-[var(--paper-secondary)] text-[var(--foreground)]" : "text-[var(--muted)]"}`}
                           >
                             By criterion
                           </button>
@@ -3246,7 +3714,7 @@ export function EvidenceWorkbench({
                             key={filter}
                             type="button"
                             onClick={() => setStatusFilter(filter)}
-                            className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusFilter === filter ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "border-[#e7e3d9] bg-white text-[var(--muted)]"}`}
+                            className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusFilter === filter ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--muted)]"}`}
                           >
                             {filter}
                           </button>
@@ -3256,7 +3724,7 @@ export function EvidenceWorkbench({
                         value={quickFilter}
                         onChange={(event) => setQuickFilter(event.target.value)}
                         placeholder="Filter by bundle, file, tag, org, or path"
-                        className="w-full max-w-[420px] rounded-full border border-[#e7e3d9] bg-[#faf9f5] px-4 py-2 text-[12px] outline-none"
+                        className="w-full max-w-[420px] rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-4 py-2 text-[12px] outline-none"
                       />
                     </div>
 
@@ -3831,85 +4299,187 @@ export function EvidenceWorkbench({
               ) : null}
             </main>
 
-            <aside className="space-y-4">
-              <div className="rounded-[18px] border border-white/80 bg-[#fbfaf7] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Coverage
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <p className="text-[24px] font-semibold text-[var(--brand-deep)]">
-                    {library.coverage?.strongCount ?? 0}
-                  </p>
-                  <p className="text-[10px] leading-4 text-[var(--muted)]">
-                    of {library.coverage?.criteria.length ?? EB1A_CRITERIA_DEFINITIONS.length}
-                    {" "}criteria strong
-                  </p>
-                </div>
-                <div className="mt-2">
-                  <span className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${library.coverage?.meetsMinimum ? "bg-[#ecfbf1] text-emerald-700" : "bg-[#fff4df] text-amber-700"}`}>
-                    {library.coverage?.meetsMinimum ? "Meets 3-of-10 minimum" : "Below minimum"}
-                  </span>
-                </div>
-                <div className="mt-3 space-y-1.5">
-                  {(library.coverage?.criteria ?? []).map((criterion) => (
-                    <button
-                      key={criterion.code}
-                      type="button"
-                      onClick={() => {
-                        setCriterionFilter(criterion.code);
-                        if (classificationReady) {
-                          setReadyView("by-criterion");
-                        }
-                      }}
-                      className={`flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-[11px] ${criterionFilter === criterion.code ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "hover:bg-white"}`}
-                    >
-                      <span
-                        className={`h-2 w-2 rounded-full ${criterion.state === "strong" ? "bg-[var(--brand)]" : criterion.state === "partial" ? "bg-amber-500" : "bg-slate-300"}`}
-                      />
-                      <span className="font-mono text-[10px] text-[var(--muted)]">
-                        {criterion.legalCode}
-                      </span>
-                      <span className="flex-1 truncate">{criterion.name}</span>
-                      <span className="font-mono text-[10px] text-[var(--muted)]">
-                        {criterion.keptCount}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <aside className="relative space-y-4">
+              <button
+                type="button"
+                aria-label="Resize right panel"
+                onMouseDown={(event) => startPanelResize("right", event)}
+                className="absolute -left-2 top-0 hidden h-full w-4 cursor-col-resize items-center justify-center xl:flex"
+              >
+                <span
+                  className={`setu-resize-handle flex h-16 w-2 items-center justify-center rounded-full border transition ${
+                    resizingPanel?.panel === "right"
+                      ? "is-active"
+                      : ""
+                  }`}
+                >
+                  <GripVertical className="h-3 w-3" />
+                </span>
+              </button>
+              {pageMode === "dashboard" ? (
+                <>
+                  <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Pipeline
+                    </p>
+                    <p className="mt-2 text-[13px] font-medium text-[var(--foreground)]">
+                      {workspaceActivity.title}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                      {workspaceActivity.detail}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {reviewPipeline.stages.map((stage, index) => (
+                        <div
+                          key={`rail-stage-${stage.id}`}
+                          className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-medium text-[var(--foreground)]">
+                              {index + 1}. {stage.label}
+                            </p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
+                                stage.status,
+                              )}`}
+                            >
+                              {stageStatusLabel(stage.status)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[10px] leading-5 text-[var(--muted)]">
+                            {stage.detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-              <div className="rounded-[18px] border border-white/80 bg-[#fbfaf7] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                  Workspace state
-                </p>
-                <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]">
-                  <p>
-                    <span className="font-semibold">Folder:</span>{" "}
-                    {activeJob?.folderLabel || "No folder selected"}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Last indexed:</span>{" "}
-                    {formatDateTime(library.overview.latestCompletionAt)}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Models:</span>{" "}
-                    {library.settings.summaryModel}
-                    <br />
-                    {library.settings.embeddingModel}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Tagging cost:</span>{" "}
-                    {formatCurrency(library.criteriaTagging?.totalCostUsd ?? 0)}
-                  </p>
-                </div>
-              </div>
+                  <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Workspace cost
+                    </p>
+                    <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]">
+                      <div className="flex items-center justify-between gap-3 rounded-[10px] bg-[var(--paper-primary)] px-3 py-2">
+                        <span>Summaries</span>
+                        <span className="font-mono">{formatCurrency(library.overview.totalOpenAiCostUsd)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-[10px] bg-[var(--paper-primary)] px-3 py-2">
+                        <span>Bundling</span>
+                        <span className="font-mono">{formatCurrency(library.eventBundles?.totalCostUsd ?? 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-[10px] bg-[var(--paper-primary)] px-3 py-2">
+                        <span>Classification</span>
+                        <span className="font-mono">{formatCurrency(library.eb1aClassification?.totalCostUsd ?? 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-[10px] bg-[var(--paper-primary)] px-3 py-2">
+                        <span>Tagging</span>
+                        <span className="font-mono">{formatCurrency(library.criteriaTagging?.totalCostUsd ?? 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-3 py-2 text-[var(--brand-deep)]">
+                        <span className="font-medium">Total</span>
+                        <span className="font-mono font-semibold">{formatCurrency(workspaceTotalAiCost)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Coverage
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <p className="text-[24px] font-semibold text-[var(--brand-deep)]">
+                        {library.coverage?.strongCount ?? 0}
+                      </p>
+                      <p className="text-[10px] leading-4 text-[var(--muted)]">
+                        of {library.coverage?.criteria.length ?? EB1A_CRITERIA_DEFINITIONS.length} criteria strong
+                      </p>
+                    </div>
+                    <div className="mt-2">
+                      <span
+                        className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${
+                          library.coverage?.meetsMinimum
+                            ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+                            : "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+                        }`}
+                      >
+                        {library.coverage?.meetsMinimum ? "Meets 3-of-10 minimum" : "Below minimum"}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      {(library.coverage?.criteria ?? []).map((criterion) => (
+                        <button
+                          key={criterion.code}
+                          type="button"
+                          onClick={() => {
+                            setCriterionFilter(criterion.code);
+                            if (classificationReady) {
+                              setReadyView("by-criterion");
+                            }
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-[11px] ${
+                            criterionFilter === criterion.code
+                              ? "bg-[var(--paper-secondary)] text-[var(--foreground)]"
+                              : "hover:bg-[var(--paper-primary)]"
+                          }`}
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              criterion.state === "strong"
+                                ? "bg-[var(--brand)]"
+                                : criterion.state === "partial"
+                                  ? "bg-[var(--state-warning)]"
+                                  : "bg-[var(--border-primary)]"
+                            }`}
+                          />
+                          <span className="font-mono text-[10px] text-[var(--muted)]">
+                            {criterion.legalCode}
+                          </span>
+                          <span className="flex-1 truncate">{criterion.name}</span>
+                          <span className="font-mono text-[10px] text-[var(--muted)]">
+                            {criterion.keptCount}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="setu-paper-panel rounded-[18px] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Workspace state
+                    </p>
+                    <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]">
+                      <p>
+                        <span className="font-semibold">Folder:</span>{" "}
+                        {activeJob?.folderLabel || "No folder selected"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Last indexed:</span>{" "}
+                        {formatDateTime(library.overview.latestCompletionAt)}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Models:</span>{" "}
+                        {library.settings.summaryModel}
+                        <br />
+                        {library.settings.embeddingModel}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Tagging cost:</span>{" "}
+                        {formatCurrency(library.criteriaTagging?.totalCostUsd ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </aside>
           </div>
 
           {contextMenu.open ? (
             <div
-              className="fixed z-50 min-w-[240px] rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
-              style={{ left: contextMenu.x, top: contextMenu.y }}
+              ref={contextMenuRef}
+              className="fixed z-50 max-h-[calc(100vh-24px)] min-w-[240px] overflow-y-auto rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+              style={{ left: contextMenuLayout.left, top: contextMenuLayout.top }}
               onClick={(event) => event.stopPropagation()}
             >
               <button
@@ -3959,6 +4529,7 @@ export function EvidenceWorkbench({
               <div className="my-1 h-px bg-[#eee9df]" />
               <button
                 type="button"
+                ref={criterionMenuTriggerRef}
                 onMouseEnter={() =>
                   setContextMenu((current) => ({ ...current, submenu: "criterion" }))
                 }
@@ -3969,6 +4540,7 @@ export function EvidenceWorkbench({
               </button>
               <button
                 type="button"
+                ref={bundleMenuTriggerRef}
                 onMouseEnter={() =>
                   setContextMenu((current) => ({ ...current, submenu: "bundle" }))
                 }
@@ -3994,7 +4566,21 @@ export function EvidenceWorkbench({
               </button>
 
               {contextMenu.submenu === "criterion" ? (
-                <div className="absolute left-full top-0 ml-1 min-w-[250px] rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]">
+                <div
+                  ref={criterionSubmenuRef}
+                  className="absolute z-10 max-h-[calc(100vh-24px)] min-w-[250px] overflow-y-auto rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+                  style={{
+                    top: contextMenuLayout.criterionTop,
+                    left:
+                      contextMenuLayout.submenuDirection === "right"
+                        ? `calc(100% + ${CONTEXT_SUBMENU_GAP}px)`
+                        : "auto",
+                    right:
+                      contextMenuLayout.submenuDirection === "left"
+                        ? `calc(100% + ${CONTEXT_SUBMENU_GAP}px)`
+                        : "auto",
+                  }}
+                >
                   {EB1A_CRITERIA_DEFINITIONS.map((criterion) => (
                     <button
                       key={criterion.code}
@@ -4020,7 +4606,21 @@ export function EvidenceWorkbench({
               ) : null}
 
               {contextMenu.submenu === "bundle" ? (
-                <div className="absolute left-full top-[140px] ml-1 min-w-[250px] rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]">
+                <div
+                  ref={bundleSubmenuRef}
+                  className="absolute z-10 max-h-[calc(100vh-24px)] min-w-[250px] overflow-y-auto rounded-[12px] border border-[#e7e3d9] bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+                  style={{
+                    top: contextMenuLayout.bundleTop,
+                    left:
+                      contextMenuLayout.submenuDirection === "right"
+                        ? `calc(100% + ${CONTEXT_SUBMENU_GAP}px)`
+                        : "auto",
+                    right:
+                      contextMenuLayout.submenuDirection === "left"
+                        ? `calc(100% + ${CONTEXT_SUBMENU_GAP}px)`
+                        : "auto",
+                  }}
+                >
                   {reviewBundleViews.map((bundle) => (
                     <button
                       key={bundle.id}
@@ -4333,8 +4933,8 @@ export function EvidenceWorkbench({
 
           {settingsOpen ? (
             <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0f1328]/28 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-3xl rounded-[20px] border border-white/80 bg-white p-5 shadow-[0_22px_50px_rgba(15,23,42,0.16)]">
-                <div className="flex items-start justify-between gap-4">
+              <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col overflow-hidden rounded-[20px] border border-white/80 bg-white shadow-[0_22px_50px_rgba(15,23,42,0.16)]">
+                <div className="flex items-start justify-between gap-4 border-b border-[#f0eee7] px-5 py-5">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                       Prompt library
@@ -4352,110 +4952,141 @@ export function EvidenceWorkbench({
                   </button>
                 </div>
 
-                <div className="mt-4 space-y-4">
-                  <label className="block">
-                    <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
-                      Candidate name
-                    </span>
-                    <input
-                      value={settingsDraft.candidateName}
-                      onChange={(event) =>
-                        setSettingsDraft((current) => ({
-                          ...current,
-                          candidateName: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-[14px] border border-[#e7e3d9] bg-[#faf9f5] px-4 py-3 text-[12px] outline-none"
-                    />
-                  </label>
-
-                  <div className="grid gap-4">
-                    {[
-                      {
-                        label: "Document summary prompt",
-                        value: settingsDraft.summaryPrompt,
-                        reset: DEFAULT_SUMMARY_PROMPT_TEMPLATE,
-                        setter: (value: string) =>
-                          setSettingsDraft((current) => ({ ...current, summaryPrompt: value })),
-                      },
-                      {
-                        label: "EB1A classification prompt",
-                        value: settingsDraft.classificationPrompt,
-                        reset: DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
-                        setter: (value: string) =>
-                          setSettingsDraft((current) => ({
-                            ...current,
-                            classificationPrompt: value,
-                          })),
-                      },
-                      {
-                        label: "Criteria tagging prompt",
-                        value: settingsDraft.taggingPrompt,
-                        reset: DEFAULT_TAGGING_PROMPT_TEMPLATE,
-                        setter: (value: string) =>
-                          setSettingsDraft((current) => ({ ...current, taggingPrompt: value })),
-                      },
-                    ].map((prompt) => (
-                      <div key={prompt.label} className="rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                            {prompt.label}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => prompt.setter(prompt.reset)}
-                            className="rounded-full border border-[#e7e3d9] px-3 py-1.5 text-[10px] font-semibold"
-                          >
-                            Reset
-                          </button>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
+                    <div className="space-y-4">
+                      {[
+                        {
+                          label: "Document summary prompt",
+                          value: settingsDraft.summaryPrompt,
+                          reset: DEFAULT_SUMMARY_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, summaryPrompt: value })),
+                        },
+                        {
+                          label: "EB1A classification prompt",
+                          value: settingsDraft.classificationPrompt,
+                          reset: DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              classificationPrompt: value,
+                            })),
+                        },
+                        {
+                          label: "Criteria tagging prompt",
+                          value: settingsDraft.taggingPrompt,
+                          reset: DEFAULT_TAGGING_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, taggingPrompt: value })),
+                        },
+                      ].map((prompt) => (
+                        <div
+                          key={prompt.label}
+                          className="rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                              {prompt.label}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => prompt.setter(prompt.reset)}
+                              className="rounded-full border border-[#e7e3d9] px-3 py-1.5 text-[10px] font-semibold"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          <textarea
+                            value={prompt.value}
+                            onChange={(event) => prompt.setter(event.target.value)}
+                            rows={12}
+                            className="mt-3 min-h-[260px] w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 font-mono text-[11px] leading-6 outline-none"
+                          />
                         </div>
-                        <textarea
-                          value={prompt.value}
-                          onChange={(event) => prompt.setter(event.target.value)}
-                          rows={8}
-                          className="mt-3 w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 font-mono text-[11px] leading-6 outline-none"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
-                        Output root
-                      </span>
-                      <input
-                        value={settingsDraft.outputRootPath}
-                        onChange={(event) =>
-                          setSettingsDraft((current) => ({
-                            ...current,
-                            outputRootPath: event.target.value,
-                          }))
-                        }
-                        className="w-full rounded-[14px] border border-[#e7e3d9] bg-[#faf9f5] px-4 py-3 text-[12px] outline-none"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
-                        OpenAI API key
-                      </span>
-                      <input
-                        type="password"
-                        value={settingsDraft.apiKey}
-                        onChange={(event) =>
-                          setSettingsDraft((current) => ({
-                            ...current,
-                            apiKey: event.target.value,
-                          }))
-                        }
-                        placeholder={library.settings.apiKeyMask || "Paste a key"}
-                        className="w-full rounded-[14px] border border-[#e7e3d9] bg-[#faf9f5] px-4 py-3 text-[12px] outline-none"
-                      />
-                    </label>
+                    <div className="space-y-4 xl:sticky xl:top-0 xl:self-start">
+                      <div className="rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          Workspace settings
+                        </p>
+                        <p className="mt-2 text-[12px] leading-6 text-[var(--muted)]">
+                          These values control the active editable prompt set. History is not saved.
+                        </p>
+                      </div>
+
+                      <label className="block rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
+                          Candidate name
+                        </span>
+                        <input
+                          value={settingsDraft.candidateName}
+                          onChange={(event) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              candidateName: event.target.value,
+                            }))
+                          }
+                          className="w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 text-[12px] outline-none"
+                        />
+                      </label>
+
+                      <label className="block rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
+                          Output root
+                        </span>
+                        <input
+                          value={settingsDraft.outputRootPath}
+                          onChange={(event) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              outputRootPath: event.target.value,
+                            }))
+                          }
+                          className="w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 text-[12px] outline-none"
+                        />
+                      </label>
+
+                      <label className="block rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <span className="mb-2 block text-[11px] font-semibold text-[var(--foreground)]">
+                          OpenAI API key
+                        </span>
+                        <input
+                          type="password"
+                          value={settingsDraft.apiKey}
+                          onChange={(event) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              apiKey: event.target.value,
+                            }))
+                          }
+                          placeholder={library.settings.apiKeyMask || "Paste a key"}
+                          className="w-full rounded-[14px] border border-[#e7e3d9] bg-white px-4 py-3 text-[12px] outline-none"
+                        />
+                      </label>
+
+                      <div className="rounded-[16px] border border-[#ece8dd] bg-[#faf9f5] p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          Active models
+                        </p>
+                        <div className="mt-3 space-y-3 text-[12px] leading-6 text-[var(--foreground)]">
+                          <div>
+                            <p className="font-semibold">Summary model</p>
+                            <p>{library.settings.summaryModel}</p>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Embedding model</p>
+                            <p>{library.settings.embeddingModel}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex justify-end gap-2">
+                <div className="flex justify-end gap-2 border-t border-[#f0eee7] px-5 py-4">
                   <button
                     type="button"
                     onClick={() =>

@@ -20,9 +20,9 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EB1A Evidence Studio",
+  title: "setu",
   description:
-    "A local-first workspace for organizing, summarizing, and reviewing EB1A evidence files.",
+    "Setu is a local-first studio for organizing, reviewing, bundling, and classifying petition evidence.",
 };
 
 export default function RootLayout({

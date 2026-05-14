@@ -95,6 +95,8 @@ type ReviewPipelineStageStatus =
   | "completed"
   | "failed";
 
+type PipelineCardVisualStatus = "active" | "done" | "problem" | "idle";
+
 interface ReviewPipelineStage {
   id: string;
   label: string;
@@ -473,7 +475,40 @@ function reviewStatusTone(status: ClientDocument["reviewStatus"]) {
     return "bg-[var(--state-warning-soft)] text-[var(--state-warning)]";
   }
 
-  return "bg-[var(--brand-soft)] text-[var(--brand-deep)]";
+  return "bg-emerald-100 text-emerald-800";
+}
+
+function reviewStatusSurfaceTone(
+  status: ClientDocument["reviewStatus"],
+  selected: boolean,
+) {
+  if (status === "archived") {
+    return selected
+      ? "border-slate-300 bg-slate-100/90 opacity-70"
+      : "border-[#ebe9e2] bg-slate-50/80 opacity-60";
+  }
+
+  if (status === "pending") {
+    return selected
+      ? "border-amber-200 bg-amber-50"
+      : "border-amber-100 bg-[#fffaf0]";
+  }
+
+  return selected
+    ? "border-emerald-300 bg-emerald-50"
+    : "border-emerald-200 bg-emerald-50/65";
+}
+
+function reviewStatusActionTone(status: ClientDocument["reviewStatus"]) {
+  if (status === "archived") {
+    return "border-slate-300 bg-slate-100 text-slate-700";
+  }
+
+  if (status === "pending") {
+    return "border-amber-300 bg-amber-50 text-amber-800";
+  }
+
+  return "border-emerald-300 bg-emerald-50 text-emerald-800";
 }
 
 function confidenceBand(confidence: number) {
@@ -1066,7 +1101,7 @@ function stageStatusLabel(status: ReviewPipelineStageStatus) {
 
 function stageStatusClassName(status: ReviewPipelineStageStatus) {
   if (status === "completed") {
-    return "bg-[var(--brand-charcoal)] text-white";
+    return "bg-emerald-100 text-emerald-800";
   }
 
   if (status === "processing" || status === "queued") {
@@ -1078,6 +1113,56 @@ function stageStatusClassName(status: ReviewPipelineStageStatus) {
   }
 
   return "bg-[var(--paper-secondary)] text-[var(--ink-tertiary)]";
+}
+
+function pipelineCardToneClass(status: PipelineCardVisualStatus) {
+  if (status === "done") {
+    return "border-emerald-200 bg-emerald-50/75";
+  }
+
+  if (status === "active") {
+    return "border-sky-200 bg-sky-50/70";
+  }
+
+  if (status === "problem") {
+    return "border-rose-200 bg-rose-50/75";
+  }
+
+  return "border-[var(--border-secondary)] bg-[var(--paper-tertiary)]";
+}
+
+function pipelineStatusIndicator(
+  status: PipelineCardVisualStatus | ReviewPipelineStageStatus,
+) {
+  if (status === "done" || status === "completed") {
+    return (
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white">
+        <Check className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+
+  if (status === "active" || status === "processing" || status === "queued") {
+    return (
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+      </span>
+    );
+  }
+
+  if (status === "problem" || status === "failed") {
+    return (
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+        <X className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-secondary)] bg-white text-[var(--muted)]">
+      <span className="h-2.5 w-2.5 rounded-full bg-[var(--border-secondary)]" />
+    </span>
+  );
 }
 
 function normalizeBundlingStatus(
@@ -3482,7 +3567,7 @@ export function EvidenceWorkbench({
                   </div>
 
                   {pageMode === "dashboard" ? (
-                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+                    <div className="grid gap-3 lg:grid-cols-2">
                       <label className="block rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
                         <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                           1. Candidate full name
@@ -3587,8 +3672,10 @@ export function EvidenceWorkbench({
                       <div key={step.key} className="flex items-center gap-2">
                         <div
                           className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                            step.status === "done" || step.status === "active"
-                              ? "bg-[var(--brand-charcoal)] text-white"
+                            step.status === "done"
+                              ? "bg-emerald-600 text-white"
+                              : step.status === "active"
+                                ? "bg-sky-600 text-white"
                               : step.status === "problem"
                                 ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
                                 : "bg-[var(--paper-secondary)] text-[var(--ink-secondary)]"
@@ -3607,21 +3694,28 @@ export function EvidenceWorkbench({
                     {pipelineCards.map((step) => (
                       <div
                         key={`detail-${step.key}`}
-                        className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-2.5"
+                        className={`rounded-[14px] border px-3 py-2.5 ${pipelineCardToneClass(
+                          step.status,
+                        )}`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                            {step.label}
-                          </p>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
-                            step.status === "active"
-                              ? "processing"
-                              : step.status === "done"
-                                ? "completed"
-                                : step.status === "problem"
-                                  ? "failed"
-                                  : "pending",
-                          )}`}>
+                          <div className="flex items-center gap-2">
+                            {pipelineStatusIndicator(step.status)}
+                            <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                              {step.label}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] ${stageStatusClassName(
+                              step.status === "active"
+                                ? "processing"
+                                : step.status === "done"
+                                  ? "completed"
+                                  : step.status === "problem"
+                                    ? "failed"
+                                    : "pending",
+                            )}`}
+                          >
                             {step.status}
                           </span>
                         </div>
@@ -3897,20 +3991,20 @@ export function EvidenceWorkbench({
                               Tagged files
                             </p>
                           </div>
-                          <div className="border-l border-[var(--brand)]/20 pl-4">
-                            <p className="text-[18px] font-semibold text-[var(--brand-deep)]">
+                          <div className="rounded-[12px] bg-emerald-50 px-4 py-2 sm:border-l sm:border-emerald-200 sm:bg-transparent sm:px-4 sm:py-0">
+                            <p className="text-[18px] font-semibold text-emerald-800">
                               {confidentDocumentIds.length}
                             </p>
-                            <p className="text-[9px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">
-                              Confident
+                            <p className="text-[9px] uppercase tracking-[0.14em] text-emerald-800">
+                              Approved or confident
                             </p>
                           </div>
-                          <div className="border-l border-[var(--brand)]/20 pl-4">
-                            <p className="text-[18px] font-semibold text-[var(--brand-deep)]">
+                          <div className="rounded-[12px] bg-amber-50 px-4 py-2 sm:border-l sm:border-amber-200 sm:bg-transparent sm:px-4 sm:py-0">
+                            <p className="text-[18px] font-semibold text-amber-800">
                               {pendingReviewDocumentCount}
                             </p>
-                            <p className="text-[9px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">
-                              Need review
+                            <p className="text-[9px] uppercase tracking-[0.14em] text-amber-800">
+                              Human review needed
                             </p>
                           </div>
                         </div>
@@ -4223,7 +4317,10 @@ export function EvidenceWorkbench({
                                                         onContextMenu={(event) =>
                                                           openEvidenceContextMenu(event, document.id, bundle.id)
                                                         }
-                                                        className={`grid grid-cols-[20px_1fr_auto_auto_28px] items-center gap-3 rounded-[12px] border border-[#ebe9e2] bg-white px-3 py-2 ${selectedEvidenceSet.has(document.id) ? "bg-[var(--brand-soft)]/55" : ""} ${document.reviewStatus === "archived" ? "opacity-60" : ""}`}
+                                                        className={`grid grid-cols-[20px_1fr_auto_auto_28px] items-center gap-3 rounded-[12px] border px-3 py-2 ${reviewStatusSurfaceTone(
+                                                          document.reviewStatus,
+                                                          selectedEvidenceSet.has(document.id),
+                                                        )}`}
                                                       >
                                                         <input
                                                           type="checkbox"
@@ -4444,7 +4541,10 @@ export function EvidenceWorkbench({
                                             onContextMenu={(event) =>
                                               openEvidenceContextMenu(event, document.id, bundle.id)
                                             }
-                                            className={`grid grid-cols-[20px_minmax(0,1fr)_auto_auto_28px] items-center gap-3 rounded-[12px] border border-[#ebe9e2] px-3 py-2 ${selectedEvidenceSet.has(document.id) ? "bg-[var(--brand-soft)]/55" : "bg-white"} ${document.reviewStatus === "archived" ? "opacity-60" : ""}`}
+                                            className={`grid grid-cols-[20px_minmax(0,1fr)_auto_auto_28px] items-center gap-3 rounded-[12px] border px-3 py-2 ${reviewStatusSurfaceTone(
+                                              document.reviewStatus,
+                                              selectedEvidenceSet.has(document.id),
+                                            )}`}
                                           >
                                             <input
                                               type="checkbox"
@@ -4501,7 +4601,7 @@ export function EvidenceWorkbench({
                                             <button
                                               type="button"
                                               onClick={() => void persistEvidenceStatus([document.id], "kept")}
-                                              className={`rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${document.reviewStatus === "kept" ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "border-[#ebe9e2] bg-white text-[var(--foreground)]"}`}
+                                              className={`rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${document.reviewStatus === "kept" ? reviewStatusActionTone("kept") : "border-[#ebe9e2] bg-white text-[var(--foreground)]"}`}
                                             >
                                               Keep
                                             </button>
@@ -5130,7 +5230,7 @@ export function EvidenceWorkbench({
                       key={status}
                       type="button"
                       onClick={() => void persistEvidenceStatus([selectedDocument.id], status)}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${selectedDocument.reviewStatus === status ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-deep)]" : "border-[#e7e3d9] text-[var(--foreground)]"}`}
+                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${selectedDocument.reviewStatus === status ? reviewStatusActionTone(status) : "border-[#e7e3d9] text-[var(--foreground)]"}`}
                     >
                       {status}
                     </button>
@@ -5861,12 +5961,23 @@ export function EvidenceWorkbench({
                   {reviewPipeline.stages.map((stage, index) => (
                     <div
                       key={stage.id}
-                      className="rounded-[14px] border border-white/80 bg-white/92 px-2.5 py-2"
+                      className={`rounded-[14px] border px-2.5 py-2 ${
+                        stage.status === "completed"
+                          ? "border-emerald-200 bg-emerald-50/75"
+                          : stage.status === "processing" || stage.status === "queued"
+                            ? "border-sky-200 bg-sky-50/75"
+                            : stage.status === "failed"
+                              ? "border-rose-200 bg-rose-50/75"
+                              : "border-white/80 bg-white/92"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[9px] font-semibold text-[var(--foreground)]">
-                          {index + 1}. {stage.label}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          {pipelineStatusIndicator(stage.status)}
+                          <p className="text-[9px] font-semibold text-[var(--foreground)]">
+                            {index + 1}. {stage.label}
+                          </p>
+                        </div>
                         <span
                           className={`rounded-full px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${stageStatusClassName(
                             stage.status,

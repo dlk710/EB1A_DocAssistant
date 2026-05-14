@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f6fb;
+  --foreground: #1b1a2e;
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-strong: rgba(255, 255, 255, 0.94);
+  --muted: #6f6c8d;
+  --border: rgba(111, 108, 141, 0.16);
+  --brand: #6e55d2;
+  --brand-deep: #5641b0;
+  --brand-soft: #efeaff;
+  --success: #1e7d52;
+  --warning: #b36a00;
+  --danger: #b23b3b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), sans-serif;
+  background-image:
+    radial-gradient(circle at top left, rgba(138, 110, 229, 0.16), transparent 24%),
+    radial-gradient(circle at top right, rgba(95, 135, 240, 0.14), transparent 20%),
+    linear-gradient(180deg, #fbfaff 0%, #f7f6fb 44%, #f3f2fb 100%);
+  min-height: 100vh;
+}
+
+* {
+  border-color: var(--border);
+}
+
+::selection {
+  background: rgba(138, 110, 229, 0.18);
+}
+
+.glass-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 24px 60px -42px rgba(38, 31, 76, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px);
+}
+
+.text-balance {
+  text-wrap: balance;
+}

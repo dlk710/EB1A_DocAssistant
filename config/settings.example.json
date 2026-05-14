@@ -1,9 +1,0 @@
-{
-  "llm": {
-    "provider": "openai",
-    "model": "gpt-4o-mini",
-    "apiKey": ""
-  },
-  "fileMode": "copy",
-  "spendingCapUSD": 5.00
-}

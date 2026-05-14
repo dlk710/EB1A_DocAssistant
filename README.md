@@ -1,164 +1,87 @@
-# EB1A DocAssistant
+# EB1A Evidence Studio
 
-Local web app for organizing EB1A evidence into reusable event bundles, criterion buckets, and petition-planning outputs.
+Local-first Next.js workspace for organizing candidate evidence folders, generating AI summaries per file, grouping related evidence into event bundles, classifying those bundles into EB1A categories, previewing originals, and storing the searchable review library in local Qdrant.
 
-## Core Objective
+## Documentation
 
-The product is designed for a messy real-world input folder where many unrelated files are dumped together. Instead of only classifying each file independently, the app tries to:
+- Final design document: [docs/final-design.md](docs/final-design.md)
 
-- identify the real-world event or project the file belongs to
-- map that event to an EB1A criterion
-- bundle related evidence together under the same event folder
-- preserve enough metadata to build a petition later
+## What it does
 
-This makes the output useful for both:
+- Accepts a folder upload from the browser, including nested files.
+- Treats every uploaded folder as an isolated workspace keyed by `jobId`.
+- Saves the uploaded files locally under `storage/uploads/<job-id>/`.
+- Stores each document in local Qdrant with metadata, summary payload, and embeddings.
+- Parses common evidence formats including `pdf`, `docx`, `txt`, `md`, `csv`, `json`, `eml`, common images, and Quick Look-supported office files such as `pptx`.
+- Uses OpenAI to generate grounded per-file summaries, tags, metadata, and the latest subject-relevant date for each file.
+- Runs a second AI pass that bundles related evidence into real-world events such as projects, speaking engagements, judging roles, authorship efforts, and employment records, then renames those bundles into short year-month labels.
+- Applies deterministic filename routing before final review:
+  - files with `archive` in the filename are routed to `Archive Category`
+  - files with `delete` or `remove` in the filename are routed to `Unwanted`
+- Runs a third AI pass that classifies completed event bundles into EB1A categories or routes them to human review when the evidence is too ambiguous.
+- Writes a local output package for each completed classified workspace, including organized criterion folders, copied evidence, references, an index, and a human-review queue.
+- Tracks OpenAI usage and estimated USD cost per document, per bundle pass, and per workspace.
+- Separates the UI into:
+  - a dashboard for intake, candidate settings, workspace selection, and ready-state review
+  - a dedicated review page opened from `Folder Workspaces` for deeper search, drilldown, and overrides
+- Lets you review the workspace in two levels:
+  - document-level review while bundling is queued or processing
+  - event-level review once bundling is complete
+- Enriches the event review with a final drilldown layout of `criteria -> event bundles -> files`, plus explicit archive, unwanted, and human-review states once classification completes.
+- Brings the review tree back onto the main landing page automatically once the pipeline reaches `Ready to review`, while keeping semantic search on the dedicated review page.
+- Uses consistent color coding plus a small legend so criteria buckets, event bundles, evidence files, archive, unwanted, and human-review states are visually distinct throughout review.
+- Keeps the main review surface wide by opening previews on demand from each evidence row instead of reserving a permanent preview rail.
+- Lets a reviewer mark each evidence row as `Keep`, `Archive`, or `Remove` before petition drafting, with preview, override, and classification state preserved per workspace.
+- Adds a `Cancel` control beside `Index Folder` so a user can clear a selected folder before indexing or request cancellation of an active indexing/bundling/classification run at the next safe step.
+- Supports a configurable Prompt Library in the UI for both document summarization and EB1A classification. Only the active prompts are saved; prompt history is not stored.
 
-- first-pass evidence organization
-- later petition drafting, exhibit planning, and pruning
+## Current scope
 
-## What The App Does
+- The product is currently focused on evidence intake, summarization, event grouping, EB1A bundle classification, review, export packaging, and retrieval.
+- EB1A categorization now happens at the event-bundle layer, not at the single-document layer.
+- `possibleCriteria` is still forced to an empty array in document summaries; criterion assignment is handled only after event bundling.
 
-For each run, the app:
-
-1. scans every file in the source directory
-2. hashes files for integrity and duplicate detection
-3. extracts text from readable files
-4. builds compact AI excerpts to reduce token cost
-5. classifies files into EB1A criteria and reusable event bundles
-6. copies files into a new organized output directory
-7. writes audit, index, and petition-workspace metadata
-
-Important safety rules:
-
-- the source directory is read-only
-- output cannot be written inside the source directory
-- if the target directory already exists, it is renamed with a timestamp and a fresh output directory is created
-
-## Main Product Behaviors
-
-### Event-first organization
-
-The app treats the event as the reusable evidence unit. Multiple files such as:
-
-- invitation
-- thank-you email
-- certificate
-- recommendation letter
-- screenshot
-- media article
-
-can all land in the same event bundle.
-
-### Petition workspace
-
-Each run now creates planning artifacts for the next stage:
-
-- `_petition_workspace.json`
-- `_petition_plan.md`
-
-These store:
-
-- which events are selected for the petition
-- which events are dropped for now
-- exhibit bundle titles
-- petition notes
-- manual review decisions for unclassified files
-
-### Prompt-driven classification
-
-The app uses structured LLM classification with a configurable prompt library in the UI. Prompt sections are split by function so users can edit behavior without editing source code.
-
-### AI-reviewed prompt assembly
-
-The prompt library now includes an AI review step before saving an approved master prompt. Users can:
-
-- edit prompt sections independently
-- run an AI consistency review across all sections
-- see green / yellow / red validation feedback
-- save an approved master prompt snapshot only when the review is marked save-ready
-
-### Project-scoped classification
-
-For `05 — Original Contributions` and `08 — Leading Critical Role`, the app can detect client-filled template forms, extract project names, and restrict those criteria to evidence tied to the listed projects only.
-
-### Category-scoped test runs
-
-Users can limit a run to only selected EB1A categories. This is especially useful for testing one bucket at a time, such as only `04 — Judging`.
-
-### Cleanup routing
-
-If a filename explicitly contains `REMOVE` or `DELETE`, the app bypasses EB1A classification and routes that file into a top-level `CLEANUP/` folder for later disposal or manual review.
-
-## Run Locally
+## Local setup
 
 ```bash
+colima start
 npm install
-npm run mock
-npm start
+npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+The app runs on `http://localhost:3001`.
 
-## Key Configuration
+`npm run dev` and `npm start` automatically ensure the local Qdrant container is running at `http://127.0.0.1:6333`.
 
-Runtime settings are stored in `config/settings.local.json` and can also be edited through the UI.
+## Environment
 
-Notable settings:
+Copy `.env.example` to `.env.local` and add your key if needed.
 
-- provider and model
-- API key
-- spending cap
-- processing mode: `standard`, `auto`, `batch`
-- batch threshold
-- selected criteria for scoped runs
-- prompt sections
-
-`config/settings.local.json` is gitignored.
-
-## Output Structure
-
-Typical output:
-
-```text
-output/
-├── 01 — Awards & Recognition/
-├── 02 — Memberships/
-├── 03 — Published Material/
-├── 04 — Judging/
-├── 05 — Original Contributions/
-├── 06 — Authorship/
-├── 07 — Exhibitions/
-├── 08 — Leading Critical Role/
-├── 09 — High Salary/
-├── 10 — Commercial Success/
-├── 11 — Comparable Evidence/
-├── CLEANUP/
-├── _Unclassified/
-├── _Duplicates/
-├── _Reference/
-├── _audit.csv
-├── _exhibit_list.md
-├── _index.json
-├── _index.md
-├── _petition_plan.md
-└── _petition_workspace.json
+```bash
+OPENAI_API_KEY=...
+OPENAI_SUMMARY_MODEL=gpt-4.1-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_DIMENSIONS=1024
+QDRANT_URL=http://127.0.0.1:6333
 ```
 
-## Repo Map
+## Storage layout
 
-- [server.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/server.js): Express server and API routes
-- [lib/pipeline.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/pipeline.js): main end-to-end organization pipeline
-- [lib/extract.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/extract.js): text extraction and compact excerpt logic
-- [lib/project-forms.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/project-forms.js): project-template detection and project gating
-- [lib/criteria.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/criteria.js): criterion lists and scoped-run gating
-- [lib/petition-workspace.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/petition-workspace.js): petition-stage metadata persistence
-- [lib/index-md.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/lib/index-md.js): `_index.md`, `_index.json`, `_exhibit_list.md`
-- [public/index.html](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/public/index.html): app shell
-- [public/app.js](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/public/app.js): frontend behavior
-- [public/styles.css](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/public/styles.css): UI styling
+- Qdrant vectors and payloads: `storage/qdrant`
+- Uploaded source files: `storage/uploads`
+- Generated preview assets: `storage/previews`
+- Exported classified workspaces: `storage/exports`
+- Local app state:
+  - `storage/state/settings.json`
+  - `storage/state/jobs.json`
+  - `storage/state/event-bundles.json`
+  - `storage/state/eb1a-classification.json`
 
-## Design Docs
+## Notes
 
-- [docs/architecture.md](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/docs/architecture.md)
-- [docs/design-and-product.md](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/docs/design-and-product.md)
-- [SKILL.md](/Users/lohithdeshpande/Documents/Claude/Projects/EB1A_DocAssistant/app/SKILL.md)
+- The UI masks the API key and keeps it server-side.
+- If a file contains multiple dates, the summarizer chooses the latest date tied to the document’s actual subject or event.
+- Hidden system files such as `.DS_Store` are filtered from review and event bundling.
+- Uncertain or weakly supported event bundles are intentionally routed to human review instead of being force-fit into an EB1A category.
+- Filename rules override AI grouping for cleanup cases, so `archive`, `delete`, and `remove` never silently blend into normal EB1A buckets.
+- Original source files are never modified.

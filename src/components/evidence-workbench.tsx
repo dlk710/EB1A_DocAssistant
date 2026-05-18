@@ -178,6 +178,17 @@ interface ReviewBundleView extends VisibleEventBundle {
   filteredDocuments: ClientDocument[];
 }
 
+interface PendingReviewQueueItem {
+  document: ClientDocument;
+  bundleId: string | null;
+  bundleName: string;
+  bundleKind: EventBundleKind | null;
+  eventType: string | null;
+  subBundleName: string | null;
+  bucketCode: string | null;
+  bucketName: string | null;
+}
+
 interface ContextMenuState {
   open: boolean;
   x: number;
@@ -657,6 +668,83 @@ function buildCriterionBucketViews(input: {
     .filter((bucket) => bucket.bundles.length > 0);
 }
 
+function buildPendingReviewQueue(input: {
+  bundles: VisibleEventBundle[];
+  reviewState: LibrarySnapshot["reviewState"];
+  classification: WorkspaceEb1aClassificationState | null;
+  documents: ClientDocument[];
+}) {
+  const pendingBundleViews = buildReviewBundleViews({
+    bundles: input.bundles,
+    reviewState: input.reviewState,
+    statusFilter: "pending",
+    criterionFilter: null,
+  });
+  const decisionLookup = buildCriterionDecisionLookup(input.classification);
+  const queueItems: PendingReviewQueueItem[] = [];
+  const includedDocumentIds = new Set<string>();
+
+  pendingBundleViews.forEach((bundle) => {
+    const decision = decisionLookup.get(bundle.id) ?? null;
+    const pushDocument = (document: ClientDocument, subBundleName: string | null) => {
+      queueItems.push({
+        document,
+        bundleId: bundle.id,
+        bundleName: bundle.name,
+        bundleKind: bundle.bundleKind,
+        eventType: bundle.eventType,
+        subBundleName,
+        bucketCode: decision?.bucketCode ?? null,
+        bucketName: decision?.bucketName ?? null,
+      });
+      includedDocumentIds.add(document.id);
+    };
+
+    bundle.rootDocuments.forEach((document) => pushDocument(document, null));
+    bundle.subBundles.forEach((subBundle) => {
+      subBundle.documents.forEach((document) => pushDocument(document, subBundle.name));
+    });
+  });
+
+  input.documents
+    .filter(
+      (document) =>
+        isReviewableEvidenceFile(document) &&
+        document.reviewStatus === "pending" &&
+        !includedDocumentIds.has(document.id),
+    )
+    .forEach((document) => {
+      queueItems.push({
+        document,
+        bundleId: null,
+        bundleName: "Unbundled evidence",
+        bundleKind: null,
+        eventType: null,
+        subBundleName: null,
+        bucketCode: null,
+        bucketName: null,
+      });
+    });
+
+  return queueItems.sort((left, right) => {
+    const updatedSort = right.document.updatedAt.localeCompare(left.document.updatedAt);
+
+    if (updatedSort !== 0) {
+      return updatedSort;
+    }
+
+    const rightDate = right.document.summary?.primaryDate ?? "";
+    const leftDate = left.document.summary?.primaryDate ?? "";
+    const primaryDateSort = rightDate.localeCompare(leftDate);
+
+    if (primaryDateSort !== 0) {
+      return primaryDateSort;
+    }
+
+    return left.document.fileName.localeCompare(right.document.fileName);
+  });
+}
+
 function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
   return {
     candidateName: settings.candidateName,
@@ -675,11 +763,15 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
   };
 }
 
-async function requestLibrarySnapshot(jobId?: string | null) {
+async function requestLibrarySnapshot(jobId?: string | null, clientId?: string | null) {
   const searchParams = new URLSearchParams();
 
   if (jobId) {
     searchParams.set("jobId", jobId);
+  }
+
+  if (clientId) {
+    searchParams.set("clientId", clientId);
   }
 
   const response = await fetch(`/api/library${searchParams.toString() ? `?${searchParams.toString()}` : ""}`, {
@@ -1896,6 +1988,7 @@ export function EvidenceWorkbench({
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     initialSnapshot.documents[0]?.id ?? null,
   );
+  const clientScopeId = initialSnapshot.activeClientId ?? null;
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [pendingStats, setPendingStats] = useState<PendingFolderStats | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -2067,9 +2160,23 @@ export function EvidenceWorkbench({
   const taggingReady = library.criteriaTagging?.status === "completed";
   const criterionDecisionLookup = buildCriterionDecisionLookup(library.eb1aClassification);
   const criterionSummary = buildCriterionSummary(library.eb1aClassification);
+  const workspaceEventBundles = useMemo(
+    () =>
+      buildVisibleEventBundles({
+        bundleState: library.eventBundles,
+        documents: library.documents,
+        filter: "",
+        semanticResultIds: null,
+      }),
+    [library.documents, library.eventBundles],
+  );
   const visibleReviewBuckets = buildVisibleReviewBuckets(
     visibleEventBundles,
     library.eb1aClassification,
+  );
+  const reviewableDocuments = useMemo(
+    () => library.documents.filter((document) => isReviewableEvidenceFile(document)),
+    [library.documents],
   );
   const reviewBundleViews = buildReviewBundleViews({
     bundles: visibleEventBundles,
@@ -2077,6 +2184,16 @@ export function EvidenceWorkbench({
     statusFilter,
     criterionFilter,
   });
+  const pendingReviewQueue = useMemo(
+    () =>
+      buildPendingReviewQueue({
+        bundles: workspaceEventBundles,
+        reviewState: library.reviewState,
+        classification: library.eb1aClassification,
+        documents: reviewableDocuments,
+      }),
+    [library.eb1aClassification, library.reviewState, reviewableDocuments, workspaceEventBundles],
+  );
   const reviewCriterionBuckets = buildCriterionBucketViews({
     reviewBuckets: visibleReviewBuckets,
     reviewBundles: reviewBundleViews,
@@ -2105,9 +2222,22 @@ export function EvidenceWorkbench({
       ),
     )
     .map((document) => document.id);
-  const pendingReviewDocumentCount = library.documents.filter(
+  const pendingReviewDocumentCount = reviewableDocuments.filter(
     (document) => document.reviewStatus === "pending",
   ).length;
+  const keptReviewDocumentCount = reviewableDocuments.filter(
+    (document) => document.reviewStatus === "kept",
+  ).length;
+  const archivedReviewDocumentCount = reviewableDocuments.filter(
+    (document) => document.reviewStatus === "archived",
+  ).length;
+  const resolvedReviewDocumentCount = keptReviewDocumentCount + archivedReviewDocumentCount;
+  const reviewableDocumentCount = reviewableDocuments.length;
+  const pendingReviewProgress =
+    reviewableDocumentCount > 0
+      ? (resolvedReviewDocumentCount / reviewableDocumentCount) * 100
+      : 0;
+  const nextPendingReviewItem = pendingReviewQueue[0] ?? null;
   const manualCategoryOverrideCount = countManualCategoryOverrides(library);
   const manualEventOverrideCount = countManualEventOverrides(library);
   const classifiedBundleCount = countBundlesByDisposition(
@@ -2206,7 +2336,10 @@ export function EvidenceWorkbench({
 
   const refreshLibrary = useCallback(
     async (requestedJobId?: string | null) => {
-      const snapshot = await requestLibrarySnapshot(requestedJobId ?? activeJobId);
+      const snapshot = await requestLibrarySnapshot(
+        requestedJobId ?? activeJobId,
+        clientScopeId,
+      );
 
       if (!snapshot) {
         return;
@@ -2220,7 +2353,7 @@ export function EvidenceWorkbench({
         }
       });
     },
-    [activeJobId, settingsOpen],
+    [activeJobId, clientScopeId, settingsOpen],
   );
 
   const startPanelResize = useCallback(
@@ -2289,7 +2422,10 @@ export function EvidenceWorkbench({
     let active = true;
 
     void (async () => {
-      const snapshot = await requestLibrarySnapshot(initialSnapshot.activeJobId);
+      const snapshot = await requestLibrarySnapshot(
+        initialSnapshot.activeJobId,
+        clientScopeId,
+      );
 
       if (!active || !snapshot) {
         return;
@@ -2305,7 +2441,7 @@ export function EvidenceWorkbench({
     return () => {
       active = false;
     };
-  }, [initialSnapshot.activeJobId]);
+  }, [clientScopeId, initialSnapshot.activeJobId]);
 
   useEffect(() => {
     const hasActiveIndexing = library.jobs.some((job) => isActiveJob(job.status));
@@ -2692,6 +2828,9 @@ export function EvidenceWorkbench({
       const formData = new FormData();
       formData.append("candidateName", settingsDraft.candidateName.trim());
       formData.append("folderLabel", pendingStats.rootLabel);
+      if (clientScopeId) {
+        formData.append("clientId", clientScopeId);
+      }
 
       pendingFiles.forEach((file) => {
         formData.append("files", file, file.name);
@@ -3171,6 +3310,327 @@ export function EvidenceWorkbench({
   const selectionBundleId = selectionBundleIds.length === 1 ? selectionBundleIds[0] : null;
   const canGroupSelection =
     selectionScopedDocuments.length > 1 && Boolean(selectionBundleId);
+
+  function selectEvidenceDocument(
+    documentId: string,
+    mode: "replace" | "toggle" | "range" = "replace",
+  ) {
+    if (mode === "replace") {
+      setSelectedEvidenceIds([documentId]);
+      setSelectionAnchorId(documentId);
+      setSelectedDocumentId(documentId);
+      return;
+    }
+
+    if (mode === "toggle") {
+      setSelectedEvidenceIds((current) =>
+        current.includes(documentId)
+          ? current.filter((entry) => entry !== documentId)
+          : [...current, documentId],
+      );
+      setSelectionAnchorId((current) => current ?? documentId);
+      return;
+    }
+
+    const anchor = selectionAnchorId ?? documentId;
+    const orderedIds = selectableDocumentsInView.map((document) => document.id);
+    const anchorIndex = orderedIds.indexOf(anchor);
+    const targetIndex = orderedIds.indexOf(documentId);
+
+    if (anchorIndex === -1 || targetIndex === -1) {
+      setSelectedEvidenceIds([documentId]);
+      setSelectionAnchorId(documentId);
+      return;
+    }
+
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    setSelectedEvidenceIds(orderedIds.slice(start, end + 1));
+  }
+
+  function focusPendingReviewItem(documentId: string) {
+    selectEvidenceDocument(documentId, "replace");
+    setStatusFilter("pending");
+    openPreview(documentId);
+  }
+
+  function handlePendingReviewDecision(
+    documentId: string,
+    reviewDisposition: DocumentReviewAction,
+  ) {
+    setSelectedEvidenceIds((current) => current.filter((entry) => entry !== documentId));
+
+    if (selectedDocumentId === documentId && reviewDisposition !== "keep") {
+      setIsPreviewOpen(false);
+    }
+
+    routeDocumentForReview(documentId, reviewDisposition);
+  }
+
+  const pendingReviewInboxPanel = (
+    <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            Human review inbox
+          </p>
+          <h3 className="text-[16px] font-semibold text-[var(--foreground)]">
+            {pendingReviewDocumentCount > 0
+              ? `${pendingReviewDocumentCount} evidence item(s) still need your decision`
+              : "All pending evidence has been reviewed"}
+          </h3>
+          <p className="text-[11px] leading-5 text-[var(--muted)]">
+            This inbox stays focused on the remaining `pending` items so a document
+            specialist can work through the review in smaller sessions across multiple
+            days.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {nextPendingReviewItem ? (
+            <button
+              type="button"
+              onClick={() => focusPendingReviewItem(nextPendingReviewItem.document.id)}
+              className="setu-primary-button rounded-[6px] px-3 py-2 text-[11px] font-semibold text-white"
+            >
+              Open next pending
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("pending");
+              setReadyView("by-bundle");
+            }}
+            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-semibold"
+          >
+            Show pending below
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setQuickFilter("");
+              setSemanticResults(null);
+            }}
+            className="setu-ghost-button rounded-[6px] px-3 py-2 text-[11px] font-semibold"
+          >
+            Reset review filters
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-secondary)] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[20px] font-semibold text-[var(--brand-deep)]">
+                {resolvedReviewDocumentCount}/{reviewableDocumentCount}
+              </p>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                Review decisions complete
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[12px] font-semibold text-[var(--foreground)]">
+                {Math.round(pendingReviewProgress)}%
+              </p>
+              <p className="text-[10px] text-[var(--muted)]">queue cleared</p>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+            <div
+              className="h-full rounded-full bg-[var(--brand)] transition-[width]"
+              style={{ width: `${pendingReviewProgress}%` }}
+            />
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-3">
+            <p className="text-[18px] font-semibold text-emerald-800">
+              {keptReviewDocumentCount}
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-emerald-800">
+              Kept in active petition set
+            </p>
+          </div>
+          <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[18px] font-semibold text-slate-800">
+              {archivedReviewDocumentCount}
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-slate-700">
+              Archived or removed
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {pendingReviewQueue.length ? (
+        <div className="mt-4 overflow-hidden rounded-[14px] border border-[var(--border-secondary)]">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                Pending queue
+              </p>
+              <p className="text-[11px] text-[var(--muted)]">
+                Latest human-work items are shown first.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-800">
+              {pendingReviewQueue.length} open
+            </span>
+          </div>
+          <div className="max-h-[26rem] overflow-y-auto px-3 py-3">
+            <div className="space-y-3">
+              {pendingReviewQueue.map((item, index) => {
+                const isSelected = selectedDocument?.id === item.document.id;
+                const reviewLabel =
+                  item.bucketCode && item.bucketName
+                    ? `${item.bucketCode} · ${item.bucketName}`
+                    : item.bundleName;
+                const aiReason =
+                  item.document.reviewStatusReason ||
+                  "AI left this file in pending so a human can decide whether it belongs in the petition set.";
+
+                return (
+                  <div
+                    key={item.document.id}
+                    className={`rounded-[14px] border px-3 py-3 transition ${
+                      isSelected
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)]/10"
+                        : "border-[var(--border-secondary)] bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-amber-100 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-amber-800">
+                            Pending #{index + 1}
+                          </span>
+                          <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                            {item.eventType || "Evidence file"}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] ${
+                              item.bucketCode && item.bucketName
+                                ? decisionBadgeClassName(
+                                    item.bucketCode,
+                                    item.bucketCode === "ARCHIVE"
+                                      ? "archive"
+                                      : item.bucketCode === "UNWANTED"
+                                        ? "unwanted"
+                                        : item.bucketCode === "REVIEW"
+                                          ? "human_review"
+                                          : "criterion",
+                                  )
+                                : "border border-[var(--border-primary)] bg-[var(--paper-secondary)] text-[var(--muted)]"
+                            }`}
+                          >
+                            {reviewLabel}
+                          </span>
+                          {item.subBundleName ? (
+                            <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                              {item.subBundleName}
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => focusPendingReviewItem(item.document.id)}
+                          className="mt-2 block max-w-full text-left"
+                        >
+                          <p className="truncate text-[13px] font-semibold text-[var(--foreground)]">
+                            {item.document.summary?.title || item.document.fileName}
+                          </p>
+                          <p className="mt-1 truncate text-[10px] text-[var(--muted)]">
+                            {item.bundleName} · {item.document.relativePath}
+                          </p>
+                        </button>
+                        <p className="mt-2 text-[11px] leading-5 text-[var(--foreground)]/85">
+                          {truncateText(
+                            item.document.summary?.shortSummary || "Summary pending.",
+                            220,
+                          )}
+                        </p>
+                        <div className="mt-2 rounded-[12px] bg-[var(--paper-secondary)] px-3 py-2 text-[10px] leading-5 text-[var(--muted)]">
+                          <span className="font-semibold text-[var(--foreground)]">
+                            Why Setu left this pending:
+                          </span>{" "}
+                          {aiReason}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {item.document.criteriaTags.slice(0, 4).map((criterion) => (
+                            <button
+                              key={`${item.document.id}-${criterion.code}`}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void cycleCriterionForDocument(item.document, criterion.code);
+                              }}
+                              className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
+                                criterion.role,
+                                criterion.source,
+                              )}`}
+                            >
+                              {criterion.legalCode} {criterion.role}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex min-w-[220px] flex-wrap gap-2 lg:justify-end">
+                        <button
+                          type="button"
+                          onClick={() => focusPendingReviewItem(item.document.id)}
+                          className={evidenceActionButtonClassName("preview", isSelected)}
+                        >
+                          <Eye className="h-3 w-3" />
+                          Quick peek
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handlePendingReviewDecision(item.document.id, "keep");
+                          }}
+                          className={evidenceActionButtonClassName("keep", false)}
+                        >
+                          <Check className="h-3 w-3" />
+                          Keep
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handlePendingReviewDecision(item.document.id, "archive");
+                          }}
+                          className={evidenceActionButtonClassName("archive", false)}
+                        >
+                          <Archive className="h-3 w-3" />
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handlePendingReviewDecision(item.document.id, "unwanted");
+                          }}
+                          className={evidenceActionButtonClassName("unwanted", false)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-[14px] border border-dashed border-emerald-200 bg-emerald-50 px-4 py-4 text-[11px] leading-5 text-emerald-900">
+          Every reviewable evidence item has already been resolved. New pending files will
+          show up here automatically if another indexing run needs human judgment.
+        </div>
+      )}
+    </div>
+  );
   const showReviewSurface = pageMode === "review" || showDashboardReview;
   const pipelineCards = [
     {
@@ -3251,43 +3711,6 @@ export function EvidenceWorkbench({
     },
   ] as const;
 
-  const selectEvidenceDocument = (
-    documentId: string,
-    mode: "replace" | "toggle" | "range" = "replace",
-  ) => {
-    if (mode === "replace") {
-      setSelectedEvidenceIds([documentId]);
-      setSelectionAnchorId(documentId);
-      setSelectedDocumentId(documentId);
-      return;
-    }
-
-    if (mode === "toggle") {
-      setSelectedEvidenceIds((current) =>
-        current.includes(documentId)
-          ? current.filter((entry) => entry !== documentId)
-          : [...current, documentId],
-      );
-      setSelectionAnchorId((current) => current ?? documentId);
-      return;
-    }
-
-    const anchor = selectionAnchorId ?? documentId;
-    const orderedIds = selectableDocumentsInView.map((document) => document.id);
-    const anchorIndex = orderedIds.indexOf(anchor);
-    const targetIndex = orderedIds.indexOf(documentId);
-
-    if (anchorIndex === -1 || targetIndex === -1) {
-      setSelectedEvidenceIds([documentId]);
-      setSelectionAnchorId(documentId);
-      return;
-    }
-
-    const start = Math.min(anchorIndex, targetIndex);
-    const end = Math.max(anchorIndex, targetIndex);
-    setSelectedEvidenceIds(orderedIds.slice(start, end + 1));
-  };
-
   const saveDocumentMeta = async (documentId: string, payload: { notes?: string; isPinned?: boolean }) => {
     try {
       const response = await fetch(`/api/evidence/${encodeURIComponent(documentId)}`, {
@@ -3347,6 +3770,22 @@ export function EvidenceWorkbench({
                   <UserRound className="h-3.5 w-3.5 text-[var(--brand)]" />
                   Candidate · {candidateDisplayName}
                 </span>
+                {clientScopeId ? (
+                  <Link
+                    href={`/clients/${clientScopeId}`}
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
+                  >
+                    Client home
+                  </Link>
+                ) : null}
+                {clientScopeId ? (
+                  <Link
+                    href={`/clients/${clientScopeId}/review`}
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
+                  >
+                    Action-items review
+                  </Link>
+                ) : null}
                 {pageMode === "review" ? (
                   <Link
                     href="/"
@@ -3952,6 +4391,29 @@ export function EvidenceWorkbench({
                 </section>
               ) : null}
 
+              {pageMode === "dashboard" &&
+              taggingReady &&
+              reviewableDocuments.length > 0 &&
+              !showDashboardReview ? (
+                <section className="setu-panel rounded-[18px] p-4">
+                  <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        Human review
+                      </p>
+                      <h2 className="mt-1 text-[18px] font-semibold text-[var(--foreground)]">
+                        Work through the pending evidence queue before the final review pass
+                      </h2>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                        Setu keeps the unresolved evidence in one place so you can review it over
+                        multiple sessions without hunting through the full workspace.
+                      </p>
+                    </div>
+                  </div>
+                  {pendingReviewInboxPanel}
+                </section>
+              ) : null}
+
               {showReviewSurface ? (
                 <section className="setu-panel rounded-[18px] p-4">
                   <div className="flex flex-col gap-3 border-b border-[var(--border-secondary)] pb-4">
@@ -4046,6 +4508,8 @@ export function EvidenceWorkbench({
                         </div>
                       </div>
                     </div>
+
+                    {pendingReviewInboxPanel}
 
                     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex flex-wrap items-center gap-2">

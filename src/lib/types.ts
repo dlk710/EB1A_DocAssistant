@@ -47,6 +47,57 @@ export type ReviewBucketKind =
 export type EvidenceReviewStatus = "kept" | "pending" | "archived";
 export type CriterionTagRole = "primary" | "supporting";
 export type CriterionTagSource = "ai" | "manual";
+export type PetitionType = "EB-1A";
+export type ClientStatus =
+  | "onboarding"
+  | "reviewing"
+  | "strategizing"
+  | "locked"
+  | "drafting"
+  | "stitching"
+  | "filed"
+  | "rfe-response"
+  | "decided"
+  | "archived";
+
+export interface Client {
+  id: string;
+  displayName: string;
+  petitionType: PetitionType;
+  status: ClientStatus;
+  createdAt: string;
+  updatedAt: string;
+  filingTargetDate: string | null;
+  filedAt: string | null;
+  decidedAt: string | null;
+  decision: "approved" | "denied" | "rfe" | "withdrawn" | null;
+  notes: string;
+}
+
+export interface ClientSummary {
+  id: string;
+  displayName: string;
+  petitionType: PetitionType;
+  status: ClientStatus;
+  updatedAt: string;
+}
+
+export interface ClientTimelineEvent {
+  id: string;
+  clientId: string;
+  occurredAt: string;
+  kind:
+    | "client-created"
+    | "workspace-added"
+    | "pipeline-completed"
+    | "review-action-taken"
+    | "review-completed"
+    | "manual-override"
+    | string;
+  workspaceId: string | null;
+  summary: string;
+  metadata: Record<string, unknown>;
+}
 
 export interface EvidenceCriterionTag {
   code: string;
@@ -154,6 +205,7 @@ export interface SearchResult extends ClientDocument {
 
 export interface JobRecord {
   id: string;
+  clientId: string;
   candidateName: string;
   folderLabel: string;
   status: JobStatus;
@@ -343,6 +395,9 @@ export interface WorkspaceReviewState {
 }
 
 export interface LibrarySnapshot {
+  activeClientId: string | null;
+  activeClient: Client | null;
+  clients: ClientSummary[];
   activeJobId: string | null;
   activeJob: JobRecord | null;
   overview: LibraryOverview;

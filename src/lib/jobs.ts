@@ -13,6 +13,7 @@ function readJobsState(): JobsState {
   return {
     jobs: state.jobs.map((job) => ({
       ...job,
+      clientId: job.clientId ?? "",
       candidateName: job.candidateName ?? "",
       cancellationRequestedAt: job.cancellationRequestedAt ?? null,
     })),
@@ -34,12 +35,13 @@ function updateJob(jobId: string, updater: (job: JobRecord) => JobRecord) {
 }
 
 export function createJob(
-  job: Pick<JobRecord, "id" | "candidateName" | "folderLabel" | "totalFiles">,
+  job: Pick<JobRecord, "id" | "clientId" | "candidateName" | "folderLabel" | "totalFiles">,
 ) {
   const state = readJobsState();
   state.jobs = sortJobs([
     {
       id: job.id,
+      clientId: job.clientId,
       candidateName: job.candidateName,
       folderLabel: job.folderLabel,
       status: "queued",
@@ -139,4 +141,10 @@ export function removeJob(jobId: string) {
   const state = readJobsState();
   state.jobs = state.jobs.filter((job) => job.id !== jobId);
   writeJobsState(state);
+}
+
+export function replaceJobs(jobs: JobRecord[]) {
+  writeJobsState({
+    jobs: sortJobs(jobs),
+  });
 }

@@ -2,57 +2,56 @@
 
 ## 1. Purpose
 
-Setu is a local-first evidence workbench for immigration petition preparation. The current implementation is optimized for a reviewer who needs to move from raw evidence folders to reviewable legal organization without losing source traceability, workspace isolation, or the ability to override AI decisions.
+Setu is a local-first evidence platform for immigration petition preparation. The current implementation is optimized for teams who need to move from raw evidence folders to a reviewable legal organization system without losing source traceability, workspace isolation, or human override control.
 
-The architecture is intentionally layered:
+Phase 1 adds a client lifecycle shell around the existing evidence pipeline. The architecture is now intentionally layered as:
 
-1. raw file intake
-2. document-level understanding
-3. event-level interpretation
-4. criterion-level organization
-5. reviewer overrides and output packaging
+1. client record
+2. workspace intake
+3. document-level understanding
+4. event-level interpretation
+5. criterion-level organization
+6. human review and output packaging
 
-Each layer is preserved instead of collapsed into a single irreversible decision.
+Each layer is preserved instead of collapsed into one irreversible decision.
 
 ## 2. Architectural principles
 
-The current system follows these rules:
+The system follows these rules:
 
 1. AI does the first pass; a human does the final judgment.
-2. Every uploaded folder becomes an isolated workspace.
-3. Original files remain accessible through every stage.
-4. Each AI pass is rerunnable without destroying upstream artifacts.
-5. Review actions are reversible and workspace-scoped.
-6. Retrieval primitives and interpretation layers are stored separately.
-7. The UX must preserve readability, use screen space well, and avoid hidden controls.
+2. A client can own multiple isolated workspaces.
+3. Every uploaded folder remains isolated by `jobId`.
+4. Original files remain accessible through every stage.
+5. Each AI pass is rerunnable without destroying upstream artifacts.
+6. Review actions are reversible and workspace-scoped.
+7. Client home and review pages should surface what needs attention first.
 
 ## 3. System overview
 
 ```mermaid
 flowchart LR
-  A["Folder upload"] --> B["Job record\nstorage/state/jobs.json"]
-  A --> C["Workspace files\nstorage/uploads/<jobId>"]
-  C --> D["Extraction + normalization\nsrc/lib/file-processing.ts"]
-  D --> E["Summary pass\nsrc/lib/ai.ts"]
-  E --> F["Embedding pass\nsrc/lib/ai.ts"]
-  F --> G["Qdrant document store\nsrc/lib/qdrant.ts"]
-  G --> H["Workspace snapshot assembly\nsrc/lib/library.ts"]
-  H --> I["Event bundling pass\nsrc/lib/event-bundles.ts"]
-  I --> J["Bundle cache\nstorage/state/event-bundles.json"]
-  J --> K["EB1A classification pass\nsrc/lib/eb1a-classification.ts"]
-  K --> L["Classification cache\nstorage/state/eb1a-classification.json"]
-  L --> M["Criteria tagging pass\nsrc/lib/criteria-tagging.ts"]
-  M --> N["Tagging cache\nstorage/state/criteria-tagging.json"]
-  J --> O["Manual overrides\nsrc/lib/manual-overrides.ts"]
-  L --> O
-  N --> O
-  O --> P["Review snapshot\nsrc/lib/library.ts"]
-  L --> Q["Output package builder\nsrc/lib/output-package.ts"]
-  Q --> R["storage/exports"]
-  G --> S["Search API\nsrc/app/api/search/route.ts"]
-  G --> T["Preview and source routes"]
-  P --> U["Dashboard review surface\nsrc/components/evidence-workbench.tsx"]
-  P --> V["Dedicated review page\n/review/<jobId>"]
+  A["Client portfolio\n/clients"] --> B["Client record\nstorage/state/clients.json"]
+  B --> C["Client home\n/clients/<clientId>"]
+  C --> D["Workspace intake\n/?view=workspace&clientId=<clientId>"]
+  D --> E["Job record\nstorage/state/jobs.json"]
+  D --> F["Workspace files\nstorage/uploads/<jobId>"]
+  F --> G["Extraction + normalization"]
+  G --> H["Summary pass\nsrc/lib/ai.ts"]
+  H --> I["Embedding pass\nsrc/lib/ai.ts"]
+  I --> J["Qdrant document store\nsrc/lib/qdrant.ts"]
+  J --> K["Workspace snapshot assembly\nsrc/lib/library.ts"]
+  K --> L["Event bundling\nsrc/lib/event-bundles.ts"]
+  L --> M["Bundle cache\nstorage/state/event-bundles.json"]
+  M --> N["EB1A classification\nsrc/lib/eb1a-classification.ts"]
+  N --> O["Classification cache\nstorage/state/eb1a-classification.json"]
+  O --> P["Criteria tagging\nsrc/lib/criteria-tagging.ts"]
+  P --> Q["Tagging cache\nstorage/state/criteria-tagging.json"]
+  Q --> R["Manual overrides + review state"]
+  B --> S["Client timeline\nstorage/state/clients/<clientId>/timeline.json"]
+  R --> T["Client review page\n/clients/<clientId>/review"]
+  R --> U["Dense workspace review\n/review/<jobId>"]
+  O --> V["Output packages\nstorage/exports"]
 ```
 
 ## 4. Runtime stack
@@ -69,11 +68,11 @@ flowchart LR
 - Next.js route handlers under `src/app/api`
 - local filesystem persistence
 - Qdrant for vector-backed document retrieval
-- JSON state files for operational and derived state
+- JSON state files for client, job, and derived-state persistence
 
 ### AI providers and models
 
-- OpenAI text model for summarization, bundling decisions, classification, and tagging
+- OpenAI text model for summarization, bundling, classification, tagging, and Ask Setu chat
 - OpenAI embedding model for semantic retrieval
 
 Current defaults come from [src/lib/settings.ts](../src/lib/settings.ts):
@@ -84,56 +83,53 @@ Current defaults come from [src/lib/settings.ts](../src/lib/settings.ts):
 
 ## 5. Persistence design
 
-The system intentionally uses multiple local persistence layers rather than forcing all concerns into one store.
-
 ### 5.1 Qdrant
 
-Qdrant stores the retrieval-oriented document record and embedding together. It is the canonical store for evidence documents after indexing.
+Qdrant stores the retrieval-oriented evidence document record and embedding together. It is the canonical store for indexed evidence documents.
 
 Each stored point includes:
 
 - workspace identity
-- candidate name
+- client and candidate context
 - file metadata
 - processing state
 - document summary payload
 - criteria tags
 - review status
 - notes and pin state
-- OpenAI usage metadata
+- usage metadata
 
 Qdrant powers:
 
 - semantic search
 - workspace-level evidence retrieval
-- persistence of embeddings
 - document metadata hydration for review surfaces
+- Ask Setu retrieval
 
 ### 5.2 JSON state
 
 Operational and interpretation-layer state lives under `storage/state`.
 
 - `settings.json`
-  - candidate name
-  - active prompts
-  - model settings
-  - output root
+  - prompts, model settings, output root
 - `jobs.json`
-  - indexing jobs
-  - stage progress
-  - cancellation state
+  - indexing jobs, stage progress, cancellation state
+- `clients.json`
+  - top-level client registry
+- `clients/<clientId>/client.json`
+  - durable client record
+- `clients/<clientId>/timeline.json`
+  - lifecycle events for that client
 - `event-bundles.json`
   - per-workspace bundle output
 - `eb1a-classification.json`
-  - per-workspace EB1A decisions and bucketing
+  - per-workspace criterion output
 - `criteria-tagging.json`
   - per-workspace evidence-level tags and review suggestions
 - `manual-overrides.json`
   - human overrides for event assignment, bucket placement, and review state
 - `review-state.json`
-  - sub-bundles and review-specific organization
-
-These files are deliberately easy to inspect and back up.
+  - sub-bundles and review organization
 
 ### 5.3 Filesystem artifacts
 
@@ -144,23 +140,47 @@ The filesystem stores:
 - export packages in `storage/exports`
 - local Qdrant files in `storage/qdrant`
 
-## 6. Workspace isolation
+## 6. Client and workspace model
 
-Every uploaded folder becomes its own isolated workspace keyed by `jobId`.
+Phase 1 introduces a formal client model.
 
-Isolation is enforced in:
+### Client
+
+A client record includes:
+
+- `id`
+- `displayName`
+- `petitionType`
+- lifecycle status
+- created and updated timestamps
+- optional filing target or decision metadata
+- notes
+
+Clients are managed in [src/lib/clients.ts](../src/lib/clients.ts).
+
+### Workspace
+
+A workspace remains the isolated AI-processing unit keyed by `jobId`.
+
+Each workspace belongs to one client through `job.clientId`. Workspaces continue to enforce isolation in:
 
 - document retrieval
 - semantic search
 - preview and source access
 - event bundling caches
 - classification caches
-- criteria tagging caches
+- tagging caches
 - manual overrides
-- review state
 - output package generation
 
-This means evidence from `folder1` never appears in `folder2` unless the reviewer explicitly switches workspaces.
+### Timeline
+
+Important lifecycle actions are written to the per-client timeline in [src/lib/timeline.ts](../src/lib/timeline.ts), including:
+
+- client creation
+- migrated workspace attachment
+- human review actions
+- key override changes
 
 ## 7. Multi-pass intelligence
 
@@ -168,7 +188,7 @@ This means evidence from `folder1` never appears in `folder2` unless the reviewe
 
 Each reviewable file is extracted, summarized, and embedded.
 
-The summary pass produces:
+This pass produces:
 
 - title
 - short summary
@@ -183,8 +203,6 @@ The summary pass produces:
 - tags
 - risk flags
 
-This stage is evidence-first. It captures grounded meaning before heavier legal organization.
-
 ### 7.2 Pass 2: event bundling
 
 The bundling pass groups related documents into real-world events such as:
@@ -195,39 +213,20 @@ The bundling pass groups related documents into real-world events such as:
 - project or initiative evidence
 - authorship or publication efforts
 
-Bundle output includes:
-
-- bundle name
-- short summary
-- detailed summary
-- event type
-- latest relevant date
-- organizations
-- people
-- keywords
-- lead document
-- evidence document ids
-
-Special rules currently supported:
-
-- structured role documents can spawn multiple separate events
-- same initiative may remain separate across `CR`, `LR`, and `OC` framing
-- filename rules route `archive`, `delete`, and `remove` files into cleanup buckets
+Special structured role-document rules remain supported, including `CR`, `LR`, and `OC` event naming behavior.
 
 ### 7.3 Pass 3: bundle-level EB1A classification
 
 Completed event bundles are assigned into:
 
-- standard EB1A criteria buckets
+- standard EB1A criteria
 - `Archive Category`
 - `Unwanted`
 - `Human Review`
 
-This pass is still downstream of evidence and event interpretation. It does not replace earlier layers.
-
 ### 7.4 Pass 4: document-level criteria tagging
 
-The tagging pass works at the individual evidence file level and produces:
+The tagging pass works at the evidence-file level and produces:
 
 - criterion tags
 - role
@@ -240,121 +239,74 @@ The tagging pass works at the individual evidence file level and produces:
   - `pending`
   - `archived`
 
-This gives the reviewer a finer-grained inspection layer inside each event bundle.
+## 8. Review architecture
 
-## 8. Search and retrieval
+Setu now has two review-oriented layers.
 
-Setu supports two retrieval modes.
+### Client review
 
-### Semantic search
+The client review page is action-oriented and groups work by:
 
-Semantic search is vector-backed and scoped to the active workspace. It is intended for concept-level lookup when the exact words may vary.
+- actionable items still requiring human review
+- category bands
+- archive and cleanup bands
+- routine evidence that is already stabilized
 
-### Keyword filtering
+This page is designed for incremental work across multiple sessions.
 
-Keyword filtering is a local UI filter over the active review payload. It is intended for rapid narrowing by visible text such as:
+### Dense workspace review
 
-- bundle name
-- document title
-- path
-- tag
-- organization
+The job-level review page remains retrieval-heavy and is appropriate when the reviewer needs:
 
-Search is not global across all workspaces by default.
+- semantic search
+- bundle-level inspection
+- criterion-first deep review
+- targeted overrides on one workspace
 
-## 9. Review model
+## 9. Migration behavior
 
-The current review hierarchy is:
+Phase 1 uses lazy migration for historical workspaces.
 
-1. criterion
-2. event bundle
-3. evidence file
+When older jobs are encountered:
 
-Reviewers can:
+- Setu creates client records from existing jobs if needed
+- existing jobs are attached to the created client
+- a client timeline entry is created
 
-- drag evidence between bundles
-- drag bundles between criteria
-- mark evidence as kept, pending, archived, or removed via applicable controls
-- create and manage sub-bundles
-- open quick previews
-- use right-click actions for dense review workflows
+Default migration behavior is one client per historical workspace unless the data is later consolidated manually.
 
-Manual overrides are stored per workspace and must survive reloads.
+## 10. APIs introduced or emphasized in Phase 1
 
-## 10. Output packaging
+Client routes:
 
-The classification layer feeds the export packager in [src/lib/output-package.ts](../src/lib/output-package.ts).
+- `GET /api/clients`
+- `POST /api/clients`
+- `GET /api/clients/<clientId>`
+- `PATCH /api/clients/<clientId>`
+- `DELETE /api/clients/<clientId>`
+- `GET /api/clients/<clientId>/timeline`
 
-Generated output packages include:
+Existing workspace and evidence APIs continue to drive ingestion, review actions, previews, and overrides.
 
-- criterion folders
-- copied evidence artifacts
-- summary indexes
-- classification summaries
-- human review notes
-- source reference maps
+## 11. Ask Setu note
 
-This is designed to support downstream drafting without requiring the reviewer to manually rebuild the evidence tree.
+Ask Setu remains an additive layer on top of the indexed workspace substrate. It does not replace the client lifecycle model and should remain gated by workspace readiness.
 
-## 11. Dashboard and review UX architecture
+## 12. Validation expectations
 
-### Dashboard responsibilities
+Baseline validation:
 
-The dashboard is responsible for:
+```bash
+npm run lint
+npm run build
+```
 
-- candidate identity
-- folder selection and indexing
-- workspace switching
-- progress visibility
-- high-level metrics
-- ready-state review rendering
+Phase 1 validation should additionally confirm:
 
-The ready review section returns to the main landing page once the workspace is in `Ready`.
-
-### Dedicated review page responsibilities
-
-The dedicated review page exists for:
-
-- deeper semantic retrieval
-- focused override work
-- dense review sessions
-- search-driven navigation
-
-### Prompt Library
-
-Prompt Library is a full-height, scrollable editing surface for the active prompts. It is intentionally modal to avoid accidental edits during review.
-
-## 12. Setu v4 design system constraints
-
-The Setu shell is not decorative only. It encodes concrete implementation rules:
-
-- use shared tokens from [src/app/globals.css](../src/app/globals.css)
-- preserve the charcoal-and-amber hierarchy
-- use warm neutral panels for evidence-heavy reading surfaces
-- keep the top-level brand block prominent
-- avoid reintroducing the older lilac-led identity in this branch
-
-Desktop layout constraints:
-
-- left and right rails are draggable
-- prompt library must scroll internally
-- empty space should be minimized through denser layout and stronger typographic hierarchy
-- ready-state review must remain visible on the landing page
-- context menus must clamp to the viewport and avoid hidden bottom-right overflow
-
-## 13. Operational safeguards
-
-The implementation should continue to honor these safeguards:
-
-- original uploads are never edited
-- workspaces remain isolated
-- cleanup routing rules remain deterministic
-- chosen primary dates prefer the latest date relevant to the actual subject or event
-- cancellation should stop work at safe boundaries
-- historical workspaces should remain readable after downstream logic changes
-
-## 14. Known limitations
-
-- OCR quality depends on extractable text or available preview layers
-- full conversational `Ask the studio` behavior from the wireframe is not yet implemented
-- some internal filenames and package identifiers still carry earlier product naming, but the current user-facing product is Setu
+- `/` redirects to `/clients`
+- `/clients` renders all clients
+- `/clients/<clientId>` renders client home
+- `/clients/<clientId>/review` renders the action-oriented review surface
+- `/?view=workspace&clientId=<clientId>` preserves operational workbench access
+- pending review actions update counts immediately and persist after reload
+- workspace isolation remains intact across client views

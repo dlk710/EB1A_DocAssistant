@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import mime from "mime-types";
+import { createClient, getClient, updateClient } from "@/lib/clients";
 import { startIngestionJob } from "@/lib/ingestion";
 import { createJob } from "@/lib/jobs";
 import { getRuntimeSettings } from "@/lib/settings";
 import { ensureStorageRoots } from "@/lib/state-store";
+import { appendClientTimelineEvent } from "@/lib/timeline";
 import { ensureQdrantCollection, upsertDocuments } from "@/lib/qdrant";
 import { UPLOAD_ROOT } from "@/lib/constants";
 import type { StoredDocument } from "@/lib/types";
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
   const runtimeSettings = getRuntimeSettings();
   const candidateName =
     String(formData.get("candidateName") || "").trim() || runtimeSettings.candidateName;
+  const requestedClientId = String(formData.get("clientId") || "").trim();
 
   if (!files.length) {
     return Response.json(
@@ -60,14 +63,39 @@ export async function POST(request: Request) {
   );
   const folderLabel =
     String(formData.get("folderLabel") || "").trim() || inferFolderLabel(normalizedPaths);
+  const client =
+    (requestedClientId ? getClient(requestedClientId) : null) ??
+    createClient({
+      displayName: candidateName,
+      petitionType: "EB-1A",
+    });
   const jobId = crypto.randomUUID();
 
   createJob({
     id: jobId,
+    clientId: client.id,
     candidateName,
     folderLabel,
     totalFiles: files.length,
   });
+  appendClientTimelineEvent({
+    id: `${jobId}:workspace-added:${Date.now()}`,
+    clientId: client.id,
+    occurredAt: new Date().toISOString(),
+    kind: "workspace-added",
+    workspaceId: jobId,
+    summary: `Workspace '${folderLabel}' added.`,
+    metadata: {
+      workspaceId: jobId,
+      folderLabel,
+      fileCount: files.length,
+    },
+  });
+  if (client.displayName !== candidateName) {
+    updateClient(client.id, {
+      displayName: candidateName,
+    });
+  }
 
   const queuedDocuments: StoredDocument[] = [];
 

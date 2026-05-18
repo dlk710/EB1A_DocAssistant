@@ -1,32 +1,33 @@
 # setu
 
-Setu is a local-first evidence studio for immigration petition preparation. It turns raw folder uploads into a structured review workspace while preserving the original files, the intermediate AI reasoning layers, and the human override path.
+Setu is a local-first immigration evidence platform that now starts from the **client record**, not just the upload workspace. The product turns raw folder uploads into a structured review system while preserving original files, intermediate AI reasoning layers, and human override paths.
 
-The current implementation is built for a practical review flow:
+Phase 1 introduces the client lifecycle shell:
 
-1. upload a folder of evidence
-2. summarize each document
-3. bundle related files into real-world events
-4. classify those bundles into EB1A criteria and review buckets
-5. tag individual evidence files for human review
-6. let a reviewer override anything before downstream drafting
+1. manage clients from a portfolio view
+2. open a client home with stage status, spend, coverage, and timeline
+3. run isolated evidence workspaces under that client
+4. review human-action items separately from routine evidence
+5. keep the dense workspace tooling available when deeper intervention is needed
 
 ## Core objective
 
-Setu exists to make evidence preparation faster, more traceable, and more defensible without turning the process into a black box.
+Setu exists to make petition evidence preparation faster, more traceable, and more defensible without turning the process into a black box.
 
-The product objective is:
+The product contract is:
 
-- keep the workflow local-first
-- preserve every original file
-- let AI do the first interpretation pass
-- let a human make the final judgment
-- keep every review layer reversible and inspectable
+- local-first by default
+- AI-first interpretation, human-final judgment
+- reversible organization layers
+- one client can accumulate multiple workspaces over time
+- original evidence is never modified
+- every review decision remains inspectable
 
 ## Current product scope
 
-The live application at `http://localhost:3001` currently supports:
+The live app at `http://localhost:3001` currently supports:
 
+- client portfolio and client-specific home pages
 - folder-based workspace ingestion from the browser
 - isolated workspaces per upload, keyed by `jobId`
 - OpenAI-powered document summarization
@@ -34,17 +35,34 @@ The live application at `http://localhost:3001` currently supports:
 - AI event bundling
 - AI EB1A bundle classification
 - AI document-level criteria tagging
-- `kept` / `pending` / `archived` review state
+- human review states: `kept`, `pending`, `archived`, `removed`
 - manual overrides for evidence, event bundles, and criteria placement
-- sub-bundles for reviewer organization
+- human-review inbox behavior for pending items
 - original-file preview and source access
 - prompt editing through Prompt Library
 - tracked OpenAI cost by pipeline stage
 - local export package generation for downstream drafting
 
+## Phase 1 routes
+
+The current Phase 1 surface is client-first:
+
+- `/clients`
+  - portfolio view for all clients
+- `/clients/<clientId>`
+  - client home with lifecycle summary, blockers, coverage, spend, and timeline
+- `/clients/<clientId>/review`
+  - action-oriented review page for that client
+- `/?view=workspace&clientId=<clientId>`
+  - dense workspace intake/dashboard preserved for operational work
+- `/review/<jobId>`
+  - job-level review surface for retrieval-heavy review
+
+When clients exist, `/` redirects to `/clients`.
+
 ## Product workflow
 
-The implemented multi-pass pipeline is:
+The implemented multi-pass pipeline remains:
 
 1. `Indexing`
 2. `Bundling`
@@ -52,38 +70,53 @@ The implemented multi-pass pipeline is:
 4. `Tagging`
 5. `Ready`
 
-Design rules for the pipeline:
+Phase 1 wraps that pipeline in a client model:
 
-- each pass is independently rerunnable
-- downstream passes do not destroy upstream outputs
-- historical workspaces can be reinterpreted by newer downstream logic
-- cancellation is cooperative and stops at the next safe boundary
-- workspace isolation is preserved throughout search, preview, review, and export
+1. create or select a client
+2. upload a new evidence folder into that client
+3. let Setu run the multi-pass AI interpretation flow
+4. surface blocking human actions separately from routine evidence
+5. review and override in increments across days if needed
+6. export downstream outputs once the workspace is mature
 
 ## Main surfaces
 
-### Dashboard
+### Client portfolio
 
-The dashboard is the intake and oversight surface. It includes:
+The portfolio page is the top-level entry. It is meant for:
 
-- Setu-branded top shell
-- candidate identity
-- folder workspace picker with recent run history
-- pipeline visibility and stage status
-- cost and coverage summaries
-- draggable side rails on desktop
-- ready-state review surface once the workspace is actually reviewable
+- seeing all clients at a glance
+- understanding current lifecycle stage
+- opening the latest client activity quickly
+- creating a new client record
 
-### Dedicated review page
+### Client home
 
-The review page at `/review/<jobId>` is the focused retrieval and override surface. It supports:
+The client home is the operational summary for one client. It shows:
 
-- semantic search scoped to the active workspace
-- keyword filtering
-- criterion-first and bundle-first review
-- drag/drop overrides
-- right-click actions
-- evidence quick peek
+- current status and blocking action
+- stage strip and workspace counts
+- coverage and spend
+- recent activity timeline
+- latest workspace shortcuts
+
+### Client review page
+
+The client review page is action-oriented. It emphasizes:
+
+- items that still require human judgment
+- category bands and archive bands
+- human-review queue behavior
+- quick actions and quick peek
+
+### Workspace dashboard
+
+The dense workspace surface remains available for:
+
+- intake
+- job progress
+- bundle and criterion inspection
+- deeper workspace-specific review and overrides
 
 ### Prompt Library
 
@@ -92,27 +125,29 @@ Prompt Library is a large scrollable modal used to edit the active prompts for:
 - document summarization
 - bundle classification
 - criteria tagging
+- Ask Setu chat modes where enabled
 
 Only the active prompt text is stored. Prompt history is intentionally not stored.
 
 ## Setu brand direction
 
-Setu now uses the v4 charcoal-and-amber identity:
+Setu uses the v4 charcoal-and-amber identity:
 
 - dominant brand color: charcoal `#1A1A1F`
 - primary accent: amber `#BA7517`
-- supporting paper tones: warm neutrals for workspace readability
+- supporting paper tones: warm neutrals for readability
 
 Implementation rules:
 
 - use app-wide tokens from [src/app/globals.css](src/app/globals.css)
 - do not add raw hex values in component code unless a token is introduced first
-- use amber sparingly for emphasis rather than large washes
+- use amber sparingly for emphasis
 - preserve the `setu` wordmark and deck treatment in the application chrome
 
 ## Documentation map
 
 - Business and product overview: [docs/business-product-overview.md](docs/business-product-overview.md)
+- Phase 1 client lifecycle design: [docs/phase1-client-lifecycle.md](docs/phase1-client-lifecycle.md)
 - Technical and system design: [docs/final-design.md](docs/final-design.md)
 - Operations and maintenance playbook: [docs/operating-playbook.md](docs/operating-playbook.md)
 - Repo-local continuation skill for future AI work: [skills/setu-studio-continuation/SKILL.md](skills/setu-studio-continuation/SKILL.md)
@@ -121,10 +156,14 @@ Implementation rules:
 
 Key implementation files:
 
-- Main UI: [src/components/evidence-workbench.tsx](src/components/evidence-workbench.tsx)
+- Main UI shell: [src/components/evidence-workbench.tsx](src/components/evidence-workbench.tsx)
+- Client portfolio and home routes: [src/app/clients](src/app/clients)
+- Client home components: [src/components/client-home](src/components/client-home)
+- Review-specific components: [src/components/review](src/components/review)
 - Global tokens and shell styling: [src/app/globals.css](src/app/globals.css)
-- Root metadata: [src/app/layout.tsx](src/app/layout.tsx)
 - Snapshot assembly: [src/lib/library.ts](src/lib/library.ts)
+- Client registry and migration: [src/lib/clients.ts](src/lib/clients.ts)
+- Client activity timeline: [src/lib/timeline.ts](src/lib/timeline.ts)
 - Ingestion pipeline: [src/lib/ingestion.ts](src/lib/ingestion.ts)
 - Summarization and embeddings: [src/lib/ai.ts](src/lib/ai.ts)
 - Event bundling: [src/lib/event-bundles.ts](src/lib/event-bundles.ts)
@@ -150,6 +189,9 @@ Key implementation files:
 
 - `storage/state/settings.json`
 - `storage/state/jobs.json`
+- `storage/state/clients.json`
+- `storage/state/clients/<clientId>/client.json`
+- `storage/state/clients/<clientId>/timeline.json`
 - `storage/state/event-bundles.json`
 - `storage/state/eb1a-classification.json`
 - `storage/state/criteria-tagging.json`
@@ -189,26 +231,26 @@ QDRANT_URL=http://127.0.0.1:6333
 
 Notes:
 
-- `predev` and `prestart` run `scripts/ensure-qdrant.mjs`, so local startup will attempt to ensure Qdrant is available.
-- the package name is still `eb1a-evidence-studio` for continuity, but the user-facing product brand is now `setu`.
+- `predev` and `prestart` run `scripts/ensure-qdrant.mjs`, so local startup attempts to ensure Qdrant is available.
+- the package name is still `eb1a-evidence-studio` for continuity, but the user-facing product brand is `setu`
 
 ## Validation
 
-Baseline validation for most changes:
+Baseline validation:
 
 ```bash
 npm run lint
 npm run build
 ```
 
-For UI work, also verify:
+For Phase 1 UI work, also verify:
 
-- dashboard on `http://localhost:3001`
-- review page on `http://localhost:3001/review/<jobId>`
-- prompt library scrolling
-- desktop panel resizing
-- viewport-safe context menus
-- ready-state review rendering
+- `/` redirects to `/clients` when clients exist
+- `/clients` renders the portfolio
+- `/clients/<clientId>` renders client home
+- `/clients/<clientId>/review` renders action-item review
+- `/?view=workspace&clientId=<clientId>` preserves the dense workbench
+- pending review actions change counts immediately and persist after reload
 
 ## Non-negotiable guardrails
 
@@ -218,14 +260,4 @@ For UI work, also verify:
   - `archive` -> `Archive Category`
   - `delete` / `remove` -> `Unwanted`
 - if a file has multiple dates, the chosen primary date should be the latest one relevant to the actual subject or event
-- semantic search must stay scoped to the active workspace
-- prompt library must remain scrollable
-- context menus must stay inside the viewport
-- dashboard and review rails remain draggable on desktop
-- real estate should be used intentionally; large dead areas should be treated as regressions
-
-## Current boundaries
-
-- OCR quality still depends on extractable text or preview-layer availability
-- the current Setu shell is live, but the full `Ask the studio` dock from the wireframe is not yet a production feature
-- some internal file names and package identifiers still carry earlier product naming, but this branch documents the current Setu product state
+- human review actions must persist accurately and must remove evidence from pending queues once resolved

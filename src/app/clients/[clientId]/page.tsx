@@ -1,0 +1,500 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { BlockingActionCard } from "@/components/client-home/BlockingActionCard";
+import { ClientHero } from "@/components/client-home/ClientHero";
+import { CoverageCard } from "@/components/client-home/CoverageCard";
+import { PipelineStrip } from "@/components/client-home/PipelineStrip";
+import { SpendCard } from "@/components/client-home/SpendCard";
+import { StageTile } from "@/components/client-home/StageTile";
+import { TimelineCard } from "@/components/client-home/TimelineCard";
+import { buildWorkspaceCoverage } from "@/lib/coverage";
+import {
+  getClient,
+  getClientStageNumber,
+  listClientJobs,
+  listClients,
+  updateClient,
+} from "@/lib/clients";
+import { buildLibrarySnapshot } from "@/lib/library";
+import { ensureClientTimelineEvent, listClientTimeline } from "@/lib/timeline";
+import type {
+  ClientDocument,
+  ClientStatus,
+  LibrarySnapshot,
+  WorkspaceCoverage,
+} from "@/lib/types";
+
+interface ClientHomePageProps {
+  params: Promise<{
+    clientId: string;
+  }>;
+}
+
+function formatCalendarDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatRelativeTime(value: string) {
+  const now = Date.now();
+  const diffMs = now - new Date(value).getTime();
+  const diffHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function isWorkspaceReady(snapshot: LibrarySnapshot) {
+  const jobStatus = snapshot.activeJob?.status;
+  const jobReady = jobStatus === "completed" || jobStatus === "completed_with_errors";
+
+  return Boolean(
+    jobReady &&
+      snapshot.eventBundles?.status === "completed" &&
+      snapshot.eb1aClassification?.status === "completed" &&
+      snapshot.criteriaTagging?.status === "completed",
+  );
+}
+
+function isDecisionDocument(document: ClientDocument) {
+  return (
+    document.reviewStatus === "pending" ||
+    document.criteriaTags.some((tag) => tag.confidence < 0.65)
+  );
+}
+
+function deriveClientStatus(input: {
+  snapshots: LibrarySnapshot[];
+  documents: ClientDocument[];
+  bundleReviewCount: number;
+}) {
+  const allReady =
+    input.snapshots.length > 0 && input.snapshots.every((snapshot) => isWorkspaceReady(snapshot));
+
+  if (!allReady) {
+    return "onboarding" satisfies ClientStatus;
+  }
+
+  const openDocumentDecisions = input.documents.filter((document) => isDecisionDocument(document));
+
+  if (openDocumentDecisions.length > 0 || input.bundleReviewCount > 0) {
+    return "reviewing" satisfies ClientStatus;
+  }
+
+  return "strategizing" satisfies ClientStatus;
+}
+
+function statusLabel(status: ClientStatus) {
+  const stageNumber = getClientStageNumber(status);
+  const readable =
+    status === "onboarding"
+      ? "In progress"
+      : status === "reviewing"
+        ? "Review in progress"
+        : status === "strategizing"
+          ? "Ready for strategy"
+          : status.replaceAll("-", " ");
+
+  return `${readable} · Stage ${stageNumber}`;
+}
+
+function summarizeCoverage(coverage: WorkspaceCoverage | null) {
+  if (!coverage) {
+    return {
+      strongText: "Coverage will appear here after tagging completes.",
+      partialText: "No partial criteria yet",
+    };
+  }
+
+  const strong = coverage.criteria.filter((criterion) => criterion.state === "strong");
+  const partial = coverage.criteria.filter((criterion) => criterion.state === "partial");
+
+  return {
+    strongText: strong.length
+      ? strong.map((criterion) => criterion.legalCode).join(", ")
+      : "No strong criteria yet",
+    partialText: partial.length
+      ? partial.map((criterion) => criterion.legalCode).join(", ")
+      : "No partial criteria",
+  };
+}
+
+function buildClientSwitcher(activeClientId: string, clients: ReturnType<typeof listClients>) {
+  const activeClient = clients.find((client) => client.id === activeClientId);
+
+  return (
+    <details className="relative">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-soft)] text-[var(--brand-deep)]">
+          {activeClient?.displayName.slice(0, 1).toUpperCase() ?? "C"}
+        </span>
+        <span>
+          {activeClient?.displayName ?? "Client"} · {activeClient?.petitionType ?? "EB-1A"}
+        </span>
+      </summary>
+      <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] shadow-[0_22px_50px_rgba(15,23,42,0.14)]">
+        <div className="border-b border-[var(--border-secondary)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+          Switch client
+        </div>
+        <div className="max-h-72 overflow-y-auto p-2">
+          {clients.map((client) => (
+            <Link
+              key={client.id}
+              href={`/clients/${client.id}`}
+              className={`block rounded-[12px] px-3 py-2 text-[11px] transition ${
+                client.id === activeClientId
+                  ? "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+                  : "text-[var(--foreground)] hover:bg-[var(--paper-secondary)]"
+              }`}
+            >
+              <p className="font-semibold">{client.displayName}</p>
+              <p className="mt-1 text-[10px] text-[var(--muted)]">
+                {client.petitionType} · {client.status.replaceAll("-", " ")}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+export default async function ClientHomePage({ params }: ClientHomePageProps) {
+  const { clientId } = await params;
+  const client = getClient(clientId);
+
+  if (!client) {
+    notFound();
+  }
+  const jobs = listClientJobs(clientId);
+  const snapshots = await Promise.all(
+    jobs.map((job) => buildLibrarySnapshot({ jobId: job.id, clientId })),
+  );
+
+  snapshots.forEach((snapshot) => {
+    if (snapshot.activeJob && isWorkspaceReady(snapshot)) {
+      ensureClientTimelineEvent({
+        id: `${snapshot.activeJob.id}:pipeline-completed`,
+        clientId,
+        occurredAt:
+          snapshot.activeJob.completedAt ??
+          snapshot.criteriaTagging?.updatedAt ??
+          snapshot.activeJob.createdAt,
+        kind: "pipeline-completed",
+        workspaceId: snapshot.activeJob.id,
+        summary: `Workspace '${snapshot.activeJob.folderLabel}' reached Ready.`,
+        metadata: {
+          workspaceId: snapshot.activeJob.id,
+          workspaceStatus: snapshot.activeJob.status,
+        },
+      });
+    }
+  });
+
+  const allDocuments = snapshots.flatMap((snapshot) => snapshot.documents);
+  const aggregateCoverage = buildWorkspaceCoverage(allDocuments);
+  const bundleReviewCount = snapshots.reduce((sum, snapshot) => {
+    const decisions = snapshot.eb1aClassification?.decisions ?? [];
+    return (
+      sum +
+      decisions.filter(
+        (decision) =>
+          decision.bucketKind === "human_review" ||
+          decision.bucketCode === "REVIEW" ||
+          decision.reviewDisposition === "unclassified",
+      ).length
+    );
+  }, 0);
+
+  const derivedStatus = deriveClientStatus({
+    snapshots,
+    documents: allDocuments,
+    bundleReviewCount,
+  });
+
+  const syncedClient =
+    client.status !== derivedStatus ? updateClient(clientId, { status: derivedStatus }) ?? client : client;
+
+  if (derivedStatus === "strategizing") {
+    ensureClientTimelineEvent({
+      id: `${clientId}:review-completed`,
+      clientId,
+      occurredAt: new Date().toISOString(),
+      kind: "review-completed",
+      workspaceId: null,
+      summary: "All review action items have been resolved.",
+      metadata: {
+        clientId,
+      },
+    });
+  }
+
+  const clients = listClients();
+  const timeline = listClientTimeline(clientId).slice(0, 5);
+  const readyWorkspaceCount = snapshots.filter((snapshot) => isWorkspaceReady(snapshot)).length;
+  const routineDocumentCount = allDocuments.filter(
+    (document) =>
+      document.criteriaTags.length > 0 &&
+      document.reviewStatus === "kept" &&
+      !document.criteriaTags.some((tag) => tag.confidence < 0.65),
+  ).length;
+  const archivedDocumentCount = allDocuments.filter(
+    (document) => document.reviewStatus === "archived",
+  ).length;
+  const openDecisionCount = allDocuments.filter((document) => isDecisionDocument(document)).length;
+  const totalDocuments = allDocuments.length;
+  const stageNumber = getClientStageNumber(derivedStatus);
+  const reviewHref = `/clients/${clientId}/review`;
+  const workspaceHref = `/?view=workspace&clientId=${clientId}`;
+  const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
+  const coverageSummary = summarizeCoverage(aggregateCoverage);
+  const petitionSummary = `EB-1A petition · ${jobs.length} workspace${
+    jobs.length === 1 ? "" : "s"
+  } · ${totalDocuments} document${totalDocuments === 1 ? "" : "s"} · ${
+    derivedStatus === "onboarding"
+      ? "onboarding in progress"
+      : derivedStatus === "reviewing"
+        ? "human review in progress"
+        : "strategy workspace ready"
+  }`;
+
+  const spendItems = [
+    {
+      label: "Indexing",
+      value: allDocuments.reduce(
+        (sum, document) => sum + (document.usage?.embedding?.costUsd ?? 0),
+        0,
+      ),
+    },
+    {
+      label: "Summaries",
+      value: allDocuments.reduce(
+        (sum, document) => sum + (document.usage?.summary?.costUsd ?? 0),
+        0,
+      ),
+    },
+    {
+      label: "Bundling",
+      value: snapshots.reduce(
+        (sum, snapshot) => sum + (snapshot.eventBundles?.totalCostUsd ?? 0),
+        0,
+      ),
+    },
+    {
+      label: "Classifying",
+      value: snapshots.reduce(
+        (sum, snapshot) => sum + (snapshot.eb1aClassification?.totalCostUsd ?? 0),
+        0,
+      ),
+    },
+    {
+      label: "Tagging",
+      value: snapshots.reduce(
+        (sum, snapshot) => sum + (snapshot.criteriaTagging?.totalCostUsd ?? 0),
+        0,
+      ),
+    },
+  ];
+
+  const blockingAction =
+    derivedStatus === "onboarding"
+      ? {
+          title: "Next: finish onboarding",
+          body: `Setu is still preparing at least one workspace. ${readyWorkspaceCount} of ${jobs.length} workspace${
+            jobs.length === 1 ? "" : "s"
+          } are ready for review.`,
+          ctaLabel: "Open onboarding",
+          href: workspaceHref,
+        }
+      : derivedStatus === "reviewing"
+        ? {
+            title: `Next: resolve ${openDecisionCount + bundleReviewCount} review decision${
+              openDecisionCount + bundleReviewCount === 1 ? "" : "s"
+            }`,
+            body: "Setu collapsed the routine work. Open the review surface to handle the remaining document and bundle decisions.",
+            ctaLabel: "Open review",
+            href: reviewHref,
+          }
+        : {
+            title: "Next: open strategy",
+            body: "Review is complete. The existing workspace tools can now support strategy work while the dedicated strategy phase is refined.",
+            ctaLabel: "Open strategy workspace",
+            href: workspaceHref,
+          };
+
+  const stageTiles = [
+    {
+      number: 1,
+      title: "Onboarding",
+      description: `${jobs.length} workspace${jobs.length === 1 ? "" : "s"} · ${readyWorkspaceCount}/${jobs.length} ready · ${totalDocuments} document${totalDocuments === 1 ? "" : "s"}`,
+      state:
+        derivedStatus === "onboarding"
+          ? ("active" as const)
+          : ("done" as const),
+      href: workspaceHref,
+      badge: derivedStatus === "onboarding" ? "In progress" : "Complete",
+    },
+    {
+      number: 2,
+      title: "Human review",
+      description: `${routineDocumentCount} routine Keep · ${archivedDocumentCount} archived · ${openDecisionCount + bundleReviewCount} still need attention`,
+      state:
+        derivedStatus === "reviewing"
+          ? ("active" as const)
+          : stageNumber > 2
+            ? ("done" as const)
+            : ("locked" as const),
+      href: stageNumber >= 2 ? reviewHref : null,
+      badge:
+        derivedStatus === "reviewing"
+          ? "Active"
+          : stageNumber > 2
+            ? "Complete"
+            : "Waiting",
+      disabledReason: stageNumber < 2 ? "Available after onboarding completes." : undefined,
+    },
+    {
+      number: 3,
+      title: "Strategy",
+      description: "Use the workspace once review is complete to test the case theory and prepare the next move.",
+      state:
+        derivedStatus === "strategizing"
+          ? ("active" as const)
+          : ("locked" as const),
+      href: derivedStatus === "strategizing" ? workspaceHref : null,
+      badge: derivedStatus === "strategizing" ? "Ready" : "Waiting",
+      disabledReason:
+        derivedStatus !== "strategizing" ? "Resolve review decisions before opening strategy." : undefined,
+    },
+    {
+      number: 4,
+      title: "Lock",
+      description: "Commit the final criterion mix and supporting exhibits.",
+      state: "locked" as const,
+      badge: "Later",
+      disabledReason: "Available in a later phase.",
+    },
+    {
+      number: 5,
+      title: "Drafting",
+      description: "Draft per-criterion arguments after the case theory is locked.",
+      state: "locked" as const,
+      badge: "Later",
+      disabledReason: "Available in a later phase.",
+    },
+    {
+      number: 6,
+      title: "Stitching",
+      description: "Assemble the full petition packet, exhibits, and export package.",
+      state: "locked" as const,
+      badge: "Later",
+      disabledReason: "Available in a later phase.",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
+      <div className="mx-auto max-w-[1480px]">
+        <header className="setu-topbar rounded-[18px] px-4 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="setu-brand-block">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="setu-wordmark" aria-label="setu">
+                  <span className="setu-wordmark-letters">setu</span>
+                  <span className="setu-wordmark-deck" aria-hidden="true" />
+                </span>
+                {buildClientSwitcher(clientId, clients)}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={workspaceHref}
+                className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] font-medium text-[var(--foreground)]"
+              >
+                Workspace intake
+              </Link>
+              {denseWorkbenchHref ? (
+                <Link
+                  href={denseWorkbenchHref}
+                  className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] font-medium text-[var(--foreground)]"
+                >
+                  Dense workbench
+                </Link>
+              ) : null}
+              <Link
+                href="/clients"
+                className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] font-medium text-[var(--foreground)]"
+              >
+                All clients
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        <section className="mt-5 space-y-5 rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
+          <ClientHero
+            displayName={syncedClient.displayName}
+            petitionSummary={petitionSummary}
+            statusLabel={statusLabel(derivedStatus)}
+            filingTargetLabel={formatCalendarDate(syncedClient.filingTargetDate)}
+          />
+          <PipelineStrip currentStage={stageNumber} />
+          <BlockingActionCard
+            title={blockingAction.title}
+            body={blockingAction.body}
+            ctaLabel={blockingAction.ctaLabel}
+            href={blockingAction.href}
+          />
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_360px]">
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                Stages
+              </p>
+              {stageTiles.map((stage) => (
+                <StageTile key={stage.number} {...stage} />
+              ))}
+            </div>
+
+            <aside className="space-y-4">
+              <CoverageCard coverage={aggregateCoverage} />
+              <SpendCard items={spendItems} />
+              <TimelineCard
+                events={timeline.map((event) => ({
+                  id: event.id,
+                  whenLabel: formatRelativeTime(event.occurredAt),
+                  summary: event.summary,
+                }))}
+              />
+              <div className="setu-panel rounded-[18px] px-4 py-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  At a glance
+                </p>
+                <div className="mt-3 space-y-2 text-[12px] leading-6 text-[var(--muted)]">
+                  <p>{coverageSummary.strongText}</p>
+                  <p>{coverageSummary.partialText}</p>
+                  <p>
+                    {openDecisionCount + bundleReviewCount} review item
+                    {openDecisionCount + bundleReviewCount === 1 ? "" : "s"} still require
+                    attention.
+                  </p>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

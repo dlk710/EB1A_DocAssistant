@@ -11,6 +11,7 @@ Use it when you are:
 - adjusting UI behavior
 - changing pipeline logic
 - validating work before commit or push
+- continuing the Phase 1 client lifecycle work
 
 ## 2. Local runtime
 
@@ -51,6 +52,10 @@ Settings can also be managed through the product UI and stored in `storage/state
 - `storage/previews`
 - `storage/exports`
 - `storage/qdrant`
+- `storage/state/jobs.json`
+- `storage/state/clients.json`
+- `storage/state/clients/<clientId>/client.json`
+- `storage/state/clients/<clientId>/timeline.json`
 - `storage/state/*.json`
 
 Treat these as local runtime state, not documentation artifacts.
@@ -75,26 +80,26 @@ npm run lint
 npm run build
 ```
 
-### Dashboard work
+### Client lifecycle work
 
 Verify:
 
-- page renders on `/`
-- ready-state review still appears when the workspace is complete
-- recent workspace history still shows correctly
-- panel resizing still works on desktop
-- prompt library remains scrollable
+- `/` redirects to `/clients` when clients exist
+- `/clients` renders the portfolio
+- `/clients/<clientId>` renders client home
+- `/clients/<clientId>/review` renders action-oriented review
+- `/?view=workspace&clientId=<clientId>` still opens the dense workbench
+- a migrated historical workspace still appears under its client
 
-### Review work
+### Review action work
 
 Verify:
 
-- page renders on `/review/<jobId>`
-- semantic search remains workspace-scoped
-- filter controls work
-- drag/drop overrides still behave correctly
-- right-click menus stay inside the viewport
-- quick peek remains usable near the bottom of the page
+- pending evidence is easy to isolate
+- a `Keep`, `Archive`, or `Remove` action immediately removes the item from pending queues
+- the count persists correctly after reload
+- quick peek still works
+- context menus remain inside the viewport
 
 ### Pipeline work
 
@@ -114,6 +119,7 @@ Prompt changes should preserve the contract of the corresponding pass:
 - bundling remains event-focused
 - classification remains bundle-focused
 - tagging remains evidence-focused
+- Ask Setu prompts remain grounded to workspace evidence
 
 Do not introduce prompt behavior that collapses multiple passes into one hidden decision.
 
@@ -124,9 +130,10 @@ Changes to the interface must preserve these user-tested constraints:
 - no major blank dead zones on wide screens
 - prompt library scrolls inside its own surface
 - context menus and submenus do not clip off-screen
-- review controls remain visible and legible near page bottom
-- draggable side rails continue to work on desktop
-- review hierarchy remains understandable at a glance
+- pending human-review items are easy to identify
+- reviewed items leave pending queues immediately
+- draggable side rails continue to work on desktop where present
+- dense operational surfaces remain reachable even after higher-level redesign
 
 ## 9. Data integrity guardrails
 
@@ -134,17 +141,27 @@ Never break these:
 
 - original evidence files are not modified
 - workspace isolation is preserved
+- client-to-workspace linkage stays deterministic
 - filename routing rules stay deterministic
 - manual overrides stay persistent per workspace
 - older workspaces remain readable after new logic lands
 
 ## 10. Important files by responsibility
 
-### UI
+### Client lifecycle
+
+- `src/lib/clients.ts`
+- `src/lib/timeline.ts`
+- `src/app/clients/page.tsx`
+- `src/app/clients/[clientId]/page.tsx`
+- `src/app/clients/[clientId]/review/page.tsx`
+
+### UI shell
 
 - `src/components/evidence-workbench.tsx`
+- `src/components/client-home/*`
+- `src/components/review/*`
 - `src/app/globals.css`
-- `src/app/layout.tsx`
 
 ### Pipeline and storage
 
@@ -152,6 +169,7 @@ Never break these:
 - `src/lib/ai.ts`
 - `src/lib/qdrant.ts`
 - `src/lib/library.ts`
+- `src/lib/state-store.ts`
 
 ### Interpretation layers
 
@@ -163,22 +181,24 @@ Never break these:
 
 - `src/lib/manual-overrides.ts`
 - `src/lib/review-state.ts`
-- `src/lib/review-routing.ts`
+- `src/app/api/evidence/[id]/status/route.ts`
+- `src/app/api/evidence/bulk-status/route.ts`
+- `src/app/api/overrides/route.ts`
 
 ## 11. Known limitations
 
-- OCR quality depends on the extractable text path or preview path
-- full grounded conversational review is not yet implemented as a first-class feature
-- some internal names still reflect earlier product naming even though the user-facing brand is Setu
+- OCR quality still depends on the extractable text path or preview path
+- historical workspace migration can create duplicate clients when old jobs clearly belong to the same person but were not linked previously
+- some older internal names still reflect earlier product naming even though the live brand is Setu
 
 ## 12. Recommended commit discipline
 
 Keep commits focused on one of these units when possible:
 
 - docs only
-- UX refinement
+- client lifecycle UI
+- review action workflow
 - pipeline logic
 - storage or retrieval changes
-- review override behavior
 
-That makes later debugging and future AI continuation much safer.
+That makes later debugging and future AI continuation safer.

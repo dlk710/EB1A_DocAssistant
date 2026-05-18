@@ -1,8 +1,8 @@
 import { buildWorkspaceCoverage } from "@/lib/coverage";
+import { ensureClientsHydrated, getClient, listClients } from "@/lib/clients";
 import { ensureWorkspaceCriteriaTagging } from "@/lib/criteria-tagging";
 import { ensureWorkspaceEb1aClassification } from "@/lib/eb1a-classification";
 import { ensureWorkspaceEventBundles } from "@/lib/event-bundles";
-import { listJobs } from "@/lib/jobs";
 import {
   applyWorkspaceManualOverrides,
   getWorkspaceManualOverrideState,
@@ -65,11 +65,17 @@ function resolveActiveJob(jobs: JobRecord[], requestedJobId?: string | null) {
 
 export async function buildLibrarySnapshot(input?: {
   jobId?: string | null;
+  clientId?: string | null;
 }): Promise<LibrarySnapshot> {
   const settings = getRuntimeSettings();
   await ensureQdrantCollection(settings.embeddingDimensions);
-  const jobs = listJobs(40);
+  const allJobs = ensureClientsHydrated();
+  const jobs = input?.clientId
+    ? allJobs.filter((job) => job.clientId === input.clientId)
+    : allJobs.slice(0, 40);
   const activeJob = resolveActiveJob(jobs, input?.jobId);
+  const activeClientId = input?.clientId ?? activeJob?.clientId ?? null;
+  const activeClient = activeClientId ? getClient(activeClientId) : null;
   const documents = activeJob ? await getJobDocuments(activeJob.id) : [];
   const rawEventBundles = activeJob
     ? ensureWorkspaceEventBundles(activeJob.id, documents)
@@ -112,6 +118,9 @@ export async function buildLibrarySnapshot(input?: {
   const reviewState = activeJob ? getWorkspaceReviewState(activeJob.id) : null;
 
   return {
+    activeClientId,
+    activeClient,
+    clients: listClients(),
     activeJobId: activeJob?.id ?? null,
     activeJob,
     overview: buildOverviewFromDocuments(documents),

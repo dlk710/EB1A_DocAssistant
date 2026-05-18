@@ -1,4 +1,6 @@
+import { getJob } from "@/lib/jobs";
 import { getDocument, setDocumentPayload } from "@/lib/qdrant";
+import { appendClientTimelineEvent } from "@/lib/timeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +27,24 @@ export async function PATCH(
     reviewStatusSource: "manual",
     reviewStatusReason: null,
   });
+
+  const job = getJob(document.jobId);
+
+  if (job?.clientId) {
+    appendClientTimelineEvent({
+      id: `${document.id}:review-action:${payload.status}:${Date.now()}`,
+      clientId: job.clientId,
+      occurredAt: new Date().toISOString(),
+      kind: "review-action-taken",
+      workspaceId: document.jobId,
+      summary: `Marked '${document.summary?.title || document.fileName}' as ${payload.status}.`,
+      metadata: {
+        documentId: document.id,
+        reviewStatus: payload.status,
+        workspaceId: document.jobId,
+      },
+    });
+  }
 
   return Response.json({ ok: true });
 }

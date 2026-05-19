@@ -48,3 +48,9 @@ export function buildWorkspaceCoverage(
     criteria,
   };
 }
+
+export function buildClientCoverage(
+  documents: Array<ClientDocument | StoredDocument>,
+): WorkspaceCoverage {
+  return buildWorkspaceCoverage(documents);
+}

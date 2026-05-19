@@ -6,55 +6,38 @@ export interface ChatReadiness {
 }
 
 export function getChatReadiness(snapshot: LibrarySnapshot): ChatReadiness {
-  if (!snapshot.activeJobId || !snapshot.activeJob) {
+  if (!snapshot.activeClientId || !snapshot.activeClient) {
     return {
       ready: false,
-      reason: "Select a folder workspace first.",
+      reason: "Select a client first.",
     };
   }
 
-  if (
-    snapshot.activeJob.status !== "completed" &&
-    snapshot.activeJob.status !== "completed_with_errors"
-  ) {
+  if (!snapshot.clientWorkspaces.length) {
     return {
       ready: false,
-      reason: "Setu finishes preparing the evidence first. The studio opens once tagging completes.",
+      reason: "This client does not have any workspaces yet.",
     };
   }
 
-  if (snapshot.overview.processingDocuments > 0) {
+  const incompleteWorkspace = snapshot.clientWorkspaces.find((workspace) => {
+    const jobReady =
+      workspace.status === "completed" || workspace.status === "completed_with_errors";
+
+    return !jobReady || !workspace.ready;
+  });
+
+  if (incompleteWorkspace) {
     return {
       ready: false,
-      reason: "Setu is still indexing documents in this workspace.",
+      reason: `Setu finishes preparing every workspace first. '${incompleteWorkspace.folderLabel}' is still not fully ready for strategy chat.`,
     };
   }
 
-  if (snapshot.eventBundles?.status !== "completed") {
+  if (!snapshot.clientCoverage) {
     return {
       ready: false,
-      reason: "Event bundling must finish before the studio opens.",
-    };
-  }
-
-  if (snapshot.eb1aClassification?.status !== "completed") {
-    return {
-      ready: false,
-      reason: "EB1A classification must finish before the studio opens.",
-    };
-  }
-
-  if (snapshot.criteriaTagging?.status !== "completed") {
-    return {
-      ready: false,
-      reason: "Setu finishes preparing the evidence first. The studio opens once tagging completes.",
-    };
-  }
-
-  if (!snapshot.coverage) {
-    return {
-      ready: false,
-      reason: "Coverage is still being prepared for this workspace.",
+      reason: "Coverage is still being prepared for this client.",
     };
   }
 

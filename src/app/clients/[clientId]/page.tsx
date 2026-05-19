@@ -75,10 +75,16 @@ function isDecisionDocument(document: ClientDocument) {
 }
 
 function deriveClientStatus(input: {
+  clientStatus: ClientStatus;
+  lockedStrategyVersion: number | null;
   snapshots: LibrarySnapshot[];
   documents: ClientDocument[];
   bundleReviewCount: number;
 }) {
+  if (input.clientStatus === "locked" || input.lockedStrategyVersion !== null) {
+    return "locked" satisfies ClientStatus;
+  }
+
   const allReady =
     input.snapshots.length > 0 && input.snapshots.every((snapshot) => isWorkspaceReady(snapshot));
 
@@ -218,6 +224,8 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   }, 0);
 
   const derivedStatus = deriveClientStatus({
+    clientStatus: client.status,
+    lockedStrategyVersion: client.lockedStrategyVersion,
     snapshots,
     documents: allDocuments,
     bundleReviewCount,
@@ -256,6 +264,8 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   const totalDocuments = allDocuments.length;
   const stageNumber = getClientStageNumber(derivedStatus);
   const reviewHref = `/clients/${clientId}/review`;
+  const strategyHref = `/clients/${clientId}/strategy`;
+  const lockHref = `/clients/${clientId}/lock`;
   const workspaceHref = `/?view=workspace&clientId=${clientId}`;
   const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
   const coverageSummary = summarizeCoverage(aggregateCoverage);
@@ -266,6 +276,8 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       ? "onboarding in progress"
       : derivedStatus === "reviewing"
         ? "human review in progress"
+        : derivedStatus === "locked"
+          ? "case theory locked"
         : "strategy workspace ready"
   }`;
 
@@ -326,11 +338,18 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
             ctaLabel: "Open review",
             href: reviewHref,
           }
+        : derivedStatus === "locked"
+          ? {
+              title: "Next: review the locked case theory",
+              body: "The criteria mix and anchor exhibits are committed. Open the lock workspace to inspect exhibit numbering or unlock before drafting later phases.",
+              ctaLabel: "Open lock workspace",
+              href: lockHref,
+            }
         : {
             title: "Next: open strategy",
-            body: "Review is complete. The existing workspace tools can now support strategy work while the dedicated strategy phase is refined.",
-            ctaLabel: "Open strategy workspace",
-            href: workspaceHref,
+            body: "Review is complete. Open the client-wide strategy stage to inspect coverage, generate the case theory, and stress-test the lead argument.",
+            ctaLabel: "Open strategy",
+            href: strategyHref,
           };
 
   const stageTiles = [
@@ -367,31 +386,58 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
     {
       number: 3,
       title: "Strategy",
-      description: "Use the workspace once review is complete to test the case theory and prepare the next move.",
+      description:
+        "Read the full client record, generate the memo, ask follow-up questions, and stress-test the case theory.",
       state:
         derivedStatus === "strategizing"
           ? ("active" as const)
-          : ("locked" as const),
-      href: derivedStatus === "strategizing" ? workspaceHref : null,
-      badge: derivedStatus === "strategizing" ? "Ready" : "Waiting",
+          : derivedStatus === "locked"
+            ? ("done" as const)
+          : getClientStageNumber(derivedStatus) > 3
+            ? ("done" as const)
+            : ("locked" as const),
+      href:
+        derivedStatus === "strategizing" || derivedStatus === "locked"
+          ? strategyHref
+          : null,
+      badge:
+        derivedStatus === "strategizing"
+          ? "Ready"
+          : derivedStatus === "locked"
+            ? "Locked"
+            : "Waiting",
       disabledReason:
-        derivedStatus !== "strategizing" ? "Resolve review decisions before opening strategy." : undefined,
+        derivedStatus !== "strategizing" && derivedStatus !== "locked"
+          ? "Resolve onboarding and review requirements before opening strategy."
+          : undefined,
     },
     {
       number: 4,
       title: "Lock",
       description: "Commit the final criterion mix and supporting exhibits.",
-      state: "locked" as const,
-      badge: "Later",
-      disabledReason: "Available in a later phase.",
+      state:
+        derivedStatus === "locked"
+          ? ("done" as const)
+          : getClientStageNumber(derivedStatus) > 4
+            ? ("done" as const)
+            : ("locked" as const),
+      href: derivedStatus === "locked" ? lockHref : null,
+      badge: derivedStatus === "locked" ? "Complete" : "Later",
+      disabledReason:
+        derivedStatus !== "locked"
+          ? "Available after the strategy stage commits the case theory."
+          : undefined,
     },
     {
       number: 5,
       title: "Drafting",
       description: "Draft per-criterion arguments after the case theory is locked.",
-      state: "locked" as const,
-      badge: "Later",
-      disabledReason: "Available in a later phase.",
+      state: derivedStatus === "locked" ? ("active" as const) : ("locked" as const),
+      badge: derivedStatus === "locked" ? "Ready next" : "Later",
+      disabledReason:
+        derivedStatus === "locked"
+          ? "Drafting opens in Phase 3."
+          : "Available after the case theory is locked.",
     },
     {
       number: 6,
@@ -426,10 +472,10 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
               </Link>
               {denseWorkbenchHref ? (
                 <Link
-                  href={denseWorkbenchHref}
+                  href={strategyHref}
                   className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] font-medium text-[var(--foreground)]"
                 >
-                  Dense workbench
+                  Strategy
                 </Link>
               ) : null}
               <Link

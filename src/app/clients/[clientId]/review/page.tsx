@@ -49,10 +49,16 @@ function dominantCriterionTag(document: ClientDocument) {
 }
 
 function deriveClientStatus(input: {
+  clientStatus: ClientStatus;
+  lockedStrategyVersion: number | null;
   snapshots: LibrarySnapshot[];
   documents: ClientDocument[];
   bundleReviewCount: number;
 }) {
+  if (input.clientStatus === "locked" || input.lockedStrategyVersion !== null) {
+    return "locked" satisfies ClientStatus;
+  }
+
   const allReady =
     input.snapshots.length > 0 && input.snapshots.every((snapshot) => isWorkspaceReady(snapshot));
 
@@ -156,6 +162,8 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
   }, 0);
 
   const derivedStatus = deriveClientStatus({
+    clientStatus: client.status,
+    lockedStrategyVersion: client.lockedStrategyVersion,
     snapshots,
     documents: allDocuments,
     bundleReviewCount,
@@ -294,7 +302,7 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
       }));
   });
 
-  const strategyHref = `/?view=workspace&clientId=${clientId}`;
+  const strategyHref = `/clients/${clientId}/strategy`;
 
   return (
     <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
@@ -340,6 +348,9 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
                 number: 2,
                 label: "Review",
                 state:
+                  derivedStatus === "locked"
+                    ? "done"
+                    :
                   derivedStatus === "reviewing"
                     ? "active"
                     : getClientStageNumber(derivedStatus) > 2
@@ -349,10 +360,25 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
               {
                 number: 3,
                 label: "Strategy",
-                state: getClientStageNumber(derivedStatus) > 2 ? "done" : "locked",
+                state:
+                  derivedStatus === "strategizing"
+                    ? "active"
+                    : derivedStatus === "locked"
+                      ? "done"
+                      : getClientStageNumber(derivedStatus) > 2
+                        ? "done"
+                        : "locked",
               },
-              { number: 4, label: "Lock", state: "locked" },
-              { number: 5, label: "Drafting", state: "locked" },
+              {
+                number: 4,
+                label: "Lock",
+                state: derivedStatus === "locked" ? "done" : "locked",
+              },
+              {
+                number: 5,
+                label: "Drafting",
+                state: derivedStatus === "locked" ? "active" : "locked",
+              },
               { number: 6, label: "Stitching", state: "locked" },
             ].map((stage) => (
               <div

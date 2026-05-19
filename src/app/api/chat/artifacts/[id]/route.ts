@@ -2,7 +2,7 @@ import { z } from "zod";
 import { deleteChatArtifact, listChatArtifacts } from "@/lib/chat-state";
 
 const deleteArtifactSchema = z.object({
-  jobId: z.string().uuid(),
+  clientId: z.string().uuid(),
 });
 
 export const runtime = "nodejs";
@@ -16,13 +16,16 @@ export async function DELETE(
   const parsed = deleteArtifactSchema.safeParse(await request.json());
 
   if (!parsed.success) {
-    return Response.json({ error: "jobId is required to delete an artifact." }, { status: 400 });
+    return Response.json(
+      { error: "clientId is required to delete an artifact." },
+      { status: 400 },
+    );
   }
 
-  deleteChatArtifact(parsed.data.jobId, params.id);
+  deleteChatArtifact(parsed.data.clientId, params.id);
 
   return Response.json({
     ok: true,
-    artifacts: listChatArtifacts(parsed.data.jobId),
+    artifacts: listChatArtifacts(parsed.data.clientId),
   });
 }

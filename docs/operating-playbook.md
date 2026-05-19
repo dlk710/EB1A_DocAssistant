@@ -11,7 +11,7 @@ Use it when you are:
 - adjusting UI behavior
 - changing pipeline logic
 - validating work before commit or push
-- continuing the Phase 1 client lifecycle work
+- continuing the Phase 1 and Phase 2 client lifecycle work
 
 ## 2. Local runtime
 
@@ -88,6 +88,9 @@ Verify:
 - `/clients` renders the portfolio
 - `/clients/<clientId>` renders client home
 - `/clients/<clientId>/review` renders action-oriented review
+- `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
+- `/clients/<clientId>/lock` renders lock staging
+- `/clients/<clientId>/unlock` preserves drafts while returning the client to strategy
 - `/?view=workspace&clientId=<clientId>` still opens the dense workbench
 - a migrated historical workspace still appears under its client
 
@@ -110,6 +113,16 @@ Verify:
 - classification still runs after bundling
 - tagging still runs after classification
 - cancellation stops work at the next safe boundary
+
+### Strategy and lock work
+
+Verify:
+
+- chat readiness blocks clients with unfinished workspaces
+- strategy memos persist under the client, not the workspace
+- stress-test reports cite only documents from that client
+- locking creates stable exhibit labels and per-criterion pinboards
+- unlocking clears the active lock file but preserves draft placeholders
 
 ## 7. Prompt editing rules
 

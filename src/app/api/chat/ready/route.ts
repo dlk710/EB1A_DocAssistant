@@ -6,8 +6,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const jobId = url.searchParams.get("jobId");
-  const snapshot = await buildLibrarySnapshot({ jobId });
+  const clientId = url.searchParams.get("clientId");
+
+  if (!clientId) {
+    return Response.json({ ready: false, reason: "clientId is required." }, { status: 400 });
+  }
+
+  const snapshot = await buildLibrarySnapshot({ clientId });
   const readiness = getChatReadiness(snapshot);
 
   return Response.json(readiness);

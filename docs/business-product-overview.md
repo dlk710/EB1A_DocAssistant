@@ -4,13 +4,15 @@
 
 Setu is a local-first immigration evidence platform built to help legal teams move from scattered evidence folders to a structured, reviewable petition-preparation workflow.
 
-Phase 1 changes the product frame from a single workspace tool into a **client-centered lifecycle system**:
+Phase 1 changed the product frame from a single workspace tool into a **client-centered lifecycle system**. Phase 2 extends that system into strategy and case-theory commitment:
 
 - a client can have multiple workspaces over time
 - the home surface starts with client status, blockers, and recent activity
 - the review surface separates urgent human action from routine evidence browsing
+- the strategy surface retrieves across the client’s ready workspaces
+- the lock stage commits the criteria mix and stable exhibits for later drafting
 
-The current emphasis is still evidence intelligence and review discipline, not autonomous legal drafting.
+The current emphasis is still evidence intelligence, review discipline, and attorney-guided strategy. Autonomous drafting remains deferred.
 
 ## 2. Core business problem
 

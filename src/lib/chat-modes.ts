@@ -1,13 +1,36 @@
 import { z } from "zod";
+import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import type {
   BriefDraft,
-  ChatMessageCitation,
   ClientDocument,
   LibrarySnapshot,
   StressTestReport,
   StrategyMemo,
   TriageAnswer,
 } from "@/lib/types";
+
+function normalizeCriterionIdentifier(value: string) {
+  const raw = value.trim();
+
+  if (!raw) {
+    return raw;
+  }
+
+  const normalized = raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const directCode = raw.padStart(2, "0");
+  const match = EB1A_CRITERIA_DEFINITIONS.find((criterion) => {
+    const legalCode = criterion.legalCode.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const name = criterion.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    return (
+      criterion.code === raw ||
+      criterion.code === directCode ||
+      legalCode === normalized ||
+      name === normalized
+    );
+  });
+
+  return match?.code ?? raw;
+}
 
 export const triageAnswerSchema = z.object({
   schemaVersion: z.literal("triage-answer/1.0"),
@@ -32,24 +55,20 @@ export const triageAnswerJsonSchema = {
         additionalProperties: false,
         properties: {
           text: { type: "string" },
-          docIds: {
-            type: "array",
-            items: { type: "string" },
-          },
+          docIds: { type: "array", items: { type: "string" } },
         },
         required: ["text", "docIds"],
       },
     },
-    insufficiencyNote: {
-      type: ["string", "null"],
-    },
+    insufficiencyNote: { type: ["string", "null"] },
   },
   required: ["schemaVersion", "answer", "insufficiencyNote"],
 } as const;
 
 export const strategyMemoSchema = z.object({
-  schemaVersion: z.literal("strategy-memo/1.0"),
-  jobId: z.string().min(1),
+  schemaVersion: z.literal("strategy-memo/2.0"),
+  clientId: z.string().min(1),
+  workspaceIds: z.array(z.string().min(1)).min(1),
   createdAt: z.string().min(1),
   petitionType: z.literal("EB-1A"),
   pendingDocsConsidered: z.number().int().min(0),
@@ -113,8 +132,9 @@ export const strategyMemoJsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    schemaVersion: { type: "string", const: "strategy-memo/1.0" },
-    jobId: { type: "string" },
+    schemaVersion: { type: "string", const: "strategy-memo/2.0" },
+    clientId: { type: "string" },
+    workspaceIds: { type: "array", items: { type: "string" } },
     createdAt: { type: "string" },
     petitionType: { type: "string", const: "EB-1A" },
     pendingDocsConsidered: { type: "integer", minimum: 0 },
@@ -224,7 +244,8 @@ export const strategyMemoJsonSchema = {
   },
   required: [
     "schemaVersion",
-    "jobId",
+    "clientId",
+    "workspaceIds",
     "createdAt",
     "petitionType",
     "pendingDocsConsidered",
@@ -237,8 +258,9 @@ export const strategyMemoJsonSchema = {
 } as const;
 
 export const stressTestReportSchema = z.object({
-  schemaVersion: z.literal("stress-test/1.0"),
-  jobId: z.string().min(1),
+  schemaVersion: z.literal("stress-test/2.0"),
+  clientId: z.string().min(1),
+  workspaceIds: z.array(z.string().min(1)),
   createdAt: z.string().min(1),
   scope: z.union([
     z.literal("full-petition"),
@@ -259,7 +281,7 @@ export const stressTestReportSchema = z.object({
         "sustained-acclaim",
       ]),
       uscisStance: z.string().min(1).max(900),
-      atRiskDocIds: z.array(z.string().min(1)).min(1).max(8),
+      atRiskDocIds: z.array(z.string().min(1)).max(8),
       currentMitigation: z.string().min(1).max(700),
       suggestedAction: z.enum([
         "add-evidence",
@@ -277,8 +299,9 @@ export const stressTestReportJsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    schemaVersion: { type: "string", const: "stress-test/1.0" },
-    jobId: { type: "string" },
+    schemaVersion: { type: "string", const: "stress-test/2.0" },
+    clientId: { type: "string" },
+    workspaceIds: { type: "array", items: { type: "string" } },
     createdAt: { type: "string" },
     scope: {
       anyOf: [
@@ -337,7 +360,8 @@ export const stressTestReportJsonSchema = {
   },
   required: [
     "schemaVersion",
-    "jobId",
+    "clientId",
+    "workspaceIds",
     "createdAt",
     "scope",
     "strategyMemoVersion",
@@ -347,8 +371,8 @@ export const stressTestReportJsonSchema = {
 } as const;
 
 export const briefDraftSchema = z.object({
-  schemaVersion: z.literal("brief-draft/1.0"),
-  jobId: z.string().min(1),
+  schemaVersion: z.literal("brief-draft/2.0"),
+  clientId: z.string().min(1),
   createdAt: z.string().min(1),
   section: z.enum([
     "statement-of-eligibility",
@@ -378,8 +402,8 @@ export const briefDraftJsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    schemaVersion: { type: "string", const: "brief-draft/1.0" },
-    jobId: { type: "string" },
+    schemaVersion: { type: "string", const: "brief-draft/2.0" },
+    clientId: { type: "string" },
     createdAt: { type: "string" },
     section: {
       type: "string",
@@ -421,7 +445,7 @@ export const briefDraftJsonSchema = {
   },
   required: [
     "schemaVersion",
-    "jobId",
+    "clientId",
     "createdAt",
     "section",
     "targetCriterionCode",
@@ -436,6 +460,7 @@ export function buildRetrievedDocsBlock(documents: ClientDocument[]) {
     .map((document, index) =>
       [
         `${index + 1}. [doc:${document.id}] ${document.summary?.title || document.fileName}`,
+        `Workspace: ${document.folderLabel} (${document.jobId})`,
         `Path: ${document.relativePath}`,
         `Review status: ${document.reviewStatus}`,
         `Summary: ${document.summary?.shortSummary || "Summary pending."}`,
@@ -447,11 +472,13 @@ export function buildRetrievedDocsBlock(documents: ClientDocument[]) {
 }
 
 export function buildCoverageBlock(snapshot: LibrarySnapshot) {
-  if (!snapshot.coverage) {
+  const coverage = snapshot.clientCoverage ?? snapshot.coverage;
+
+  if (!coverage) {
     return "Coverage unavailable.";
   }
 
-  return snapshot.coverage.criteria
+  return coverage.criteria
     .map(
       (criterion) =>
         `${criterion.legalCode} ${criterion.name}: ${criterion.state}, kept=${criterion.keptCount}, primary=${criterion.primaryCount}, supporting=${criterion.supportingCount}`,
@@ -462,10 +489,10 @@ export function buildCoverageBlock(snapshot: LibrarySnapshot) {
 export function buildKeptDocsBlock(documents: ClientDocument[]) {
   return documents
     .filter((document) => document.reviewStatus === "kept")
-    .slice(0, 40)
+    .slice(0, 80)
     .map(
       (document) =>
-        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."} :: criteria ${document.criteriaTags.map((tag) => `${tag.legalCode} ${tag.role}`).join(", ") || "none"}`,
+        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."} :: workspace ${document.folderLabel} :: criteria ${document.criteriaTags.map((tag) => `${tag.legalCode} ${tag.role}`).join(", ") || "none"}`,
     )
     .join("\n");
 }
@@ -473,10 +500,10 @@ export function buildKeptDocsBlock(documents: ClientDocument[]) {
 export function buildPendingDocsBlock(documents: ClientDocument[]) {
   return documents
     .filter((document) => document.reviewStatus === "pending")
-    .slice(0, 20)
+    .slice(0, 40)
     .map(
       (document) =>
-        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."}`,
+        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."} :: workspace ${document.folderLabel}`,
     )
     .join("\n");
 }
@@ -489,32 +516,7 @@ export function buildPendingDisclosure(documents: ClientDocument[]) {
   return `This analysis considered ${kept} kept documents, ${pending} pending documents (not yet reviewed), and excluded ${archived} archived documents. Pending documents are flagged inline; revisit this analysis after final review if the count is significant.`;
 }
 
-export function buildChatCitations(
-  docIds: string[],
-  documents: ClientDocument[],
-): ChatMessageCitation[] {
-  const lookup = new Map(documents.map((document) => [document.id, document]));
-
-  return [...new Set(docIds)]
-    .map((docId) => {
-      const document = lookup.get(docId);
-
-      if (!document) {
-        return null;
-      }
-
-      return {
-        docId,
-        label: document.summary?.title || document.fileName,
-      } satisfies ChatMessageCitation;
-    })
-    .filter((citation): citation is ChatMessageCitation => Boolean(citation));
-}
-
-export function normalizeTriageAnswer(
-  answer: TriageAnswer,
-  documents: ClientDocument[],
-) {
+export function normalizeTriageAnswer(answer: TriageAnswer, documents: ClientDocument[]) {
   const allowedDocIds = new Set(documents.map((document) => document.id));
 
   return {
@@ -528,11 +530,10 @@ export function normalizeTriageAnswer(
   };
 }
 
-export function normalizeStrategyMemo(
-  memo: StrategyMemo,
-  documents: ClientDocument[],
-) {
+export function normalizeStrategyMemo(memo: StrategyMemo, documents: ClientDocument[]) {
   const allowedDocIds = new Set(documents.map((document) => document.id));
+  const allowedWorkspaceIds = new Set(documents.map((document) => document.jobId));
+  const fallbackWorkspaceIds = [...allowedWorkspaceIds];
   const filterDocIds = (docIds: string[]) => docIds.filter((docId) => allowedDocIds.has(docId));
   const dedupeRecommendations = (
     entries: StrategyMemo["recommendedMix"]["primary"],
@@ -554,6 +555,7 @@ export function normalizeStrategyMemo(
     memo.recommendedMix.primary
       .map((entry) => ({
         ...entry,
+        criterionCode: normalizeCriterionIdentifier(entry.criterionCode),
         anchorDocIds: filterDocIds(entry.anchorDocIds),
       }))
       .filter((entry) => entry.anchorDocIds.length > 0),
@@ -562,6 +564,7 @@ export function normalizeStrategyMemo(
     memo.recommendedMix.supporting
       .map((entry) => ({
         ...entry,
+        criterionCode: normalizeCriterionIdentifier(entry.criterionCode),
         anchorDocIds: filterDocIds(entry.anchorDocIds),
       }))
       .filter((entry) => entry.anchorDocIds.length > 0),
@@ -570,15 +573,27 @@ export function normalizeStrategyMemo(
 
   return {
     ...memo,
+    workspaceIds:
+      memo.workspaceIds.filter((workspaceId) => allowedWorkspaceIds.has(workspaceId)).length > 0
+        ? memo.workspaceIds.filter((workspaceId) => allowedWorkspaceIds.has(workspaceId))
+        : fallbackWorkspaceIds,
     recommendedMix: {
       primary,
       supporting,
-      decline: memo.recommendedMix.decline,
+      decline: memo.recommendedMix.decline.map((entry) => ({
+        ...entry,
+        criterionCode: normalizeCriterionIdentifier(entry.criterionCode),
+      })),
     },
     leadArgument: {
       ...memo.leadArgument,
+      criterionCode: normalizeCriterionIdentifier(memo.leadArgument.criterionCode),
       anchorDocIds: filterDocIds(memo.leadArgument.anchorDocIds),
     },
+    gaps: memo.gaps.map((gap) => ({
+      ...gap,
+      criterionCode: normalizeCriterionIdentifier(gap.criterionCode),
+    })),
     risks: memo.risks.map((risk) => ({
       ...risk,
       affectedDocIds: filterDocIds(risk.affectedDocIds),
@@ -587,27 +602,47 @@ export function normalizeStrategyMemo(
   };
 }
 
-export function normalizeStressTestReport(
-  report: StressTestReport,
-  documents: ClientDocument[],
-) {
+export function normalizeStressTestReport(report: StressTestReport, documents: ClientDocument[]) {
   const allowedDocIds = new Set(documents.map((document) => document.id));
+  const allowedWorkspaceIds = new Set(documents.map((document) => document.jobId));
+  const fallbackWorkspaceIds = [...allowedWorkspaceIds];
 
   return {
     ...report,
+    workspaceIds:
+      report.workspaceIds.filter((workspaceId) => allowedWorkspaceIds.has(workspaceId)).length > 0
+        ? report.workspaceIds.filter((workspaceId) => allowedWorkspaceIds.has(workspaceId))
+        : fallbackWorkspaceIds,
     challenges: report.challenges
       .map((challenge) => ({
         ...challenge,
-        atRiskDocIds: challenge.atRiskDocIds.filter((docId) => allowedDocIds.has(docId)),
+        criterionCode: normalizeCriterionIdentifier(challenge.criterionCode),
+        atRiskDocIds: (() => {
+          const explicitDocIds = challenge.atRiskDocIds.filter((docId) => allowedDocIds.has(docId));
+
+          if (explicitDocIds.length > 0) {
+            return explicitDocIds;
+          }
+
+          const matchingCriterionDocs = documents
+            .filter((document) =>
+              document.criteriaTags.some((tag) => tag.code === challenge.criterionCode),
+            )
+            .slice(0, 3)
+            .map((document) => document.id);
+
+          if (matchingCriterionDocs.length > 0) {
+            return matchingCriterionDocs;
+          }
+
+          return documents.slice(0, 2).map((document) => document.id);
+        })(),
       }))
       .filter((challenge) => challenge.atRiskDocIds.length > 0),
   };
 }
 
-export function normalizeBriefDraft(
-  draft: BriefDraft,
-  documents: ClientDocument[],
-) {
+export function normalizeBriefDraft(draft: BriefDraft, documents: ClientDocument[]) {
   const allowedDocIds = new Set(documents.map((document) => document.id));
 
   return {
@@ -618,5 +653,21 @@ export function normalizeBriefDraft(
         citations: paragraph.citations.filter((citation) => allowedDocIds.has(citation.docId)),
       }))
       .filter((paragraph) => paragraph.citations.length > 0 && paragraph.exhibitRefs.length > 0),
+  };
+}
+
+export function collectClientReviewSets(snapshot: LibrarySnapshot) {
+  const documents = snapshot.clientDocuments.length ? snapshot.clientDocuments : snapshot.documents;
+  const keptDocuments = documents.filter((document) => document.reviewStatus === "kept");
+  const pendingDocuments = documents.filter((document) => document.reviewStatus === "pending");
+  const archivedDocuments = documents.filter((document) => document.reviewStatus === "archived");
+
+  return {
+    documents,
+    keptDocuments,
+    pendingDocuments,
+    archivedDocuments,
+    reviewableDocuments: [...keptDocuments, ...pendingDocuments],
+    workspaceIds: [...new Set(documents.map((document) => document.jobId))],
   };
 }

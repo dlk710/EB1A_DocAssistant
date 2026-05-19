@@ -5171,7 +5171,14 @@ export function EvidenceWorkbench({
                       </div>
                     </div>
                   </div>
-                  <ChatDock jobId={activeJobId} candidateName={candidateDisplayName} />
+                  {clientScopeId ? (
+                    <ChatDock
+                      clientId={clientScopeId}
+                      candidateName={candidateDisplayName}
+                      workspaceCount={library.clientWorkspaces?.length ?? 1}
+                      variant="launcher"
+                    />
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -5261,7 +5268,14 @@ export function EvidenceWorkbench({
                       </p>
                     </div>
                   </div>
-                  <ChatDock jobId={activeJobId} candidateName={candidateDisplayName} />
+                  {clientScopeId ? (
+                    <ChatDock
+                      clientId={clientScopeId}
+                      candidateName={candidateDisplayName}
+                      workspaceCount={library.clientWorkspaces?.length ?? 1}
+                      variant="launcher"
+                    />
+                  ) : null}
                 </>
               )}
             </aside>

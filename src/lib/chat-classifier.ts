@@ -19,8 +19,11 @@ const modeClassificationJsonSchema = {
       type: ["string", "null"],
       enum: ["triage", "strategy", "stress-test", "draft", null],
     },
+    reasoning: {
+      type: "string",
+    },
   },
-  required: ["mode", "confidence", "alternateMode"],
+  required: ["mode", "confidence", "alternateMode", "reasoning"],
 } as const;
 
 function fallbackClassifyMode(message: string): ModeClassification {
@@ -29,11 +32,21 @@ function fallbackClassifyMode(message: string): ModeClassification {
   if (
     /\b(risk|challenge|rfe|skeptic|weakness|stress)\b/.test(normalized)
   ) {
-    return { mode: "stress-test", confidence: 0.72, alternateMode: "strategy" };
+    return {
+      mode: "stress-test",
+      confidence: 0.72,
+      alternateMode: "strategy",
+      reasoning: "The request is framed around risks, weaknesses, or adversarial review.",
+    };
   }
 
   if (/\b(draft|rewrite|paragraph|introduction|conclusion|argument)\b/.test(normalized)) {
-    return { mode: "draft", confidence: 0.74, alternateMode: "strategy" };
+    return {
+      mode: "draft",
+      confidence: 0.74,
+      alternateMode: "strategy",
+      reasoning: "The request is asking for petition prose or section-level drafting.",
+    };
   }
 
   if (
@@ -41,10 +54,20 @@ function fallbackClassifyMode(message: string): ModeClassification {
       normalized,
     )
   ) {
-    return { mode: "strategy", confidence: 0.78, alternateMode: "triage" };
+    return {
+      mode: "strategy",
+      confidence: 0.78,
+      alternateMode: "triage",
+      reasoning: "The request asks about criteria mix, petition theory, or strategic prioritization.",
+    };
   }
 
-  return { mode: "triage", confidence: 0.8, alternateMode: null };
+  return {
+    mode: "triage",
+    confidence: 0.8,
+    alternateMode: null,
+    reasoning: "The request appears to be a grounded question about evidence rather than strategy.",
+  };
 }
 
 export async function classifyChatMode(input: {
@@ -57,6 +80,7 @@ export async function classifyChatMode(input: {
         mode: input.modeHint,
         confidence: 1,
         alternateMode: null,
+        reasoning: "The user explicitly selected a chat mode.",
       } satisfies ModeClassification,
       costUsd: 0,
     };
@@ -79,6 +103,7 @@ export async function classifyChatMode(input: {
                 "stress-test = skeptical USCIS-style weakness finding.",
                 "draft = prose drafting for a petition section.",
                 "If uncertain, choose the best mode and provide an alternate mode.",
+                "Include one short reasoning sentence.",
                 "Return strict JSON only.",
               ].join(" "),
             },
@@ -106,6 +131,7 @@ export async function classifyChatMode(input: {
         mode: payload.mode,
         confidence: Math.max(0, Math.min(1, payload.confidence)),
         alternateMode: payload.alternateMode,
+        reasoning: payload.reasoning?.trim() || fallbackClassifyMode(input.message).reasoning,
       } satisfies ModeClassification,
       costUsd:
         calculateTextModelCost({

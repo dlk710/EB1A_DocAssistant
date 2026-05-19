@@ -304,6 +304,20 @@ function buildJobFilter(jobId: string, extraMust: Record<string, unknown>[] = []
   };
 }
 
+function buildJobIdsFilter(jobIds: string[], extraMust: Record<string, unknown>[] = []) {
+  return {
+    must: [
+      {
+        key: "jobId",
+        match: {
+          any: jobIds,
+        },
+      },
+      ...extraMust,
+    ],
+  };
+}
+
 export async function upsertDocuments(
   documents: Array<{
     document: StoredDocument;
@@ -397,6 +411,19 @@ export async function getJobDocuments(jobId: string) {
   );
 }
 
+export async function getDocumentsForJobs(jobIds: string[]) {
+  if (!jobIds.length) {
+    return [];
+  }
+
+  return sortDocuments(
+    await scrollDocuments({
+      filter: buildJobIdsFilter(jobIds),
+      limit: 5000,
+    }),
+  );
+}
+
 export async function searchDocuments(
   queryVector: number[],
   limit = 20,
@@ -430,6 +457,42 @@ export async function searchDocuments(
                 },
               ],
             },
+      }),
+    },
+  );
+
+  return result.points.map((point) => ({
+    document: payloadToDocument(point.payload ?? {}, point.id),
+    score: point.score ?? 0,
+  }));
+}
+
+export async function searchDocumentsAcrossWorkspaces(
+  queryVector: number[],
+  limit: number,
+  jobIds: string[],
+) {
+  if (!jobIds.length) {
+    return [];
+  }
+
+  const result = await qdrantFetch<QueryResult>(
+    `/collections/${QDRANT_COLLECTION}/points/query`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        query: queryVector,
+        limit,
+        with_payload: true,
+        with_vector: false,
+        filter: buildJobIdsFilter(jobIds, [
+          {
+            key: "processingStatus",
+            match: {
+              value: "completed",
+            },
+          },
+        ]),
       }),
     },
   );

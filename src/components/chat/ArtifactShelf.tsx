@@ -9,7 +9,7 @@ function formatArtifactKind(kind: ChatArtifactRecord["kind"]) {
     return "Strategy memo";
   }
 
-  if (kind === "stress-test") {
+  if (kind === "stress-test-report") {
     return "Stress-test";
   }
 
@@ -50,7 +50,7 @@ export function ArtifactShelf(props: {
             Pinned artifacts
           </p>
           <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-            Strategy memos, stress-tests, and drafts pinned in this workspace collect here.
+            Strategy memos, stress-tests, and later drafts pinned for this client collect here.
           </p>
         </div>
         <div className="flex items-center gap-2">

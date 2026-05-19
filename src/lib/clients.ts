@@ -39,6 +39,8 @@ function readClientsRegistry() {
             petitionType: client.petitionType ?? "EB-1A",
             status: client.status ?? "onboarding",
             updatedAt: client.updatedAt ?? new Date(0).toISOString(),
+            lockedStrategyVersion: client.lockedStrategyVersion ?? null,
+            lockedAt: client.lockedAt ?? null,
           }))
           .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       : [],
@@ -68,6 +70,8 @@ function sanitizeClient(client: Client): Client {
     decidedAt: client.decidedAt ?? null,
     decision: client.decision ?? null,
     notes: client.notes ?? "",
+    lockedStrategyVersion: client.lockedStrategyVersion ?? null,
+    lockedAt: client.lockedAt ?? null,
   };
 }
 
@@ -87,6 +91,8 @@ function toClientSummary(client: Client): ClientSummary {
     petitionType: client.petitionType,
     status: client.status,
     updatedAt: client.updatedAt,
+    lockedStrategyVersion: client.lockedStrategyVersion ?? null,
+    lockedAt: client.lockedAt ?? null,
   };
 }
 
@@ -123,6 +129,8 @@ function createMigratedClientFromJob(job: JobRecord): Client {
     decidedAt: null,
     decision: null,
     notes: "",
+    lockedStrategyVersion: null,
+    lockedAt: null,
   };
 }
 
@@ -219,6 +227,8 @@ export function createClient(input: {
     decidedAt: null,
     decision: null,
     notes: input.notes?.trim() ?? "",
+    lockedStrategyVersion: null,
+    lockedAt: null,
   };
 
   writeStoredClient(client);

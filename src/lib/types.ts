@@ -72,6 +72,8 @@ export interface Client {
   decidedAt: string | null;
   decision: "approved" | "denied" | "rfe" | "withdrawn" | null;
   notes: string;
+  lockedStrategyVersion: number | null;
+  lockedAt: string | null;
 }
 
 export interface ClientSummary {
@@ -80,6 +82,21 @@ export interface ClientSummary {
   petitionType: PetitionType;
   status: ClientStatus;
   updatedAt: string;
+  lockedStrategyVersion: number | null;
+  lockedAt: string | null;
+}
+
+export interface ClientWorkspace {
+  id: string;
+  clientId: string;
+  candidateName: string;
+  folderLabel: string;
+  status: JobStatus;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+  ready: boolean;
+  failedFiles: number;
 }
 
 export interface ClientTimelineEvent {
@@ -401,25 +418,29 @@ export interface LibrarySnapshot {
   activeJobId: string | null;
   activeJob: JobRecord | null;
   overview: LibraryOverview;
+  clientOverview: LibraryOverview;
   jobs: JobRecord[];
+  clientWorkspaces: ClientWorkspace[];
   documents: ClientDocument[];
+  clientDocuments: ClientDocument[];
   eventBundles: WorkspaceEventBundleState | null;
   eb1aClassification: WorkspaceEb1aClassificationState | null;
   criteriaTagging: WorkspaceCriteriaTaggingState | null;
   coverage: WorkspaceCoverage | null;
+  clientCoverage: WorkspaceCoverage | null;
   manualOverrides: WorkspaceManualOverrideState | null;
   reviewState: WorkspaceReviewState | null;
   settings: SettingsSnapshot;
 }
 
 export type ChatMode = "triage" | "strategy" | "stress-test" | "draft";
-export type ChatTurnRole = "user" | "assistant" | "system";
-export type ChatArtifactKind = "strategy-memo" | "stress-test" | "brief-draft";
+export type ChatArtifactKind = "strategy-memo" | "stress-test-report" | "brief-draft";
 
 export interface ModeClassification {
   mode: ChatMode;
   confidence: number;
   alternateMode: ChatMode | null;
+  reasoning: string;
 }
 
 export interface TriageAnswerBlock {
@@ -440,8 +461,9 @@ export interface StrategyCriterionRecommendation {
 }
 
 export interface StrategyMemo {
-  schemaVersion: "strategy-memo/1.0";
-  jobId: string;
+  schemaVersion: "strategy-memo/2.0";
+  clientId: string;
+  workspaceIds: string[];
   createdAt: string;
   petitionType: "EB-1A";
   pendingDocsConsidered: number;
@@ -481,8 +503,9 @@ export interface StrategyMemo {
 }
 
 export interface StressTestReport {
-  schemaVersion: "stress-test/1.0";
-  jobId: string;
+  schemaVersion: "stress-test/2.0";
+  clientId: string;
+  workspaceIds: string[];
   createdAt: string;
   scope: "full-petition" | { criterionCode: string };
   strategyMemoVersion: string | null;
@@ -514,8 +537,8 @@ export interface BriefDraftParagraph {
 }
 
 export interface BriefDraft {
-  schemaVersion: "brief-draft/1.0";
-  jobId: string;
+  schemaVersion: "brief-draft/2.0";
+  clientId: string;
   createdAt: string;
   section:
     | "statement-of-eligibility"
@@ -531,49 +554,140 @@ export interface BriefDraft {
 
 export interface ChatMessageCitation {
   docId: string;
+  workspaceId: string;
+  excerpt: string;
+  supports: string;
   label: string;
 }
 
-export interface ChatAssistantTurnPayload {
-  kind: "triage" | "strategy" | "stress-test" | "draft" | "refusal";
-  triageAnswer?: TriageAnswer | null;
-  strategyMemo?: StrategyMemo | null;
-  stressTestReport?: StressTestReport | null;
-  briefDraft?: BriefDraft | null;
-  refusalMessage?: string | null;
-  pendingDocsDisclosure?: string | null;
+export interface RetrievalResult {
+  docIds: string[];
+  scope: "workspace" | "client" | "criterion";
+  excludedReason?: Record<string, string>;
+}
+
+export interface ChatResponse {
+  text: string;
+  artifact?: StrategyMemo | StressTestReport | BriefDraft;
   citations: ChatMessageCitation[];
+  reasoning: string;
+  droppedClaims: string[];
+  pendingDisclosure: string | null;
 }
 
 export interface ChatTurn {
   id: string;
-  role: ChatTurnRole;
-  mode: ChatMode | null;
-  createdAt: string;
-  message: string;
+  sessionId: string;
+  occurredAt: string;
+  userMessage: string;
+  mode: ChatMode;
+  modeWasProposed: boolean;
+  retrieval: RetrievalResult;
+  response: ChatResponse;
+  costUsd: number;
+  pendingDocsConsidered: number;
   classification: ModeClassification | null;
-  assistantPayload: ChatAssistantTurnPayload | null;
-  usageCostUsd: number;
 }
 
 export interface ChatSession {
   id: string;
-  jobId: string;
+  clientId: string;
   createdAt: string;
   updatedAt: string;
+  mode: ChatMode;
   turns: ChatTurn[];
 }
 
 export interface ChatArtifactRecord {
   id: string;
-  jobId: string;
+  clientId: string;
   kind: ChatArtifactKind;
   createdAt: string;
   sessionId: string;
   turnId: string;
   version: number;
   title: string;
+  workspaceIds: string[];
   strategyMemo?: StrategyMemo | null;
   stressTestReport?: StressTestReport | null;
   briefDraft?: BriefDraft | null;
+}
+
+export interface ExhibitAssignment {
+  documentId: string;
+  workspaceId: string;
+  exhibitNumber: number;
+  exhibitLabel: string;
+  order: number;
+}
+
+export interface LockedCriterionEntry {
+  criterionCode: string;
+  legalCode: string;
+  criterionName: string;
+  role: CriterionTagRole;
+  rationale: string;
+  anchorDocIds: string[];
+  anchorExhibits: ExhibitAssignment[];
+}
+
+export interface LockedDeclinedCriterion {
+  criterionCode: string;
+  legalCode: string;
+  criterionName: string;
+  rationale: string;
+}
+
+export interface LockedDocumentSnapshot {
+  documentId: string;
+  workspaceId: string;
+  reviewStatus: EvidenceReviewStatus;
+  updatedAt: string;
+}
+
+export interface LockedCaseStrategy {
+  version: number;
+  clientId: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceStrategyMemoArtifactId: string | null;
+  sourceStressTestArtifactId: string | null;
+  narrativeSpine: string;
+  primary: LockedCriterionEntry[];
+  supporting: LockedCriterionEntry[];
+  declined: LockedDeclinedCriterion[];
+  documentsSnapshot: LockedDocumentSnapshot[];
+  totalExhibits: number;
+}
+
+export interface PinboardEntry {
+  documentId: string;
+  workspaceId: string;
+  exhibitLabel: string;
+  addedAt: string;
+}
+
+export interface CriterionPinboard {
+  clientId: string;
+  criterionCode: string;
+  createdAt: string;
+  updatedAt: string;
+  entries: PinboardEntry[];
+}
+
+export interface CriterionDraftVersion {
+  id: string;
+  createdAt: string;
+  title: string;
+  content: string;
+}
+
+export interface CriterionDraft {
+  clientId: string;
+  criterionCode: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "in-progress" | "approved";
+  outOfDate: boolean;
+  versions: CriterionDraftVersion[];
 }

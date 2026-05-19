@@ -1,4 +1,4 @@
-import { buildWorkspaceCoverage } from "@/lib/coverage";
+import { buildClientCoverage, buildWorkspaceCoverage } from "@/lib/coverage";
 import { ensureClientsHydrated, getClient, listClients } from "@/lib/clients";
 import { ensureWorkspaceCriteriaTagging } from "@/lib/criteria-tagging";
 import { ensureWorkspaceEb1aClassification } from "@/lib/eb1a-classification";
@@ -7,11 +7,16 @@ import {
   applyWorkspaceManualOverrides,
   getWorkspaceManualOverrideState,
 } from "@/lib/manual-overrides";
-import { ensureQdrantCollection, getJobDocuments } from "@/lib/qdrant";
+import { ensureQdrantCollection, getDocumentsForJobs, getJobDocuments } from "@/lib/qdrant";
 import { getWorkspaceReviewState } from "@/lib/review-state";
 import { getPublicSettings, getRuntimeSettings } from "@/lib/settings";
+import { readStateFile } from "@/lib/state-store";
 import type {
   ClientDocument,
+  ClientWorkspace,
+  WorkspaceCriteriaTaggingState,
+  WorkspaceEb1aClassificationState,
+  WorkspaceEventBundleState,
   JobRecord,
   LibraryOverview,
   LibrarySnapshot,
@@ -63,6 +68,33 @@ function resolveActiveJob(jobs: JobRecord[], requestedJobId?: string | null) {
   return jobs[0];
 }
 
+function readWorkspaceEventBundleState(jobId: string) {
+  const file = readStateFile<{ workspaces: Record<string, WorkspaceEventBundleState> }>(
+    "event-bundles.json",
+    { workspaces: {} },
+  );
+
+  return file.workspaces[jobId] ?? null;
+}
+
+function readWorkspaceClassificationState(jobId: string) {
+  const file = readStateFile<{ workspaces: Record<string, WorkspaceEb1aClassificationState> }>(
+    "eb1a-classification.json",
+    { workspaces: {} },
+  );
+
+  return file.workspaces[jobId] ?? null;
+}
+
+function readWorkspaceTaggingState(jobId: string) {
+  const file = readStateFile<{ workspaces: Record<string, WorkspaceCriteriaTaggingState> }>(
+    "criteria-tagging.json",
+    { workspaces: {} },
+  );
+
+  return file.workspaces[jobId] ?? null;
+}
+
 export async function buildLibrarySnapshot(input?: {
   jobId?: string | null;
   clientId?: string | null;
@@ -76,6 +108,8 @@ export async function buildLibrarySnapshot(input?: {
   const activeJob = resolveActiveJob(jobs, input?.jobId);
   const activeClientId = input?.clientId ?? activeJob?.clientId ?? null;
   const activeClient = activeClientId ? getClient(activeClientId) : null;
+  const clientJobIds = jobs.map((job) => job.id);
+  const clientDocumentsRaw = clientJobIds.length ? await getDocumentsForJobs(clientJobIds) : [];
   const documents = activeJob ? await getJobDocuments(activeJob.id) : [];
   const rawEventBundles = activeJob
     ? ensureWorkspaceEventBundles(activeJob.id, documents)
@@ -116,6 +150,38 @@ export async function buildLibrarySnapshot(input?: {
         )
       : null;
   const reviewState = activeJob ? getWorkspaceReviewState(activeJob.id) : null;
+  const clientWorkspaces: ClientWorkspace[] = jobs.map((job) => {
+    const clientJobDocuments = clientDocumentsRaw.filter((document) => document.jobId === job.id);
+    const bundleState = readWorkspaceEventBundleState(job.id);
+    const classificationState = readWorkspaceClassificationState(job.id);
+    const taggingState = readWorkspaceTaggingState(job.id);
+    const latestUpdatedAt =
+      clientJobDocuments
+        .map((document) => document.updatedAt)
+        .sort((left, right) => right.localeCompare(left))[0] ??
+      job.completedAt ??
+      job.startedAt ??
+      job.createdAt;
+
+    const ready =
+      (job.status === "completed" || job.status === "completed_with_errors") &&
+      bundleState?.status === "completed" &&
+      classificationState?.status === "completed" &&
+      taggingState?.status === "completed";
+
+    return {
+      id: job.id,
+      clientId: job.clientId,
+      candidateName: job.candidateName,
+      folderLabel: job.folderLabel,
+      status: job.status,
+      createdAt: job.createdAt,
+      completedAt: job.completedAt,
+      updatedAt: latestUpdatedAt,
+      ready,
+      failedFiles: job.failedFiles,
+    };
+  });
 
   return {
     activeClientId,
@@ -124,12 +190,16 @@ export async function buildLibrarySnapshot(input?: {
     activeJobId: activeJob?.id ?? null,
     activeJob,
     overview: buildOverviewFromDocuments(documents),
+    clientOverview: buildOverviewFromDocuments(clientDocumentsRaw),
     jobs,
+    clientWorkspaces,
     documents: documents.map(sanitizeDocument),
+    clientDocuments: clientDocumentsRaw.map(sanitizeDocument),
     eventBundles: effectiveStates.eventBundles,
     eb1aClassification: effectiveStates.classification,
     criteriaTagging,
     coverage: buildWorkspaceCoverage(documents),
+    clientCoverage: buildClientCoverage(clientDocumentsRaw),
     manualOverrides: effectiveStates.overrideState,
     reviewState,
     settings: getPublicSettings(),

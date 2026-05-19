@@ -2,13 +2,15 @@
 
 Setu is a local-first immigration evidence platform that now starts from the **client record**, not just the upload workspace. The product turns raw folder uploads into a structured review system while preserving original files, intermediate AI reasoning layers, and human override paths.
 
-Phase 1 introduces the client lifecycle shell:
+Phase 1 introduced the client lifecycle shell. Phase 2 adds the client-wide strategy and lock stages:
 
 1. manage clients from a portfolio view
 2. open a client home with stage status, spend, coverage, and timeline
 3. run isolated evidence workspaces under that client
 4. review human-action items separately from routine evidence
-5. keep the dense workspace tooling available when deeper intervention is needed
+5. generate a client-wide strategy memo and stress-test it with Ask Setu
+6. lock the case theory into stable exhibit numbering and downstream scaffolding
+7. keep the dense workspace tooling available when deeper intervention is needed
 
 ## Core objective
 
@@ -22,6 +24,7 @@ The product contract is:
 - one client can accumulate multiple workspaces over time
 - original evidence is never modified
 - every review decision remains inspectable
+- strategy and stress-test outputs remain client-scoped and citable
 
 ## Current product scope
 
@@ -38,14 +41,17 @@ The live app at `http://localhost:3001` currently supports:
 - human review states: `kept`, `pending`, `archived`, `removed`
 - manual overrides for evidence, event bundles, and criteria placement
 - human-review inbox behavior for pending items
+- client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, and `Stress-test`
+- client-scoped strategy memo and stress-test artifacts
+- lock and unlock flow with stable exhibits, pinboards, and draft placeholders
 - original-file preview and source access
 - prompt editing through Prompt Library
 - tracked OpenAI cost by pipeline stage
 - local export package generation for downstream drafting
 
-## Phase 1 routes
+## Lifecycle routes
 
-The current Phase 1 surface is client-first:
+The current surface is client-first:
 
 - `/clients`
   - portfolio view for all clients
@@ -53,6 +59,12 @@ The current Phase 1 surface is client-first:
   - client home with lifecycle summary, blockers, coverage, spend, and timeline
 - `/clients/<clientId>/review`
   - action-oriented review page for that client
+- `/clients/<clientId>/strategy`
+  - coverage, strategy memo, stress-test, and Ask Setu
+- `/clients/<clientId>/lock`
+  - lock the criteria mix and exhibit numbering
+- `/clients/<clientId>/unlock`
+  - reversible unlock flow with invalidation summary
 - `/?view=workspace&clientId=<clientId>`
   - dense workspace intake/dashboard preserved for operational work
 - `/review/<jobId>`
@@ -70,14 +82,17 @@ The implemented multi-pass pipeline remains:
 4. `Tagging`
 5. `Ready`
 
-Phase 1 wraps that pipeline in a client model:
+The lifecycle wraps that pipeline in a client model:
 
 1. create or select a client
 2. upload a new evidence folder into that client
 3. let Setu run the multi-pass AI interpretation flow
 4. surface blocking human actions separately from routine evidence
 5. review and override in increments across days if needed
-6. export downstream outputs once the workspace is mature
+6. open the client-wide Strategy stage once review is complete
+7. ask follow-up questions, generate a strategy memo, and stress-test the case theory
+8. lock the criteria mix and stable exhibits for later drafting
+9. export downstream outputs once the workspace is mature
 
 ## Main surfaces
 
@@ -108,6 +123,31 @@ The client review page is action-oriented. It emphasizes:
 - category bands and archive bands
 - human-review queue behavior
 - quick actions and quick peek
+
+### Strategy stage
+
+The strategy page is the Phase 2 hero surface. It combines:
+
+- client-wide coverage at a glance across all ready workspaces
+- a structured strategy memo with citations and reasoning
+- an inline stress-test report
+- Ask Setu chat with three active modes:
+  - `Triage`
+  - `Strategy`
+  - `Stress-test`
+
+`Draft` remains visible in the mode selector but disabled until Phase 3.
+
+### Lock stage
+
+The lock page commits the case theory into durable downstream structure:
+
+- primary and supporting criteria with stable exhibit labels
+- declined criteria with rationale
+- editable narrative spine
+- per-criterion pinboards
+- empty draft placeholders for later drafting phases
+- unlock with invalidation preview
 
 ### Workspace dashboard
 
@@ -148,6 +188,7 @@ Implementation rules:
 
 - Business and product overview: [docs/business-product-overview.md](docs/business-product-overview.md)
 - Phase 1 client lifecycle design: [docs/phase1-client-lifecycle.md](docs/phase1-client-lifecycle.md)
+- Phase 2 strategy and lock design: [docs/phase2-strategy-lock.md](docs/phase2-strategy-lock.md)
 - Technical and system design: [docs/final-design.md](docs/final-design.md)
 - Operations and maintenance playbook: [docs/operating-playbook.md](docs/operating-playbook.md)
 - Repo-local continuation skill for future AI work: [skills/setu-studio-continuation/SKILL.md](skills/setu-studio-continuation/SKILL.md)
@@ -160,10 +201,18 @@ Key implementation files:
 - Client portfolio and home routes: [src/app/clients](src/app/clients)
 - Client home components: [src/components/client-home](src/components/client-home)
 - Review-specific components: [src/components/review](src/components/review)
+- Strategy components: [src/components/strategy](src/components/strategy)
+- Lock components: [src/components/lock](src/components/lock)
+- Ask Setu components: [src/components/chat](src/components/chat)
 - Global tokens and shell styling: [src/app/globals.css](src/app/globals.css)
 - Snapshot assembly: [src/lib/library.ts](src/lib/library.ts)
 - Client registry and migration: [src/lib/clients.ts](src/lib/clients.ts)
 - Client activity timeline: [src/lib/timeline.ts](src/lib/timeline.ts)
+- Chat orchestration: [src/lib/chat-service.ts](src/lib/chat-service.ts)
+- Chat persistence: [src/lib/chat-state.ts](src/lib/chat-state.ts)
+- Chat citation enforcement: [src/lib/chat-citation.ts](src/lib/chat-citation.ts)
+- Lock and unlock logic: [src/lib/lock.ts](src/lib/lock.ts)
+- Per-criterion pinboards: [src/lib/pinboards.ts](src/lib/pinboards.ts)
 - Ingestion pipeline: [src/lib/ingestion.ts](src/lib/ingestion.ts)
 - Summarization and embeddings: [src/lib/ai.ts](src/lib/ai.ts)
 - Event bundling: [src/lib/event-bundles.ts](src/lib/event-bundles.ts)
@@ -192,6 +241,12 @@ Key implementation files:
 - `storage/state/clients.json`
 - `storage/state/clients/<clientId>/client.json`
 - `storage/state/clients/<clientId>/timeline.json`
+- `storage/state/clients/<clientId>/chat-sessions/*.json`
+- `storage/state/clients/<clientId>/strategy-memos/*.json`
+- `storage/state/clients/<clientId>/stress-test-reports/*.json`
+- `storage/state/clients/<clientId>/pinboards/*.json`
+- `storage/state/clients/<clientId>/drafts/*.json`
+- `storage/state/clients/<clientId>/locked-strategy.json`
 - `storage/state/event-bundles.json`
 - `storage/state/eb1a-classification.json`
 - `storage/state/criteria-tagging.json`
@@ -251,6 +306,16 @@ For Phase 1 UI work, also verify:
 - `/clients/<clientId>/review` renders action-item review
 - `/?view=workspace&clientId=<clientId>` preserves the dense workbench
 - pending review actions change counts immediately and persist after reload
+
+For Phase 2 strategy and lock work, also verify:
+
+- `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
+- chat is disabled until every workspace in the client is fully ready
+- strategy and stress-test artifacts remain client-scoped
+- stress-test produces challenge rows with citations
+- `/clients/<clientId>/lock` creates stable exhibit labels
+- `/clients/<clientId>/unlock` returns the client to `strategizing`
+- client A never retrieves or cites workspace documents from client B
 
 ## Non-negotiable guardrails
 

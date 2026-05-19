@@ -4,14 +4,17 @@
 
 Setu is a local-first evidence platform for immigration petition preparation. The current implementation is optimized for teams who need to move from raw evidence folders to a reviewable legal organization system without losing source traceability, workspace isolation, or human override control.
 
-Phase 1 adds a client lifecycle shell around the existing evidence pipeline. The architecture is now intentionally layered as:
+Phase 1 adds a client lifecycle shell around the existing evidence pipeline. Phase 2 adds a client-wide strategy and lock layer. The architecture is now intentionally layered as:
 
 1. client record
 2. workspace intake
 3. document-level understanding
 4. event-level interpretation
 5. criterion-level organization
-6. human review and output packaging
+6. human review
+7. client-wide strategy reasoning
+8. lock / unlock and downstream scaffolding
+9. output packaging
 
 Each layer is preserved instead of collapsed into one irreversible decision.
 
@@ -26,6 +29,7 @@ The system follows these rules:
 5. Each AI pass is rerunnable without destroying upstream artifacts.
 6. Review actions are reversible and workspace-scoped.
 7. Client home and review pages should surface what needs attention first.
+8. Strategy and stress-test outputs must remain client-scoped and citable.
 
 ## 3. System overview
 

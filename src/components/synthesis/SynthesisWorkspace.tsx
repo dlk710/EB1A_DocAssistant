@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChatDock } from "@/components/chat/ChatDock";
+import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { GenericProseBanner } from "@/components/drafting/GenericProseBanner";
 import { VersionCompareModal } from "@/components/drafting/VersionCompareModal";
 import { ApprovedDraftsRail } from "@/components/synthesis/ApprovedDraftsRail";
@@ -227,10 +228,7 @@ export function SynthesisWorkspace(props: {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="setu-brand-block">
               <div className="flex flex-wrap items-center gap-4">
-                <span className="setu-wordmark" aria-label="setu">
-                  <span className="setu-wordmark-letters">setu</span>
-                  <span className="setu-wordmark-deck" aria-hidden="true" />
-                </span>
+                <SetuHomeLink />
                 <span className="setu-scope-chip">
                   <span className="setu-scope-dot" />
                   <span>{props.clientName} · Synthesis</span>

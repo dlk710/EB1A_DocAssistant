@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { ExemplarCard } from "@/components/style-profiles/ExemplarCard";
 import { ExemplarEditor } from "@/components/style-profiles/ExemplarEditor";
 import type { StyleExemplar, StyleProfile } from "@/lib/types";
@@ -38,10 +39,7 @@ export default function StyleProfileEditorPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="setu-brand-block">
               <div className="flex flex-wrap items-center gap-4">
-                <span className="setu-wordmark" aria-label="setu">
-                  <span className="setu-wordmark-letters">setu</span>
-                  <span className="setu-wordmark-deck" aria-hidden="true" />
-                </span>
+                <SetuHomeLink />
                 <span className="setu-scope-chip">
                   <span className="setu-scope-dot" />
                   <span>{profile?.displayName || "Style profile"}</span>

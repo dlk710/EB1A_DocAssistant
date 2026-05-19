@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { BlockingActionCard } from "@/components/client-home/BlockingActionCard";
 import { ClientHero } from "@/components/client-home/ClientHero";
 import { CoverageCard } from "@/components/client-home/CoverageCard";
@@ -611,10 +612,7 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="setu-brand-block">
               <div className="flex flex-wrap items-center gap-4">
-                <span className="setu-wordmark" aria-label="setu">
-                  <span className="setu-wordmark-letters">setu</span>
-                  <span className="setu-wordmark-deck" aria-hidden="true" />
-                </span>
+                <SetuHomeLink />
                 {buildClientSwitcher(clientId, clients)}
               </div>
             </div>

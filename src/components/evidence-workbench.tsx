@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SetuHomeLink } from "@/components/SetuHomeLink";
 import type { ChangeEvent, CSSProperties, FormEvent } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { ChatDock } from "@/components/chat/ChatDock";
@@ -3755,10 +3756,7 @@ export function EvidenceWorkbench({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="setu-brand-block">
                 <div className="flex flex-wrap items-center gap-4">
-                  <span className="setu-wordmark" aria-label="setu">
-                    <span className="setu-wordmark-letters">setu</span>
-                    <span className="setu-wordmark-deck" aria-hidden="true" />
-                  </span>
+                  <SetuHomeLink />
                   <span className="setu-scope-chip">
                     <span className="setu-scope-dot" />
                     <span>{activeJob?.folderLabel || "No workspace yet"}</span>

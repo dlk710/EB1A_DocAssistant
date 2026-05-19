@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { ProfileList } from "@/components/style-profiles/ProfileList";
 import type { StyleProfile } from "@/lib/types";
 
@@ -31,10 +32,7 @@ export default function StyleProfilesPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="setu-brand-block">
               <div className="flex flex-wrap items-center gap-4">
-                <span className="setu-wordmark" aria-label="setu">
-                  <span className="setu-wordmark-letters">setu</span>
-                  <span className="setu-wordmark-deck" aria-hidden="true" />
-                </span>
+                <SetuHomeLink />
                 <span className="setu-scope-chip">
                   <span className="setu-scope-dot" />
                   <span>Style profiles</span>

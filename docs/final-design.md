@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-Setu is a local-first evidence platform for immigration petition preparation. The current implementation is optimized for teams who need to move from raw evidence folders to a reviewable legal organization system without losing source traceability, workspace isolation, or human override control.
+Setu is a local-first evidence and drafting platform for immigration petition preparation. The system is designed to move from raw evidence folders to a client-scoped, strategy-aware, draft-producing workflow without losing source traceability, workspace isolation, or human override control.
 
-Phase 1 adds a client lifecycle shell around the existing evidence pipeline. Phase 2 adds a client-wide strategy and lock layer. The architecture is now intentionally layered as:
+The architecture is intentionally layered:
 
 1. client record
 2. workspace intake
@@ -13,8 +13,9 @@ Phase 1 adds a client lifecycle shell around the existing evidence pipeline. Pha
 5. criterion-level organization
 6. human review
 7. client-wide strategy reasoning
-8. lock / unlock and downstream scaffolding
-9. output packaging
+8. lock and unlock
+9. per-criterion drafting
+10. downstream packaging
 
 Each layer is preserved instead of collapsed into one irreversible decision.
 
@@ -29,13 +30,15 @@ The system follows these rules:
 5. Each AI pass is rerunnable without destroying upstream artifacts.
 6. Review actions are reversible and workspace-scoped.
 7. Client home and review pages should surface what needs attention first.
-8. Strategy and stress-test outputs must remain client-scoped and citable.
+8. Strategy, stress-test, and drafting outputs must remain client-scoped and citable.
+9. Locked exhibit numbering must remain stable until explicit unlock.
+10. Draft versions must be append-only and auditable.
 
 ## 3. System overview
 
 ```mermaid
 flowchart LR
-  A["Client portfolio\n/clients"] --> B["Client record\nstorage/state/clients.json"]
+  A["Client portfolio\n/clients"] --> B["Client registry\nstorage/state/clients.json"]
   B --> C["Client home\n/clients/<clientId>"]
   C --> D["Workspace intake\n/?view=workspace&clientId=<clientId>"]
   D --> E["Job record\nstorage/state/jobs.json"]
@@ -54,8 +57,13 @@ flowchart LR
   Q --> R["Manual overrides + review state"]
   B --> S["Client timeline\nstorage/state/clients/<clientId>/timeline.json"]
   R --> T["Client review page\n/clients/<clientId>/review"]
-  R --> U["Dense workspace review\n/review/<jobId>"]
-  O --> V["Output packages\nstorage/exports"]
+  Q --> U["Ask Setu strategy surface\n/clients/<clientId>/strategy"]
+  U --> V["Strategy memos + stress-tests\nstorage/state/clients/<clientId>"]
+  V --> W["Lock flow\nsrc/lib/lock.ts"]
+  W --> X["Locked case strategy + pinboards"]
+  X --> Y["Drafting workspace\n/clients/<clientId>/drafting/<criterionCode>"]
+  Y --> Z["Criterion drafts + versions\nstorage/state/clients/<clientId>/drafts"]
+  X --> AA["Output packages\nstorage/exports"]
 ```
 
 ## 4. Runtime stack
@@ -76,7 +84,7 @@ flowchart LR
 
 ### AI providers and models
 
-- OpenAI text model for summarization, bundling, classification, tagging, and Ask Setu chat
+- OpenAI text model for summarization, bundling, classification, tagging, Ask Setu, stress-testing, and draft generation
 - OpenAI embedding model for semantic retrieval
 
 Current defaults come from [src/lib/settings.ts](../src/lib/settings.ts):
@@ -109,21 +117,20 @@ Qdrant powers:
 - workspace-level evidence retrieval
 - document metadata hydration for review surfaces
 - Ask Setu retrieval
+- criterion-scoped drafting retrieval
 
 ### 5.2 JSON state
 
 Operational and interpretation-layer state lives under `storage/state`.
 
+#### Global state
+
 - `settings.json`
-  - prompts, model settings, output root
+  - prompts, model settings, output root, active style profile
 - `jobs.json`
   - indexing jobs, stage progress, cancellation state
 - `clients.json`
   - top-level client registry
-- `clients/<clientId>/client.json`
-  - durable client record
-- `clients/<clientId>/timeline.json`
-  - lifecycle events for that client
 - `event-bundles.json`
   - per-workspace bundle output
 - `eb1a-classification.json`
@@ -135,6 +142,30 @@ Operational and interpretation-layer state lives under `storage/state`.
 - `review-state.json`
   - sub-bundles and review organization
 
+#### Per-client state
+
+- `clients/<clientId>/client.json`
+  - durable client record
+- `clients/<clientId>/timeline.json`
+  - lifecycle events for that client
+- `clients/<clientId>/chat-sessions/*.json`
+  - Ask Setu session history
+- `clients/<clientId>/strategy-memos/*.json`
+  - pinned strategy artifacts
+- `clients/<clientId>/stress-test-reports/*.json`
+  - pinned stress-test artifacts
+- `clients/<clientId>/locked-strategy.json`
+  - stable criteria mix, exhibits, and narrative spine
+- `clients/<clientId>/pinboards/*.json`
+  - per-criterion drafting anchors
+- `clients/<clientId>/drafts/*.json`
+  - append-only criterion draft versions and approval metadata
+
+#### Style system state
+
+- `style-profiles/*.json`
+  - user-editable style profiles
+
 ### 5.3 Filesystem artifacts
 
 The filesystem stores:
@@ -143,10 +174,9 @@ The filesystem stores:
 - preview assets in `storage/previews`
 - export packages in `storage/exports`
 - local Qdrant files in `storage/qdrant`
+- curated default exemplars in `storage/style-profiles/default.json`
 
 ## 6. Client and workspace model
-
-Phase 1 introduces a formal client model.
 
 ### Client
 
@@ -184,7 +214,9 @@ Important lifecycle actions are written to the per-client timeline in [src/lib/t
 - client creation
 - migrated workspace attachment
 - human review actions
-- key override changes
+- strategy generation
+- lock and unlock
+- draft approval
 
 ## 7. Multi-pass intelligence
 
@@ -245,7 +277,7 @@ The tagging pass works at the evidence-file level and produces:
 
 ## 8. Review architecture
 
-Setu now has two review-oriented layers.
+Setu has two review-oriented layers.
 
 ### Client review
 
@@ -267,7 +299,77 @@ The job-level review page remains retrieval-heavy and is appropriate when the re
 - criterion-first deep review
 - targeted overrides on one workspace
 
-## 9. Migration behavior
+## 9. Strategy and Ask Setu architecture
+
+Ask Setu is an additive reasoning layer on top of the indexed evidence substrate.
+
+### Readiness gate
+
+The chat and strategy surfaces are enabled only when:
+
+- the client has at least one workspace
+- the active workspaces are fully indexed through tagging
+- bundle classification and tagging state is completed
+- coverage can be computed
+
+### Mode structure
+
+Phase 3 keeps four modes:
+
+- `Triage`
+- `Strategy`
+- `Stress-test`
+- `Draft`
+
+The first three operate at client strategy scope. `Draft` operates at criterion scope and uses locked strategy plus criterion-scoped evidence retrieval.
+
+### Citation contract
+
+Setu does not allow factual draft or chat claims to survive without citations that resolve to client-visible documents. Draft mode adds a second layer on top of citation existence: fact-check drift detection against cited evidence.
+
+## 10. Lock and drafting architecture
+
+### Lock
+
+The lock step turns client-wide strategy into durable downstream structure:
+
+- primary and supporting criteria
+- declined criteria with rationale
+- stable exhibit labels
+- narrative spine
+- per-criterion pinboards
+- criterion draft skeletons
+
+Unlock invalidates the lock state but preserves draft history for auditability.
+
+### Drafting
+
+Each criterion has a `CriterionDraft` file that is append-only with respect to versions.
+
+Each version stores:
+
+- source (`ai`, `manual`, `ai-edited`)
+- paragraph text
+- exhibit references
+- citations
+- fact-check status
+- generic prose warnings
+- word count
+- generation cost where relevant
+
+The drafting workspace is a three-column surface:
+
+- left: pinboard + locked strategy notes
+- middle: editable draft on paper-like surface
+- right: criterion-scoped Ask Setu
+
+### Style profiles
+
+Style profiles let attorneys steer Draft mode toward a specific legal voice. The active profile contributes 1 to 3 exemplars matching the current criterion, with fallback to related criteria if needed.
+
+Phase 3 ships with a curated read-only default profile and supports user-created editable profiles.
+
+## 11. Migration behavior
 
 Phase 1 uses lazy migration for historical workspaces.
 
@@ -279,9 +381,9 @@ When older jobs are encountered:
 
 Default migration behavior is one client per historical workspace unless the data is later consolidated manually.
 
-## 10. APIs introduced or emphasized in Phase 1
+## 12. API surface emphasized through Phase 3
 
-Client routes:
+### Client routes
 
 - `GET /api/clients`
 - `POST /api/clients`
@@ -290,13 +392,34 @@ Client routes:
 - `DELETE /api/clients/<clientId>`
 - `GET /api/clients/<clientId>/timeline`
 
-Existing workspace and evidence APIs continue to drive ingestion, review actions, previews, and overrides.
+### Strategy and lock routes
 
-## 11. Ask Setu note
+- `POST /api/chat/session`
+- `POST /api/chat/turn`
+- `GET /api/chat/artifacts`
+- `POST /api/clients/<clientId>/lock`
+- `POST /api/clients/<clientId>/unlock`
 
-Ask Setu remains an additive layer on top of the indexed workspace substrate. It does not replace the client lifecycle model and should remain gated by workspace readiness.
+### Drafting routes
 
-## 12. Validation expectations
+- `GET /api/clients/<clientId>/drafts`
+- `GET /api/clients/<clientId>/drafts/<criterionCode>`
+- `POST /api/clients/<clientId>/drafts/<criterionCode>`
+- `PATCH /api/clients/<clientId>/drafts/<criterionCode>`
+- `POST /api/clients/<clientId>/drafts/<criterionCode>/approve`
+- `GET /api/clients/<clientId>/drafts/<criterionCode>/versions/<version>`
+- `GET /api/style-profiles`
+- `POST /api/style-profiles`
+- `GET /api/style-profiles/<id>`
+- `PATCH /api/style-profiles/<id>`
+- `DELETE /api/style-profiles/<id>`
+- `POST /api/style-profiles/<id>/exemplars`
+- `PATCH /api/style-profiles/<id>/exemplars/<exemplarId>`
+- `DELETE /api/style-profiles/<id>/exemplars/<exemplarId>`
+- `GET /api/style-profiles/active`
+- `POST /api/style-profiles/active`
+
+## 13. Validation expectations
 
 Baseline validation:
 
@@ -305,12 +428,16 @@ npm run lint
 npm run build
 ```
 
-Phase 1 validation should additionally confirm:
+Lifecycle validation should additionally confirm:
 
 - `/` redirects to `/clients`
 - `/clients` renders all clients
 - `/clients/<clientId>` renders client home
 - `/clients/<clientId>/review` renders the action-oriented review surface
-- `/?view=workspace&clientId=<clientId>` preserves operational workbench access
+- `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
+- `/clients/<clientId>/lock` renders stable exhibit staging
+- `/clients/<clientId>/drafting` renders the criterion queue
+- `/clients/<clientId>/drafting/<criterionCode>` renders the full drafting workspace
 - pending review actions update counts immediately and persist after reload
 - workspace isolation remains intact across client views
+- cross-client retrieval never leaks into strategy or drafts

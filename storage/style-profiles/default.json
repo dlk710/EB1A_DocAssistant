@@ -1,0 +1,50 @@
+{
+  "id": "default",
+  "attorneyId": "default",
+  "displayName": "Setu default",
+  "isDefault": true,
+  "createdAt": "2026-05-18T00:00:00.000Z",
+  "updatedAt": "2026-05-18T00:00:00.000Z",
+  "exemplars": [
+    {
+      "id": "default-v",
+      "label": "Original contributions reference",
+      "criterionCode": "05",
+      "approvedOutcome": true,
+      "notes": "Declarative criterion-(v) style reference.",
+      "text": "The record shows that the petitioner did more than participate in product delivery; he originated technical work that the employer later relied upon at scale. The evidence does not ask the adjudicator to infer originality from title alone. Instead, it traces the petitioner’s role from the design decision to the business outcome. The technical letters explain that he defined the ranking and retrieval approach used by the platform, established the model behavior that governed production output, and solved failure modes that had blocked deployment. Internal architecture records and corroborating correspondence then show that those design choices moved from proposal to operating system. The result is a record in which the contribution is identifiable, attributable, and consequential. Where the evidence discusses impact, it does so concretely. It ties the petitioner’s work to production adoption, measurable usage, and downstream dependence by other teams. That is the kind of significance the criterion contemplates: not praise in the abstract, but a contribution other professionals relied on because it materially improved how the organization performed an important function."
+    },
+    {
+      "id": "default-viii",
+      "label": "Leading or critical role reference",
+      "criterionCode": "08",
+      "approvedOutcome": true,
+      "notes": "Declarative criterion-(viii) style reference.",
+      "text": "The evidence supports a conclusion that the petitioner served in a leading or critical role for organizations with distinguished reputations. The record identifies the relevant business function first and then places the petitioner inside it. Rather than resting on a managerial title, the record shows responsibility over a core platform, dependence by senior stakeholders, and decisions that affected production delivery. Letters from supervisors and business partners describe why the role was important to the enterprise and why the petitioner, specifically, was entrusted with it. Supporting materials then anchor those descriptions in objective context, including platform usage, scope of deployment, and the commercial importance of the systems at issue. This structure matters. It demonstrates not merely that the petitioner worked on significant projects, but that he occupied a role whose successful performance was important to the employer’s operations. The distinction between participation and criticality is therefore made with evidence, not adjectives."
+    },
+    {
+      "id": "default-iv",
+      "label": "Judging reference",
+      "criterionCode": "04",
+      "approvedOutcome": true,
+      "notes": "Declarative criterion-(iv) style reference.",
+      "text": "The judging criterion is satisfied where the record shows that the petitioner was asked to evaluate the work of others in the field. Here, the evidence does that directly. The invitation and appointment materials identify the reviewing body, the year of service, and the petitioner’s role as a judge or evaluator. The corroborating materials show that the selection was not casual or internal-only, but tied to a professional program that depended on subject-matter judgment. The significance of the evidence lies in what the invitation represents: third parties sought the petitioner’s expertise to assess the merit of others’ work. The record therefore establishes the key point in straightforward terms. It is not necessary to embellish the service. The fact that a recognized organization entrusted the petitioner with evaluative responsibility is itself the relevant proof under the criterion."
+    },
+    {
+      "id": "default-vi",
+      "label": "Authorship reference",
+      "criterionCode": "06",
+      "approvedOutcome": true,
+      "notes": "Declarative criterion-(vi) style reference.",
+      "text": "The authorship evidence shows that the petitioner has produced written technical material for a professional audience. The record identifies the publication, connects the petitioner to the authorship, and supplies enough context for the adjudicator to understand why the article mattered. This is important because the criterion concerns authored contributions, not generic references to writing. The petitioner’s article is described with specificity: the subject matter, the publication venue, and the connection between the written work and the petitioner’s field. Where available, the record also shows how the article circulated or why practitioners would consult it. The resulting argument remains disciplined. It does not overstate readership or influence where the evidence does not quantify those points. Instead, it demonstrates authorship through attribution and professional context, which is the evidentiary core of the criterion."
+    },
+    {
+      "id": "default-i",
+      "label": "Awards reference",
+      "criterionCode": "01",
+      "approvedOutcome": true,
+      "notes": "Declarative criterion-(i) style reference.",
+      "text": "The awards evidence is strongest when it explains both what the petitioner received and why the recognition matters. The record here follows that path. It identifies the honor, the awarding body, and the event or program through which the recognition was given. It then situates the award within the petitioner’s field by describing the organization conferring it and the accomplishment being recognized. This prevents the argument from collapsing into a bare certificate. The adjudicator is shown not only that an award exists, but that it reflects professional recognition for the petitioner’s work. The prose should therefore stay measured. It should describe the recognition, its source, and the connection to the petitioner’s field, allowing the supporting exhibits to establish the rest."
+    }
+  ]
+}

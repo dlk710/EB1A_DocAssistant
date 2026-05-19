@@ -58,6 +58,8 @@ export function ChatDock(props: {
   workspaceCount: number;
   variant?: "launcher" | "panel";
   initialMode?: ChatMode;
+  criterionCode?: string | null;
+  draftEnabled?: boolean;
 }) {
   const variant = props.variant ?? "launcher";
   const [mode, setMode] = useState<ChatMode>(props.initialMode ?? "strategy");
@@ -178,6 +180,7 @@ export function ChatDock(props: {
           sessionId: session?.id,
           message: draftMessage.trim(),
           modeHint: mode,
+          criterionCode: props.criterionCode,
         }),
       });
 
@@ -282,8 +285,8 @@ export function ChatDock(props: {
               value={mode}
               onChange={setMode}
               disabled={!readyState.ready}
-              draftDisabled
-              draftTooltip="Available in drafting stage"
+              draftDisabled={!props.draftEnabled}
+              draftTooltip="Available in the criterion drafting workspace"
             />
             <ArtifactShelf
               artifacts={artifacts}
@@ -333,7 +336,9 @@ export function ChatDock(props: {
               orderedTurns.map((turn) => <ChatMessage key={turn.id} turn={turn} />)
             ) : (
               <div className="rounded-[16px] border border-dashed border-[var(--border-primary)] bg-[var(--paper-secondary)] px-4 py-6 text-[12px] leading-6 text-[var(--muted)]">
-                Start with a follow-up on evidence, a strategy question, or a stress-test request.
+                {props.draftEnabled
+                  ? "Start with a draft request, a citation check, or a criterion-specific follow-up."
+                  : "Start with a follow-up on evidence, a strategy question, or a stress-test request."}
               </div>
             )}
           </div>
@@ -346,7 +351,7 @@ export function ChatDock(props: {
             onSubmit={() => void handleSend()}
             disabled={!readyState.ready}
             isSubmitting={isSubmitting}
-            placeholder="Ask a follow-up…"
+            placeholder={props.draftEnabled ? "Ask Setu to draft or refine this criterion…" : "Ask a follow-up…"}
           />
         </div>
       </div>

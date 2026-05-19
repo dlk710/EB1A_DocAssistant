@@ -1,3 +1,4 @@
+import { BriefDraftCard } from "@/components/chat/BriefDraftCard";
 import { CitationChip } from "@/components/chat/CitationChip";
 import { ReasoningExpansion } from "@/components/chat/ReasoningExpansion";
 import type { ChatTurn } from "@/lib/types";
@@ -27,6 +28,14 @@ export function ChatMessage(props: { turn: ChatTurn }) {
         <p className="mt-3 whitespace-pre-wrap text-[12px] leading-6 text-[var(--foreground)]">
           {props.turn.response.text}
         </p>
+        {props.turn.response.artifact?.schemaVersion === "brief-draft/2.0" ? (
+          <div className="mt-3">
+            <BriefDraftCard
+              draft={props.turn.response.artifact}
+              citations={props.turn.response.citations}
+            />
+          </div>
+        ) : null}
         {props.turn.response.pendingDisclosure ? (
           <p className="mt-3 rounded-[12px] bg-[var(--paper-secondary)] px-3 py-2 text-[11px] leading-5 text-[var(--muted)]">
             {props.turn.response.pendingDisclosure}

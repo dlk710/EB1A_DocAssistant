@@ -294,6 +294,22 @@ export function getClientStageNumber(status: ClientStatus) {
   }
 }
 
+export function getDraftLifecycleStatus(input: {
+  locked: boolean;
+  claimedCriteriaCount: number;
+  approvedCriteriaCount: number;
+}) {
+  if (!input.locked) {
+    return "strategizing" satisfies ClientStatus;
+  }
+
+  if (input.claimedCriteriaCount > 0 && input.approvedCriteriaCount >= input.claimedCriteriaCount) {
+    return "stitching" satisfies ClientStatus;
+  }
+
+  return "drafting" satisfies ClientStatus;
+}
+
 export function listClientJobs(clientId: string) {
   return ensureClientsHydrated().filter((job) => job.clientId === clientId);
 }

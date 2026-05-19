@@ -2,16 +2,20 @@
 
 ## 1. Purpose
 
-This playbook is the practical operating guide for running, validating, and changing Setu safely.
+This playbook is the practical guide for operating, validating, and changing Setu safely across the first three lifecycle phases:
+
+- Phase 1: client portfolio, home, and review
+- Phase 2: strategy, Ask Setu, and lock
+- Phase 3: criterion drafting and style profiles
 
 Use it when you are:
 
 - running the app locally
-- modifying prompts
-- adjusting UI behavior
-- changing pipeline logic
+- adjusting prompts or models
+- changing lifecycle UI
+- touching pipeline logic
 - validating work before commit or push
-- continuing the Phase 1 and Phase 2 client lifecycle work
+- handing the product to another engineer or AI collaborator
 
 ## 2. Local runtime
 
@@ -48,17 +52,37 @@ Settings can also be managed through the product UI and stored in `storage/state
 
 ## 4. Core persistence paths
 
+Treat these as local runtime state, not documentation artifacts.
+
+### Workspace and retrieval state
+
 - `storage/uploads`
 - `storage/previews`
 - `storage/exports`
 - `storage/qdrant`
 - `storage/state/jobs.json`
+- `storage/state/event-bundles.json`
+- `storage/state/eb1a-classification.json`
+- `storage/state/criteria-tagging.json`
+- `storage/state/manual-overrides.json`
+- `storage/state/review-state.json`
+
+### Client lifecycle state
+
 - `storage/state/clients.json`
 - `storage/state/clients/<clientId>/client.json`
 - `storage/state/clients/<clientId>/timeline.json`
-- `storage/state/*.json`
+- `storage/state/clients/<clientId>/locked-strategy.json`
+- `storage/state/clients/<clientId>/pinboards/*.json`
+- `storage/state/clients/<clientId>/drafts/*.json`
+- `storage/state/clients/<clientId>/chat-sessions/*.json`
+- `storage/state/clients/<clientId>/strategy-memos/*.json`
+- `storage/state/clients/<clientId>/stress-test-reports/*.json`
 
-Treat these as local runtime state, not documentation artifacts.
+### Style system state
+
+- `storage/state/style-profiles/*.json`
+- `storage/style-profiles/default.json`
 
 ## 5. Safe change workflow
 
@@ -71,6 +95,8 @@ For most work:
 5. verify the relevant UI or API path
 6. only then commit and push
 
+If a phase-specific flow is already live, preserve it while working forward. Do not break earlier lifecycle stages to land a later one.
+
 ## 6. Validation checklist
 
 ### Baseline
@@ -80,7 +106,7 @@ npm run lint
 npm run build
 ```
 
-### Client lifecycle work
+### Phase 1: client lifecycle
 
 Verify:
 
@@ -88,13 +114,10 @@ Verify:
 - `/clients` renders the portfolio
 - `/clients/<clientId>` renders client home
 - `/clients/<clientId>/review` renders action-oriented review
-- `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
-- `/clients/<clientId>/lock` renders lock staging
-- `/clients/<clientId>/unlock` preserves drafts while returning the client to strategy
 - `/?view=workspace&clientId=<clientId>` still opens the dense workbench
 - a migrated historical workspace still appears under its client
 
-### Review action work
+### Review-action behavior
 
 Verify:
 
@@ -104,7 +127,7 @@ Verify:
 - quick peek still works
 - context menus remain inside the viewport
 
-### Pipeline work
+### Pipeline behavior
 
 Verify:
 
@@ -114,15 +137,32 @@ Verify:
 - tagging still runs after classification
 - cancellation stops work at the next safe boundary
 
-### Strategy and lock work
+### Phase 2: strategy and lock
 
 Verify:
 
+- `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
 - chat readiness blocks clients with unfinished workspaces
 - strategy memos persist under the client, not the workspace
 - stress-test reports cite only documents from that client
 - locking creates stable exhibit labels and per-criterion pinboards
 - unlocking clears the active lock file but preserves draft placeholders
+
+### Phase 3: drafting and style profiles
+
+Verify:
+
+- `/clients/<clientId>/drafting` renders the criterion queue
+- `/clients/<clientId>/drafting/<criterionCode>` renders the three-column drafting workspace
+- generating a draft creates a new version with `source: "ai"`
+- manual edits persist to the current in-progress version
+- approving a draft sets `latestApprovedVersion` and updates the criterion status chip
+- Draft mode returns exhibit labels, citations, and fact-check status
+- the default style profile loads with 5 curated exemplars
+- changing the active style profile changes the exemplar IDs used by Draft generation
+- subtle factual drift surfaces as a warning
+- significant drift triggers retry or conservative fallback
+- generic-prose warnings appear only when phrase thresholds are exceeded
 
 ## 7. Prompt editing rules
 
@@ -132,13 +172,14 @@ Prompt changes should preserve the contract of the corresponding pass:
 - bundling remains event-focused
 - classification remains bundle-focused
 - tagging remains evidence-focused
-- Ask Setu prompts remain grounded to workspace evidence
+- Ask Setu prompts remain grounded to workspace or client evidence
+- Draft mode remains grounded to locked strategy, criterion-scoped evidence, and style exemplars
 
 Do not introduce prompt behavior that collapses multiple passes into one hidden decision.
 
 ## 8. UX guardrails
 
-Changes to the interface must preserve these user-tested constraints:
+Changes to the interface must preserve these constraints:
 
 - no major blank dead zones on wide screens
 - prompt library scrolls inside its own surface
@@ -147,6 +188,7 @@ Changes to the interface must preserve these user-tested constraints:
 - reviewed items leave pending queues immediately
 - draggable side rails continue to work on desktop where present
 - dense operational surfaces remain reachable even after higher-level redesign
+- the drafting workspace keeps pinboard, draft pane, and criterion-scoped chat visible without crowding
 
 ## 9. Data integrity guardrails
 
@@ -157,6 +199,8 @@ Never break these:
 - client-to-workspace linkage stays deterministic
 - filename routing rules stay deterministic
 - manual overrides stay persistent per workspace
+- locked exhibit labels remain stable until explicit unlock
+- draft versions are append-only
 - older workspaces remain readable after new logic lands
 
 ## 10. Important files by responsibility
@@ -169,11 +213,35 @@ Never break these:
 - `src/app/clients/[clientId]/page.tsx`
 - `src/app/clients/[clientId]/review/page.tsx`
 
+### Strategy and lock
+
+- `src/lib/chat-service.ts`
+- `src/lib/chat-state.ts`
+- `src/lib/chat-citation.ts`
+- `src/lib/lock.ts`
+- `src/lib/pinboards.ts`
+- `src/app/clients/[clientId]/strategy/page.tsx`
+- `src/app/clients/[clientId]/lock/page.tsx`
+- `src/app/clients/[clientId]/unlock/page.tsx`
+
+### Drafting and style profiles
+
+- `src/lib/drafts.ts`
+- `src/lib/draft-fact-check.ts`
+- `src/lib/draft-prose-check.ts`
+- `src/lib/style-profiles.ts`
+- `src/app/clients/[clientId]/drafting/page.tsx`
+- `src/app/clients/[clientId]/drafting/[criterionCode]/page.tsx`
+- `src/app/settings/style-profiles/page.tsx`
+- `src/components/drafting/*`
+- `src/components/style-profiles/*`
+
 ### UI shell
 
 - `src/components/evidence-workbench.tsx`
 - `src/components/client-home/*`
 - `src/components/review/*`
+- `src/components/chat/*`
 - `src/app/globals.css`
 
 ### Pipeline and storage
@@ -190,18 +258,12 @@ Never break these:
 - `src/lib/eb1a-classification.ts`
 - `src/lib/criteria-tagging.ts`
 
-### Review state and overrides
-
-- `src/lib/manual-overrides.ts`
-- `src/lib/review-state.ts`
-- `src/app/api/evidence/[id]/status/route.ts`
-- `src/app/api/evidence/bulk-status/route.ts`
-- `src/app/api/overrides/route.ts`
-
 ## 11. Known limitations
 
 - OCR quality still depends on the extractable text path or preview path
 - historical workspace migration can create duplicate clients when old jobs clearly belong to the same person but were not linked previously
+- Draft mode is criterion-scoped only in Phase 3; full petition stitching is intentionally deferred
+- style profiles are global and single-active in Phase 3; per-client overrides are later work
 - some older internal names still reflect earlier product naming even though the live brand is Setu
 
 ## 12. Recommended commit discipline
@@ -211,6 +273,8 @@ Keep commits focused on one of these units when possible:
 - docs only
 - client lifecycle UI
 - review action workflow
+- strategy and lock
+- drafting and style profiles
 - pipeline logic
 - storage or retrieval changes
 

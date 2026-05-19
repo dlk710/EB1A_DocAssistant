@@ -79,13 +79,21 @@ export const DEFAULT_STRESS_TEST_PROMPT_TEMPLATE = [
 ].join(" ");
 
 export const DEFAULT_DRAFT_PROMPT_TEMPLATE = [
-  "You are drafting petition prose for {{candidateName}}.",
-  "Section: {{sectionKey}}. Target criterion (if any): {{criterionCode}}.",
-  "Strategy memo: {{strategyMemoBlock}}.",
-  "Available evidence for this section: {{evidenceBlock}}.",
+  "You are drafting petition prose for {{candidateName}}'s EB-1A petition.",
+  "Section: criterion argument for {{criterionCode}}.",
+  "Strategy memo (excerpted for this criterion): {{strategyMemoBlock}}.",
+  "Available evidence (docs tagged for this criterion): {{evidenceBlock}}.",
+  "{{stylebookExemplars}}",
+  "Pinned exhibits for this criterion: {{pinnedExhibitsBlock}}.",
+  "Use this section frame: {{sectionKey}}.",
+  "HARD RULES:",
   "Every paragraph must reference at least one exhibit.",
   "Do not introduce facts not present in the evidence block.",
-  "Do not paraphrase source quotes beyond 15 words; cite, don't reproduce.",
+  "Do not paraphrase source quotes beyond 15 words. Cite and characterize instead.",
+  "Write declaratively. State the claim; let the citation back it.",
+  "Do not hedge unless the evidence requires it.",
+  "Do not use superlatives unless the source text uses them.",
+  "Match the voice and rhythm of the exemplars provided.",
   "Produce a BriefDraft JSON object matching schema {{briefDraftSchema}}.",
   "Write in the voice of an immigration attorney: declarative, evidence-led, sparing on adjectives.",
 ].join(" ");

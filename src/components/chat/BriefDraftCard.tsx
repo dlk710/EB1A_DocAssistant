@@ -49,9 +49,20 @@ export function BriefDraftCard(props: {
                 </span>
               ))}
             </div>
+            {paragraph.factCheckStatus && paragraph.factCheckStatus !== "verified" ? (
+              <p className="mt-2 text-[10px] leading-5 text-[var(--state-warning)]">
+                {paragraph.factCheckNotes || "Review this paragraph against the cited source."}
+              </p>
+            ) : null}
           </div>
         ))}
       </div>
+
+      {props.draft.genericProseWarning ? (
+        <div className="mt-3 rounded-[12px] bg-[var(--state-warning-soft)] px-3 py-2 text-[10px] leading-5 text-[var(--state-warning)]">
+          {props.draft.genericProseWarning}
+        </div>
+      ) : null}
 
       {props.citations.length ? (
         <div className="mt-3 flex flex-wrap gap-1.5">

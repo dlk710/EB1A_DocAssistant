@@ -83,6 +83,7 @@ interface SettingsDraft {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  activeStyleProfileId: string;
   apiKey: string;
   summaryModel: string;
   embeddingModel: string;
@@ -755,6 +756,7 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,
     draftPrompt: settings.draftPrompt,
+    activeStyleProfileId: settings.activeStyleProfileId,
     apiKey: "",
     summaryModel: settings.summaryModel,
     embeddingModel: settings.embeddingModel,
@@ -2493,6 +2495,7 @@ export function EvidenceWorkbench({
           strategyPrompt: settingsDraft.strategyPrompt,
           stressTestPrompt: settingsDraft.stressTestPrompt,
           draftPrompt: settingsDraft.draftPrompt,
+          activeStyleProfileId: settingsDraft.activeStyleProfileId,
           apiKey: settingsDraft.apiKey,
           summaryModel: settingsDraft.summaryModel,
           embeddingModel: settingsDraft.embeddingModel,

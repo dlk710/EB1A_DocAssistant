@@ -1,13 +1,18 @@
 import crypto from "node:crypto";
+import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import { buildQueryVector } from "@/lib/ai";
 import {
+  applyCitationContractToDraft,
   applyCitationContractToStressTest,
   applyCitationContractToStrategy,
   applyCitationContractToTriage,
 } from "@/lib/chat-citation";
 import { classifyChatMode } from "@/lib/chat-classifier";
 import {
+  briefDraftJsonSchema,
+  briefDraftSchema,
   collectClientReviewSets,
+  normalizeBriefDraft,
   normalizeStrategyMemo,
   normalizeStressTestReport,
   normalizeTriageAnswer,
@@ -18,22 +23,29 @@ import {
   triageAnswerJsonSchema,
   triageAnswerSchema,
 } from "@/lib/chat-modes";
+import { runGenericProseCheck } from "@/lib/draft-prose-check";
+import { draftVersionFromBriefDraft } from "@/lib/drafts";
 import {
   getLatestStrategyMemo,
   saveLatestStrategyMemo,
   saveLatestStressTestReport,
 } from "@/lib/chat-state";
 import {
+  renderDraftPrompt,
   renderStrategyPrompt,
   renderStressTestPrompt,
   renderTriagePrompt,
 } from "@/lib/chat-prompts";
 import { buildLibrarySnapshot } from "@/lib/library";
+import { getLockedStrategy } from "@/lib/lock";
+import { getCriterionPinboard } from "@/lib/pinboards";
 import { getChatReadiness } from "@/lib/chat-readiness";
 import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
 import { searchDocumentsAcrossWorkspaces } from "@/lib/qdrant";
+import { selectStyleExemplars } from "@/lib/style-profiles";
 import type {
+  BriefDraft,
   ChatMode,
   ChatTurn,
   ClientDocument,
@@ -81,6 +93,457 @@ function candidateName(snapshot: LibrarySnapshot) {
 
 function workspaceScopeLabel(snapshot: LibrarySnapshot) {
   return `${snapshot.clientWorkspaces.length} workspaces`;
+}
+
+function criterionMeta(code: string) {
+  return (
+    EB1A_CRITERIA_DEFINITIONS.find((criterion) => criterion.code === code) ?? {
+      code,
+      legalCode: code,
+      name: code,
+      folderName: code,
+    }
+  );
+}
+
+function stripExhibitPrefix(label: string) {
+  return label.replace(/^Ex\.\s*/i, "").trim();
+}
+
+function finishSentence(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function exhibitLabelLookup(input: {
+  lockedEntry: NonNullable<ReturnType<typeof getLockedStrategy>>["primary"][number];
+  pinboardEntries: Array<{ documentId: string; exhibitLabel: string }>;
+}) {
+  const map = new Map<string, string>();
+  input.lockedEntry.anchorExhibits.forEach((assignment) => {
+    map.set(assignment.documentId, assignment.exhibitLabel);
+  });
+  input.pinboardEntries.forEach((entry) => {
+    map.set(entry.documentId, entry.exhibitLabel);
+  });
+  return map;
+}
+
+function applyExhibitLabelsToDraft(
+  draft: BriefDraft,
+  exhibitLookup: Map<string, string>,
+) {
+  return {
+    ...draft,
+    paragraphs: draft.paragraphs.map((paragraph) => {
+      const mappedRefs = paragraph.exhibitRefs
+        .map((reference) => {
+          const mapped = exhibitLookup.get(reference);
+          if (mapped) {
+            return stripExhibitPrefix(mapped);
+          }
+          const stripped = stripExhibitPrefix(reference);
+          return /^\d+[A-Z]?$/i.test(stripped) ? stripped : null;
+        })
+        .filter((reference): reference is string => Boolean(reference))
+        .filter(Boolean);
+      const fallbackRefs = paragraph.citations
+        .map((citation) => exhibitLookup.get(citation.docId))
+        .filter((label): label is string => Boolean(label))
+        .map((label) => stripExhibitPrefix(label));
+      const exhibitRefs = [...new Set([...mappedRefs, ...fallbackRefs])];
+
+      return {
+        ...paragraph,
+        exhibitRefs,
+      };
+    }),
+  };
+}
+
+function draftSupportText(document: ClientDocument) {
+  return (
+    document.summary?.shortSummary ||
+    document.summary?.notableFacts.find(Boolean) ||
+    document.summary?.detailedSummary ||
+    document.summary?.title ||
+    document.fileName
+  );
+}
+
+function firstSummarySentence(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = trimmed.match(/(.+?[.!?])(\s|$)/);
+  return (match?.[1] || trimmed).trim();
+}
+
+function buildConservativeCriterionDraft(input: {
+  clientId: string;
+  criterionCode: string;
+  criterionName: string;
+  lockedEntry: NonNullable<ReturnType<typeof getLockedStrategy>>["primary"][number];
+  pinboardEntries: Array<{ documentId: string; exhibitLabel: string }>;
+  documents: ClientDocument[];
+}) {
+  const exhibitLookup = exhibitLabelLookup({
+    lockedEntry: input.lockedEntry,
+    pinboardEntries: input.pinboardEntries,
+  });
+  const anchoredDocuments = dedupeDocuments(
+    [
+      ...input.lockedEntry.anchorDocIds
+        .map((documentId) => input.documents.find((document) => document.id === documentId) ?? null)
+        .filter((document): document is ClientDocument => Boolean(document)),
+      ...input.documents.filter((document) => exhibitLookup.has(document.id)),
+    ],
+  );
+
+  const selectedDocuments = anchoredDocuments.length
+    ? anchoredDocuments.slice(0, 3)
+    : input.documents.slice(0, 2);
+
+  const paragraphs = selectedDocuments.map((document, index) => {
+    const exhibitLabel = stripExhibitPrefix(
+      exhibitLookup.get(document.id) || input.lockedEntry.anchorExhibits[index]?.exhibitLabel || `Ex. ${index + 1}`,
+    );
+    const support = finishSentence(draftSupportText(document));
+    const descriptiveContext = firstSummarySentence(document.summary?.detailedSummary);
+    const context =
+      descriptiveContext && descriptiveContext !== support
+        ? finishSentence(descriptiveContext)
+        : `This exhibit is part of the locked ${input.criterionName} record.`;
+
+    return {
+      text: `${support} ${context} (Ex. ${exhibitLabel}).`.replace(/\s+\(Ex\./, " (Ex."),
+      exhibitRefs: [exhibitLabel],
+      citations: [
+        {
+          docId: document.id,
+          supports: support,
+        },
+      ],
+    };
+  });
+
+  return {
+    schemaVersion: "brief-draft/2.0" as const,
+    clientId: input.clientId,
+    createdAt: new Date().toISOString(),
+    section: "criterion-argument" as const,
+    targetCriterionCode: input.criterionCode,
+    title: `${input.lockedEntry.legalCode} ${input.criterionName}`,
+    paragraphs,
+    wordCount: paragraphs.reduce(
+      (sum, paragraph) => sum + paragraph.text.trim().split(/\s+/).filter(Boolean).length,
+      0,
+    ),
+  };
+}
+
+function dedupeDocuments(documents: ClientDocument[]) {
+  const seen = new Set<string>();
+  return documents.filter((document) => {
+    if (seen.has(document.id)) {
+      return false;
+    }
+    seen.add(document.id);
+    return true;
+  });
+}
+
+async function retrieveCriterionDocuments(input: {
+  snapshot: LibrarySnapshot;
+  criterionCode: string;
+  query: string;
+  pinnedDocIds: string[];
+}) {
+  const reviewSets = collectClientReviewSets(input.snapshot);
+  const reviewableById = new Map(
+    reviewSets.reviewableDocuments.map((document) => [document.id, document]),
+  );
+  const criterionTagged = reviewSets.reviewableDocuments.filter((document) =>
+    document.criteriaTags.some((tag) => tag.code === input.criterionCode),
+  );
+  const pinnedDocuments = input.pinnedDocIds
+    .map((docId) => reviewableById.get(docId) ?? null)
+    .filter((document): document is ClientDocument => Boolean(document));
+
+  if (!reviewSets.workspaceIds.length) {
+    return {
+      documents: dedupeDocuments([...pinnedDocuments, ...criterionTagged]).slice(0, 12),
+      retrievalCostUsd: 0,
+    };
+  }
+
+  const queryVector = await buildQueryVector(input.query);
+  const matches = await searchDocumentsAcrossWorkspaces(queryVector, 24, reviewSets.workspaceIds);
+  const semanticMatches = matches
+    .map((match) => match.document)
+    .filter(
+      (document) =>
+        reviewableById.has(document.id) &&
+        document.criteriaTags.some((tag) => tag.code === input.criterionCode),
+    );
+
+  return {
+    documents: dedupeDocuments([...pinnedDocuments, ...semanticMatches, ...criterionTagged]).slice(0, 12),
+    retrievalCostUsd: 0,
+  };
+}
+
+function buildPinnedExhibitsBlock(
+  pinnedEntries: Array<{ exhibitLabel: string; documentId: string; workspaceId: string }>,
+  documentLookup: Map<string, ClientDocument>,
+) {
+  if (!pinnedEntries.length) {
+    return "No pinned exhibits are currently assigned to this criterion.";
+  }
+
+  return pinnedEntries
+    .map((entry, index) => {
+      const document = documentLookup.get(entry.documentId);
+      return `${index + 1}. ${entry.exhibitLabel} :: ${document?.summary?.title || document?.fileName || entry.documentId}`;
+    })
+    .join("\n");
+}
+
+function buildCriterionStrategyBlock(clientId: string, criterionCode: string, strategyMemo: StrategyMemo | null) {
+  const lockedStrategy = getLockedStrategy(clientId);
+  const lockedEntry = [...(lockedStrategy?.primary ?? []), ...(lockedStrategy?.supporting ?? [])].find(
+    (entry) => entry.criterionCode === criterionCode,
+  );
+  const memoEntry =
+    strategyMemo?.recommendedMix.primary.find((entry) => entry.criterionCode === criterionCode) ??
+    strategyMemo?.recommendedMix.supporting.find((entry) => entry.criterionCode === criterionCode) ??
+    null;
+
+  return JSON.stringify({
+    criterionCode,
+    lockedCriterion: lockedEntry
+      ? {
+          legalCode: lockedEntry.legalCode,
+          criterionName: lockedEntry.criterionName,
+          rationale: lockedEntry.rationale,
+          anchorDocIds: lockedEntry.anchorDocIds,
+          anchorExhibits: lockedEntry.anchorExhibits.map((assignment) => assignment.exhibitLabel),
+        }
+      : null,
+    strategyMemoRecommendation: memoEntry,
+    narrativeSpine: strategyMemo?.leadArgument?.criterionCode === criterionCode
+      ? strategyMemo.leadArgument.narrativeSpine
+      : lockedStrategy?.narrativeSpine ?? null,
+  });
+}
+
+export async function generateClientBriefDraft(input: {
+  clientId: string;
+  criterionCode: string;
+  message?: string;
+  snapshot?: LibrarySnapshot;
+  sectionKey?: string;
+}) {
+  const snapshot = input.snapshot ?? (await buildLibrarySnapshot({ clientId: input.clientId }));
+  const readiness = getChatReadiness(snapshot);
+  if (!readiness.ready) {
+    throw new Error(readiness.reason || "This client is not ready for drafting yet.");
+  }
+
+  const lockedStrategy = getLockedStrategy(input.clientId);
+  if (!lockedStrategy) {
+    throw new Error("Drafting is only available after the case theory is locked.");
+  }
+
+  const lockedEntry = [...lockedStrategy.primary, ...lockedStrategy.supporting].find(
+    (entry) => entry.criterionCode === input.criterionCode,
+  );
+  if (!lockedEntry) {
+    throw new Error(`Criterion ${input.criterionCode} is not part of the locked case theory.`);
+  }
+
+  const strategyMemo = getLatestStrategyMemo(input.clientId);
+  const pinboard = getCriterionPinboard(input.clientId, input.criterionCode);
+  const pinnedDocIds = pinboard?.entries.map((entry) => entry.documentId) ?? [];
+  const criterion = criterionMeta(input.criterionCode);
+  const retrieval = await retrieveCriterionDocuments({
+    snapshot,
+    criterionCode: input.criterionCode,
+    query:
+      input.message ||
+      `Draft an EB-1A criterion argument for ${criterion.name} using the strongest pinned exhibits and supporting evidence.`,
+    pinnedDocIds,
+  });
+
+  if (!retrieval.documents.length) {
+    throw new Error(
+      `Criterion ${criterion.legalCode} has no kept or pending documents tagged. Draft is not possible until evidence is tagged for this criterion.`,
+    );
+  }
+
+  const { client, settings } = getOpenAiContext();
+  const { profile, exemplars } = selectStyleExemplars(
+    settings.activeStyleProfileId,
+    input.criterionCode,
+  );
+  const exhibitLookup = exhibitLabelLookup({
+    lockedEntry,
+    pinboardEntries: pinboard?.entries ?? [],
+  });
+  const documentLookup = new Map(
+    snapshot.clientDocuments.map((document) => [document.id, document]),
+  );
+  let totalCostUsd = retrieval.retrievalCostUsd;
+  let lastDraftError: Error | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const attemptMessage =
+      attempt === 1
+        ? input.message || `Draft the ${criterion.legalCode} ${criterion.name} argument for this client.`
+        : `${input.message || `Redraft the ${criterion.legalCode} ${criterion.name} argument for this client.`}\n\nRevision instruction: stay closer to the cited source language, avoid exclusivity or superlatives unless they appear in evidence, and keep each paragraph tightly grounded in a specific exhibit.`;
+
+    try {
+      const response = await client.responses.create({
+        model: settings.summaryModel,
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: renderDraftPrompt({
+                  template: settings.draftPrompt,
+                  candidateName: candidateName(snapshot),
+                  sectionKey:
+                    input.sectionKey ||
+                    "Open with the criterion standard, then make the claim, then develop it with 2-4 evidence-led paragraphs, and end with a concise criterion conclusion.",
+                  criterionCode: input.criterionCode,
+                  strategyMemo,
+                  documents: retrieval.documents,
+                  pinnedExhibitsBlock: buildPinnedExhibitsBlock(pinboard?.entries ?? [], documentLookup),
+                  styleExemplars: exemplars,
+                }),
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: attemptMessage,
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "setu_brief_draft",
+            strict: true,
+            schema: briefDraftJsonSchema,
+          },
+        },
+      });
+
+      const modelCostUsd = buildUsageCost(settings.summaryModel, response.usage);
+      totalCostUsd += modelCostUsd;
+      const parsed = briefDraftSchema.parse(parseOutputJson(response.output_text));
+      const normalized = normalizeBriefDraft(parsed, retrieval.documents);
+      const citationChecked = applyCitationContractToDraft(normalized, retrieval.documents);
+      const proseCheck = runGenericProseCheck(
+        citationChecked.draft.paragraphs.map((paragraph) => ({ text: paragraph.text })),
+      );
+
+      if (
+        citationChecked.draft.paragraphs.some((paragraph) => paragraph.factCheckStatus === "drift-detected") &&
+        citationChecked.draft.paragraphs.some(
+          (paragraph) => paragraph.factCheckNotes?.toLowerCase().includes("significant"),
+        )
+      ) {
+        throw new Error("Setu detected significant factual drift in the generated draft.");
+      }
+
+      const exhibitLabeledDraft = applyExhibitLabelsToDraft(citationChecked.draft, exhibitLookup);
+      const enrichedDraft: BriefDraft = {
+        ...exhibitLabeledDraft,
+        targetCriterionCode: input.criterionCode,
+        genericProseWarning: proseCheck.message,
+        styleProfileId: profile.id,
+        styleExemplarIds: exemplars.map((exemplar) => exemplar.id),
+        retrievedDocIds: retrieval.documents.map((document) => document.id),
+      };
+
+      return {
+        draft: enrichedDraft,
+        citations: citationChecked.citations,
+        droppedClaims: citationChecked.droppedClaims,
+        costUsd: totalCostUsd,
+        reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.legalCode} ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile${attempt > 1 ? ` after ${attempt} drafting attempts` : ""}.`,
+        pendingDisclosure:
+          retrieval.documents.some((document) => document.reviewStatus === "pending")
+            ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
+            : null,
+        documentLookup,
+        draftVersionSeed: draftVersionFromBriefDraft(enrichedDraft, documentLookup, {
+          source: "ai",
+          costUsd: modelCostUsd,
+          authorNotes: buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo),
+        }),
+      };
+    } catch (error) {
+      lastDraftError = error instanceof Error ? error : new Error("Unable to generate a grounded draft.");
+      if (attempt < 3) {
+        continue;
+      }
+    }
+  }
+
+  const conservativeDraft = buildConservativeCriterionDraft({
+    clientId: input.clientId,
+    criterionCode: input.criterionCode,
+    criterionName: criterion.name,
+    lockedEntry,
+    pinboardEntries: pinboard?.entries ?? [],
+    documents: retrieval.documents,
+  });
+  const normalizedFallback = normalizeBriefDraft(conservativeDraft, retrieval.documents);
+  const citationCheckedFallback = applyCitationContractToDraft(normalizedFallback, retrieval.documents);
+  const proseCheckFallback = runGenericProseCheck(
+    citationCheckedFallback.draft.paragraphs.map((paragraph) => ({ text: paragraph.text })),
+  );
+
+  const exhibitLabeledFallback = applyExhibitLabelsToDraft(citationCheckedFallback.draft, exhibitLookup);
+  const enrichedFallback: BriefDraft = {
+    ...exhibitLabeledFallback,
+    targetCriterionCode: input.criterionCode,
+    genericProseWarning: proseCheckFallback.message,
+    styleProfileId: profile.id,
+    styleExemplarIds: exemplars.map((exemplar) => exemplar.id),
+    retrievedDocIds: retrieval.documents.map((document) => document.id),
+  };
+
+  return {
+    draft: enrichedFallback,
+    citations: citationCheckedFallback.citations,
+    droppedClaims: citationCheckedFallback.droppedClaims,
+    costUsd: totalCostUsd,
+    reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.legalCode} ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile. Setu fell back to a conservative evidence-led draft after stricter attempts triggered fact-check drift warnings${lastDraftError ? ` (${lastDraftError.message})` : ""}.`,
+    pendingDisclosure:
+      retrieval.documents.some((document) => document.reviewStatus === "pending")
+        ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
+        : null,
+    documentLookup,
+    draftVersionSeed: draftVersionFromBriefDraft(enrichedFallback, documentLookup, {
+      source: "ai",
+      costUsd: totalCostUsd,
+      authorNotes: `${buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo)}\n\nFallback note: conservative draft used after stronger generations triggered fact-check drift warnings.`,
+    }),
+  };
 }
 
 function deterministicNoEvidenceMemo(snapshot: LibrarySnapshot): StrategyMemo {
@@ -358,6 +821,7 @@ export async function runClientChatTurn(input: {
   message: string;
   modeHint?: ChatMode | null;
   sessionMode: ChatMode;
+  criterionCode?: string | null;
 }) {
   const snapshot = await buildLibrarySnapshot({ clientId: input.clientId });
   const readiness = getChatReadiness(snapshot);
@@ -497,25 +961,37 @@ export async function runClientChatTurn(input: {
     };
   }
 
+  if (!input.criterionCode) {
+    throw new Error("Draft mode requires a criterion-scoped drafting workspace.");
+  }
+
+  const draft = await generateClientBriefDraft({
+    clientId: input.clientId,
+    criterionCode: input.criterionCode,
+    message: input.message,
+    snapshot,
+  });
+  const criterion = criterionMeta(input.criterionCode);
   const turn: ChatTurn = {
     id: crypto.randomUUID(),
     sessionId: "",
     occurredAt: now,
     userMessage: input.message,
     mode,
-    modeWasProposed: false,
+    modeWasProposed: classification.mode !== mode,
     retrieval: {
-      docIds: [],
-      scope: "client",
+      docIds: draft.draft.retrievedDocIds ?? [],
+      scope: "criterion",
     },
     response: {
-      text: "Draft mode opens in Phase 3. Use Strategy or Stress-test for this stage of the client lifecycle.",
-      citations: [],
-      reasoning: "Draft mode is intentionally deferred until the dedicated drafting surface is built.",
-      droppedClaims: [],
-      pendingDisclosure: null,
+      text: `Draft prepared for ${criterion.legalCode} ${criterion.name}. Review the paragraphs, fact-check flags, and exhibit references before approving.`,
+      artifact: draft.draft,
+      citations: draft.citations,
+      reasoning: draft.reasoning,
+      droppedClaims: draft.droppedClaims,
+      pendingDisclosure: draft.pendingDisclosure,
     },
-    costUsd: classificationResult.costUsd,
+    costUsd: draft.costUsd + classificationResult.costUsd,
     pendingDocsConsidered: reviewSets.pendingDocuments.length,
     classification,
   };

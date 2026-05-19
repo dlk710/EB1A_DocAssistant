@@ -4,15 +4,16 @@
 
 Setu is a local-first immigration evidence platform built to help legal teams move from scattered evidence folders to a structured, reviewable petition-preparation workflow.
 
-Phase 1 changed the product frame from a single workspace tool into a **client-centered lifecycle system**. Phase 2 extends that system into strategy and case-theory commitment:
+Phase 1 changed the product frame from a single workspace tool into a **client-centered lifecycle system**. Phase 2 extended that system into strategy and case-theory commitment. Phase 3 turns that locked theory into controlled petition drafting:
 
 - a client can have multiple workspaces over time
 - the home surface starts with client status, blockers, and recent activity
 - the review surface separates urgent human action from routine evidence browsing
 - the strategy surface retrieves across the client’s ready workspaces
 - the lock stage commits the criteria mix and stable exhibits for later drafting
+- the drafting stage produces per-criterion prose with version history, fact-check signals, and attorney style profiles
 
-The current emphasis is still evidence intelligence, review discipline, and attorney-guided strategy. Autonomous drafting remains deferred.
+The current emphasis is still evidence intelligence, review discipline, attorney-guided strategy, and controlled drafting. Setu now drafts criterion arguments, but still stops short of full petition stitching and export.
 
 ## 2. Core business problem
 
@@ -57,6 +58,7 @@ The product also supports a legal reviewer who needs:
 - traceable evidence previews
 - override paths without losing AI context
 - export-ready structure for downstream drafting
+- drafting controls that keep AI prose reviewable instead of opaque
 
 ### Future maintainer
 
@@ -88,6 +90,8 @@ Setu is currently a multi-pass evidence workbench wrapped in a client lifecycle 
 - manual overrides
 - evidence preview
 - output packaging
+- criterion-level drafting
+- style profile management
 
 The current product is not just a search tool and not just a document manager. It is a review system built around progressive interpretation and staged human action.
 
@@ -131,7 +135,11 @@ The live operating flow is:
 6. let Setu classify events into EB1A criteria
 7. let Setu tag individual evidence files
 8. surface pending human-review items separately
-9. review, override, and package the results
+9. review and override evidence in increments
+10. generate a client-wide strategy memo and stress-test it
+11. lock the criteria mix and stable exhibits
+12. draft criterion arguments with style-profile guidance
+13. approve criterion drafts for later stitching
 
 This is intentionally progressive. Later passes do not erase earlier ones.
 
@@ -165,6 +173,36 @@ The client review page is the human-action surface. It is meant to answer:
 
 The workspace dashboard remains for operational intake, job progress, and dense workspace intervention.
 
+### Strategy stage
+
+The strategy page is where the attorney or strategist decides:
+
+- which criteria are worth claiming
+- which criteria are supporting only
+- where the case is thin or risky
+- what the lead narrative spine should be
+
+Ask Setu supports this stage through `Triage`, `Strategy`, and `Stress-test`.
+
+### Lock stage
+
+The lock stage turns a strategic theory into durable drafting inputs:
+
+- stable exhibit labels
+- accepted and declined criteria
+- narrative spine
+- per-criterion pinboards
+
+### Drafting stage
+
+The drafting stage is the production-writing surface:
+
+- one queue across all locked criteria
+- one drafting workspace per criterion
+- version history and approval
+- style-profile-driven Draft mode
+- fact-check and generic-prose warnings before approval
+
 ## 10. Experience goals
 
 The intended experience is:
@@ -188,12 +226,21 @@ Important UX guardrails already established:
 
 The current branch is not trying to become:
 
-- a fully autonomous legal drafting engine
+- a fully autonomous final petition author
 - a generic enterprise DMS
 - a multi-tenant cloud collaboration platform
 - a final end-to-end petition lifecycle suite
 
-Phase 1 is specifically about the client shell and review-action clarity.
+Specifically deferred beyond Phase 3:
+
+- full petition stitching
+- packet PDF assembly
+- exhibit auditing and Bates numbering
+- statement of eligibility assembly
+- final merits determination assembly
+- collaborative redlines and live co-editing
+
+The current scope ends at approved per-criterion drafts and preserved downstream structure.
 
 ## 12. Success indicators
 
@@ -204,6 +251,9 @@ Useful signals for this stage:
 - lower confusion about what needs human action next
 - better continuity across multiple uploads for the same client
 - preserved traceability into downstream drafting
+- drafts that require less attorney rewriting before approval
+- fewer factual drift issues reaching the attorney after draft generation
+- a drafting workflow that stays criterion-scoped and manageable instead of overwhelming
 
 ## 13. Operational posture
 

@@ -22,6 +22,7 @@ export interface RuntimeSettings {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  activeStyleProfileId: string;
   openAiApiKey: string | null;
   summaryModel: string;
   embeddingModel: string;
@@ -40,6 +41,7 @@ interface PersistedSettingsState {
   strategyPrompt?: string | null;
   stressTestPrompt?: string | null;
   draftPrompt?: string | null;
+  activeStyleProfileId?: string | null;
   openAiApiKey?: string | null;
   summaryModel?: string | null;
   embeddingModel?: string | null;
@@ -103,6 +105,10 @@ export function getRuntimeSettings(): RuntimeSettings {
       persisted.draftPrompt?.trim() ||
       process.env.EB1A_DRAFT_PROMPT ||
       DEFAULT_DRAFT_PROMPT_TEMPLATE,
+    activeStyleProfileId:
+      persisted.activeStyleProfileId?.trim() ||
+      process.env.EB1A_ACTIVE_STYLE_PROFILE_ID ||
+      "default",
     openAiApiKey: persisted.openAiApiKey || process.env.OPENAI_API_KEY || null,
     summaryModel:
       persisted.summaryModel || process.env.OPENAI_SUMMARY_MODEL || "gpt-4.1-mini",
@@ -131,6 +137,7 @@ export function saveRuntimeSettings(input: {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  activeStyleProfileId?: string;
   apiKey?: string;
   summaryModel: string;
   embeddingModel: string;
@@ -151,11 +158,31 @@ export function saveRuntimeSettings(input: {
     stressTestPrompt:
       input.stressTestPrompt.trim() || DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
     draftPrompt: input.draftPrompt.trim() || DEFAULT_DRAFT_PROMPT_TEMPLATE,
+    activeStyleProfileId: input.activeStyleProfileId?.trim() || current.activeStyleProfileId?.trim() || "default",
     openAiApiKey: input.apiKey?.trim() ? input.apiKey.trim() : current.openAiApiKey || null,
     summaryModel: input.summaryModel.trim(),
     embeddingModel: input.embeddingModel.trim(),
     embeddingDimensions: input.embeddingDimensions,
     outputRootPath: input.outputRootPath.trim() || EXPORT_ROOT,
+  });
+}
+
+export function setActiveStyleProfileId(activeStyleProfileId: string) {
+  const current = getRuntimeSettings();
+  saveRuntimeSettings({
+    candidateName: current.candidateName,
+    summaryPrompt: current.summaryPrompt,
+    classificationPrompt: current.classificationPrompt,
+    taggingPrompt: current.taggingPrompt,
+    triagePrompt: current.triagePrompt,
+    strategyPrompt: current.strategyPrompt,
+    stressTestPrompt: current.stressTestPrompt,
+    draftPrompt: current.draftPrompt,
+    activeStyleProfileId,
+    summaryModel: current.summaryModel,
+    embeddingModel: current.embeddingModel,
+    embeddingDimensions: current.embeddingDimensions,
+    outputRootPath: current.outputRootPath,
   });
 }
 
@@ -171,6 +198,7 @@ export function getPublicSettings(): SettingsSnapshot {
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,
     draftPrompt: settings.draftPrompt,
+    activeStyleProfileId: settings.activeStyleProfileId,
     hasApiKey: Boolean(settings.openAiApiKey),
     apiKeyMask: maskSecret(settings.openAiApiKey),
     summaryModel: settings.summaryModel,

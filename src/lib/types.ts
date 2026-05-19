@@ -245,6 +245,7 @@ export interface SettingsSnapshot {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  activeStyleProfileId: string;
   hasApiKey: boolean;
   apiKeyMask: string | null;
   summaryModel: string;
@@ -528,12 +529,15 @@ export interface StressTestReport {
 }
 
 export interface BriefDraftParagraph {
+  id?: string;
   text: string;
   exhibitRefs: string[];
   citations: Array<{
     docId: string;
     supports: string;
   }>;
+  factCheckStatus?: "verified" | "drift-detected" | "uncited" | "pending";
+  factCheckNotes?: string;
 }
 
 export interface BriefDraft {
@@ -550,6 +554,10 @@ export interface BriefDraft {
   title: string;
   paragraphs: BriefDraftParagraph[];
   wordCount: number;
+  genericProseWarning?: string | null;
+  styleProfileId?: string | null;
+  styleExemplarIds?: string[];
+  retrievedDocIds?: string[];
 }
 
 export interface ChatMessageCitation {
@@ -675,19 +683,67 @@ export interface CriterionPinboard {
   entries: PinboardEntry[];
 }
 
-export interface CriterionDraftVersion {
+export interface LegacyCriterionDraftVersion {
   id: string;
   createdAt: string;
   title: string;
   content: string;
 }
 
+export interface DraftCitation {
+  docId: string;
+  workspaceId: string;
+  excerpt: string;
+  supports: string;
+  characterRange?: [number, number];
+}
+
+export interface DraftParagraph {
+  id: string;
+  text: string;
+  exhibitRefs: string[];
+  citations: DraftCitation[];
+  factCheckStatus: "verified" | "drift-detected" | "uncited" | "pending";
+  factCheckNotes?: string;
+}
+
+export interface DraftVersion {
+  version: number;
+  createdAt: string;
+  source: "ai" | "manual" | "ai-edited";
+  authorNotes: string;
+  paragraphs: DraftParagraph[];
+  wordCount: number;
+  costUsd: number;
+}
+
 export interface CriterionDraft {
+  id?: string;
   clientId: string;
   criterionCode: string;
   createdAt: string;
   updatedAt: string;
-  status: "in-progress" | "approved";
-  outOfDate: boolean;
-  versions: CriterionDraftVersion[];
+  status: "in-progress" | "approved" | "out-of-date";
+  versions: DraftVersion[];
+  latestApprovedVersion?: number | null;
+  outOfDate?: boolean;
+}
+
+export interface StyleExemplar {
+  id: string;
+  label: string;
+  criterionCode: string;
+  text: string;
+  approvedOutcome: boolean;
+  notes: string;
+}
+
+export interface StyleProfile {
+  id: string;
+  attorneyId: string;
+  displayName: string;
+  exemplars: StyleExemplar[];
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

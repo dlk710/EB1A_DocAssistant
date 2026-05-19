@@ -1,11 +1,14 @@
+import crypto from "node:crypto";
 import type {
   BriefDraft,
   ChatMessageCitation,
   ClientDocument,
+  DraftParagraph,
   StressTestReport,
   StrategyMemo,
   TriageAnswer,
 } from "@/lib/types";
+import { buildFactCheckSupportText, runDraftFactCheck } from "@/lib/draft-fact-check";
 
 const STOPWORDS = new Set([
   "the",
@@ -337,6 +340,7 @@ export function applyCitationContractToStressTest(
 
 export function applyCitationContractToDraft(draft: BriefDraft, documents: ClientDocument[]) {
   const droppedClaims: string[] = [];
+  const lookup = new Map(documents.map((document) => [document.id, document]));
   const paragraphs = draft.paragraphs.filter((paragraph) => {
     const citations = paragraph.citations
       .map((citation) => {
@@ -364,6 +368,33 @@ export function applyCitationContractToDraft(draft: BriefDraft, documents: Clien
     return true;
   });
 
+  const factChecked = runDraftFactCheck(
+    paragraphs.map(
+      (paragraph): DraftParagraph => ({
+        id: paragraph.id || crypto.randomUUID(),
+        text: paragraph.text,
+        exhibitRefs: paragraph.exhibitRefs,
+        citations: paragraph.citations.map((citation) => {
+          const document = lookup.get(citation.docId);
+          return {
+            docId: citation.docId,
+            workspaceId: document?.jobId || "",
+            excerpt:
+              (document ? buildFactCheckSupportText(document) : "") ||
+              document?.metadata?.preview ||
+              document?.summary?.shortSummary ||
+              document?.summary?.detailedSummary ||
+              document?.fileName ||
+              "",
+            supports: citation.supports,
+          };
+        }),
+        factCheckStatus: "pending",
+      }),
+    ),
+    lookup,
+  );
+
   const chatCitations = uniqueCitations(
     paragraphs.flatMap((paragraph) =>
       paragraph.citations.flatMap((citation) => {
@@ -376,7 +407,12 @@ export function applyCitationContractToDraft(draft: BriefDraft, documents: Clien
   return {
     draft: {
       ...draft,
-      paragraphs,
+      paragraphs: paragraphs.map((paragraph, index) => ({
+        ...paragraph,
+        factCheckStatus: factChecked.paragraphs[index]?.factCheckStatus ?? "pending",
+        factCheckNotes: factChecked.paragraphs[index]?.factCheckNotes,
+      })),
+      genericProseWarning: draft.genericProseWarning ?? null,
     },
     citations: chatCitations,
     droppedClaims,

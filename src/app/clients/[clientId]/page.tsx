@@ -15,7 +15,9 @@ import {
   listClients,
   updateClient,
 } from "@/lib/clients";
+import { listCriterionDrafts } from "@/lib/drafts";
 import { buildLibrarySnapshot } from "@/lib/library";
+import { getLockedStrategy } from "@/lib/lock";
 import { ensureClientTimelineEvent, listClientTimeline } from "@/lib/timeline";
 import type {
   ClientDocument,
@@ -80,8 +82,17 @@ function deriveClientStatus(input: {
   snapshots: LibrarySnapshot[];
   documents: ClientDocument[];
   bundleReviewCount: number;
+  claimedCriteriaCount: number;
+  generatedDraftCount: number;
+  approvedDraftCount: number;
 }) {
-  if (input.clientStatus === "locked" || input.lockedStrategyVersion !== null) {
+  if (input.clientStatus === "locked" || input.clientStatus === "drafting" || input.clientStatus === "stitching" || input.lockedStrategyVersion !== null) {
+    if (input.claimedCriteriaCount > 0 && input.approvedDraftCount >= input.claimedCriteriaCount) {
+      return "stitching" satisfies ClientStatus;
+    }
+    if (input.generatedDraftCount > 0) {
+      return "drafting" satisfies ClientStatus;
+    }
     return "locked" satisfies ClientStatus;
   }
 
@@ -222,6 +233,14 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       ).length
     );
   }, 0);
+  const lockedStrategy = getLockedStrategy(clientId);
+  const claimedCriteriaCount = [
+    ...(lockedStrategy?.primary ?? []),
+    ...(lockedStrategy?.supporting ?? []),
+  ].length;
+  const drafts = listCriterionDrafts(clientId);
+  const generatedDraftCount = drafts.filter((draft) => draft.versions.length > 0).length;
+  const approvedDraftCount = drafts.filter((draft) => draft.latestApprovedVersion !== null).length;
 
   const derivedStatus = deriveClientStatus({
     clientStatus: client.status,
@@ -229,6 +248,9 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
     snapshots,
     documents: allDocuments,
     bundleReviewCount,
+    claimedCriteriaCount,
+    generatedDraftCount,
+    approvedDraftCount,
   });
 
   const syncedClient =
@@ -266,6 +288,7 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   const reviewHref = `/clients/${clientId}/review`;
   const strategyHref = `/clients/${clientId}/strategy`;
   const lockHref = `/clients/${clientId}/lock`;
+  const draftingHref = `/clients/${clientId}/drafting`;
   const workspaceHref = `/?view=workspace&clientId=${clientId}`;
   const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
   const coverageSummary = summarizeCoverage(aggregateCoverage);
@@ -278,6 +301,10 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
         ? "human review in progress"
         : derivedStatus === "locked"
           ? "case theory locked"
+        : derivedStatus === "drafting"
+          ? "criterion drafting in progress"
+          : derivedStatus === "stitching"
+            ? "ready for stitching"
         : "strategy workspace ready"
   }`;
 
@@ -340,10 +367,26 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
           }
         : derivedStatus === "locked"
           ? {
-              title: "Next: review the locked case theory",
-              body: "The criteria mix and anchor exhibits are committed. Open the lock workspace to inspect exhibit numbering or unlock before drafting later phases.",
-              ctaLabel: "Open lock workspace",
-              href: lockHref,
+              title: "Next: start criterion drafting",
+              body: "The criteria mix and anchor exhibits are committed. Open the drafting workspace to generate and approve per-criterion arguments.",
+              ctaLabel: "Continue to Drafting",
+              href: draftingHref,
+            }
+        : derivedStatus === "drafting"
+          ? {
+              title: `Next: finish ${Math.max(claimedCriteriaCount - approvedDraftCount, 0)} criterion draft${
+                claimedCriteriaCount - approvedDraftCount === 1 ? "" : "s"
+              }`,
+              body: "Setu keeps approved drafts frozen while in-progress criteria remain editable. Continue drafting until every claimed criterion is approved.",
+              ctaLabel: "Open drafting",
+              href: draftingHref,
+            }
+        : derivedStatus === "stitching"
+          ? {
+              title: "Next: prepare for stitching",
+              body: "Every claimed criterion now has an approved draft. The packet is ready for the next assembly phase.",
+              ctaLabel: "Open drafting",
+              href: draftingHref,
             }
         : {
             title: "Next: open strategy",
@@ -391,23 +434,23 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       state:
         derivedStatus === "strategizing"
           ? ("active" as const)
-          : derivedStatus === "locked"
+          : derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
             ? ("done" as const)
           : getClientStageNumber(derivedStatus) > 3
             ? ("done" as const)
             : ("locked" as const),
       href:
-        derivedStatus === "strategizing" || derivedStatus === "locked"
+        derivedStatus === "strategizing" || derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
           ? strategyHref
           : null,
       badge:
         derivedStatus === "strategizing"
           ? "Ready"
-          : derivedStatus === "locked"
+          : derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
             ? "Locked"
             : "Waiting",
       disabledReason:
-        derivedStatus !== "strategizing" && derivedStatus !== "locked"
+        derivedStatus !== "strategizing" && derivedStatus !== "locked" && derivedStatus !== "drafting" && derivedStatus !== "stitching"
           ? "Resolve onboarding and review requirements before opening strategy."
           : undefined,
     },
@@ -416,15 +459,21 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       title: "Lock",
       description: "Commit the final criterion mix and supporting exhibits.",
       state:
-        derivedStatus === "locked"
+        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
           ? ("done" as const)
           : getClientStageNumber(derivedStatus) > 4
             ? ("done" as const)
             : ("locked" as const),
-      href: derivedStatus === "locked" ? lockHref : null,
-      badge: derivedStatus === "locked" ? "Complete" : "Later",
+      href:
+        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+          ? lockHref
+          : null,
+      badge:
+        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+          ? "Complete"
+          : "Later",
       disabledReason:
-        derivedStatus !== "locked"
+        derivedStatus !== "locked" && derivedStatus !== "drafting" && derivedStatus !== "stitching"
           ? "Available after the strategy stage commits the case theory."
           : undefined,
     },
@@ -432,20 +481,39 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       number: 5,
       title: "Drafting",
       description: "Draft per-criterion arguments after the case theory is locked.",
-      state: derivedStatus === "locked" ? ("active" as const) : ("locked" as const),
-      badge: derivedStatus === "locked" ? "Ready next" : "Later",
+      state:
+        derivedStatus === "locked" || derivedStatus === "drafting"
+          ? ("active" as const)
+          : derivedStatus === "stitching"
+            ? ("done" as const)
+            : ("locked" as const),
+      href:
+        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+          ? draftingHref
+          : null,
+      badge:
+        derivedStatus === "locked"
+          ? "Ready next"
+          : derivedStatus === "drafting"
+            ? "Active"
+            : derivedStatus === "stitching"
+              ? "Complete"
+              : "Later",
       disabledReason:
         derivedStatus === "locked"
-          ? "Drafting opens in Phase 3."
+          ? "Drafting is now unlocked."
           : "Available after the case theory is locked.",
     },
     {
       number: 6,
       title: "Stitching",
       description: "Assemble the full petition packet, exhibits, and export package.",
-      state: "locked" as const,
-      badge: "Later",
-      disabledReason: "Available in a later phase.",
+      state: derivedStatus === "stitching" ? ("active" as const) : ("locked" as const),
+      badge: derivedStatus === "stitching" ? "Ready next" : "Later",
+      disabledReason:
+        derivedStatus === "stitching"
+          ? "Stitching lands in Phase 4."
+          : "Available after every claimed criterion draft is approved.",
     },
   ];
 

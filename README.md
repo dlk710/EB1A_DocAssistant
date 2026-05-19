@@ -2,7 +2,7 @@
 
 Setu is a local-first immigration evidence platform that now starts from the **client record**, not just the upload workspace. The product turns raw folder uploads into a structured review system while preserving original files, intermediate AI reasoning layers, and human override paths.
 
-Phase 1 introduced the client lifecycle shell. Phase 2 adds the client-wide strategy and lock stages:
+Phase 1 introduced the client lifecycle shell. Phase 2 added the client-wide strategy and lock stages. Phase 3 adds criterion-level drafting:
 
 1. manage clients from a portfolio view
 2. open a client home with stage status, spend, coverage, and timeline
@@ -10,7 +10,8 @@ Phase 1 introduced the client lifecycle shell. Phase 2 adds the client-wide stra
 4. review human-action items separately from routine evidence
 5. generate a client-wide strategy memo and stress-test it with Ask Setu
 6. lock the case theory into stable exhibit numbering and downstream scaffolding
-7. keep the dense workspace tooling available when deeper intervention is needed
+7. draft per-criterion petition prose with versioning, fact-check signals, and style profiles
+8. keep the dense workspace tooling available when deeper intervention is needed
 
 ## Core objective
 
@@ -41,9 +42,13 @@ The live app at `http://localhost:3001` currently supports:
 - human review states: `kept`, `pending`, `archived`, `removed`
 - manual overrides for evidence, event bundles, and criteria placement
 - human-review inbox behavior for pending items
-- client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, and `Stress-test`
+- client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders
+- criterion drafting queue and three-column drafting workspace
+- style profiles with a curated default exemplar pack
+- draft fact-check and generic-prose checks
+- versioned criterion drafts with approval state
 - original-file preview and source access
 - prompt editing through Prompt Library
 - tracked OpenAI cost by pipeline stage
@@ -65,6 +70,12 @@ The current surface is client-first:
   - lock the criteria mix and exhibit numbering
 - `/clients/<clientId>/unlock`
   - reversible unlock flow with invalidation summary
+- `/clients/<clientId>/drafting`
+  - criterion drafting queue
+- `/clients/<clientId>/drafting/<criterionCode>`
+  - three-column drafting workspace for one locked criterion
+- `/settings/style-profiles`
+  - style profile and exemplar management
 - `/?view=workspace&clientId=<clientId>`
   - dense workspace intake/dashboard preserved for operational work
 - `/review/<jobId>`
@@ -92,7 +103,8 @@ The lifecycle wraps that pipeline in a client model:
 6. open the client-wide Strategy stage once review is complete
 7. ask follow-up questions, generate a strategy memo, and stress-test the case theory
 8. lock the criteria mix and stable exhibits for later drafting
-9. export downstream outputs once the workspace is mature
+9. generate, edit, compare, and approve per-criterion drafts
+10. export downstream outputs once the workspace is mature
 
 ## Main surfaces
 
@@ -131,12 +143,11 @@ The strategy page is the Phase 2 hero surface. It combines:
 - client-wide coverage at a glance across all ready workspaces
 - a structured strategy memo with citations and reasoning
 - an inline stress-test report
-- Ask Setu chat with three active modes:
+- Ask Setu chat with four active modes:
   - `Triage`
   - `Strategy`
   - `Stress-test`
-
-`Draft` remains visible in the mode selector but disabled until Phase 3.
+  - `Draft`
 
 ### Lock stage
 
@@ -146,8 +157,20 @@ The lock page commits the case theory into durable downstream structure:
 - declined criteria with rationale
 - editable narrative spine
 - per-criterion pinboards
-- empty draft placeholders for later drafting phases
+- draft placeholders and pinboards seeded for drafting
 - unlock with invalidation preview
+
+### Drafting stage
+
+The drafting stage is the Phase 3 production-writing layer. It adds:
+
+- a drafting queue across all locked criteria
+- a three-column workspace with pinboard, draft pane, and criterion-scoped Ask Setu
+- versioned AI and human draft history
+- draft approval per criterion
+- subtle-drift warnings from the fact-check pass
+- generic-prose warnings for common AI phrases
+- style-profile-driven Draft generation
 
 ### Workspace dashboard
 
@@ -166,6 +189,7 @@ Prompt Library is a large scrollable modal used to edit the active prompts for:
 - bundle classification
 - criteria tagging
 - Ask Setu chat modes where enabled
+- style profile selection for Draft mode
 
 Only the active prompt text is stored. Prompt history is intentionally not stored.
 
@@ -189,6 +213,7 @@ Implementation rules:
 - Business and product overview: [docs/business-product-overview.md](docs/business-product-overview.md)
 - Phase 1 client lifecycle design: [docs/phase1-client-lifecycle.md](docs/phase1-client-lifecycle.md)
 - Phase 2 strategy and lock design: [docs/phase2-strategy-lock.md](docs/phase2-strategy-lock.md)
+- Phase 3 drafting design: [docs/phase3-drafting.md](docs/phase3-drafting.md)
 - Technical and system design: [docs/final-design.md](docs/final-design.md)
 - Operations and maintenance playbook: [docs/operating-playbook.md](docs/operating-playbook.md)
 - Repo-local continuation skill for future AI work: [skills/setu-studio-continuation/SKILL.md](skills/setu-studio-continuation/SKILL.md)
@@ -203,6 +228,8 @@ Key implementation files:
 - Review-specific components: [src/components/review](src/components/review)
 - Strategy components: [src/components/strategy](src/components/strategy)
 - Lock components: [src/components/lock](src/components/lock)
+- Drafting components: [src/components/drafting](src/components/drafting)
+- Style profile components: [src/components/style-profiles](src/components/style-profiles)
 - Ask Setu components: [src/components/chat](src/components/chat)
 - Global tokens and shell styling: [src/app/globals.css](src/app/globals.css)
 - Snapshot assembly: [src/lib/library.ts](src/lib/library.ts)
@@ -211,8 +238,12 @@ Key implementation files:
 - Chat orchestration: [src/lib/chat-service.ts](src/lib/chat-service.ts)
 - Chat persistence: [src/lib/chat-state.ts](src/lib/chat-state.ts)
 - Chat citation enforcement: [src/lib/chat-citation.ts](src/lib/chat-citation.ts)
+- Draft persistence and versioning: [src/lib/drafts.ts](src/lib/drafts.ts)
+- Draft fact-checking: [src/lib/draft-fact-check.ts](src/lib/draft-fact-check.ts)
+- Draft prose-quality checks: [src/lib/draft-prose-check.ts](src/lib/draft-prose-check.ts)
 - Lock and unlock logic: [src/lib/lock.ts](src/lib/lock.ts)
 - Per-criterion pinboards: [src/lib/pinboards.ts](src/lib/pinboards.ts)
+- Style profile persistence: [src/lib/style-profiles.ts](src/lib/style-profiles.ts)
 - Ingestion pipeline: [src/lib/ingestion.ts](src/lib/ingestion.ts)
 - Summarization and embeddings: [src/lib/ai.ts](src/lib/ai.ts)
 - Event bundling: [src/lib/event-bundles.ts](src/lib/event-bundles.ts)
@@ -233,6 +264,8 @@ Key implementation files:
   - downstream export packages
 - `storage/qdrant`
   - local Qdrant persistence
+- `storage/style-profiles/default.json`
+  - curated default drafting exemplars
 
 ### Local JSON state
 
@@ -247,6 +280,7 @@ Key implementation files:
 - `storage/state/clients/<clientId>/pinboards/*.json`
 - `storage/state/clients/<clientId>/drafts/*.json`
 - `storage/state/clients/<clientId>/locked-strategy.json`
+- `storage/state/style-profiles/*.json`
 - `storage/state/event-bundles.json`
 - `storage/state/eb1a-classification.json`
 - `storage/state/criteria-tagging.json`
@@ -316,6 +350,17 @@ For Phase 2 strategy and lock work, also verify:
 - `/clients/<clientId>/lock` creates stable exhibit labels
 - `/clients/<clientId>/unlock` returns the client to `strategizing`
 - client A never retrieves or cites workspace documents from client B
+
+For Phase 3 drafting work, also verify:
+
+- `/clients/<clientId>/drafting` renders the criterion queue
+- `/clients/<clientId>/drafting/<criterionCode>` renders the three-column drafting workspace
+- generating a draft creates a new version with `source: "ai"`
+- Draft mode returns exhibit labels, citations, and fact-check status
+- the default style profile loads with 5 curated exemplars
+- switching the active style profile changes the exemplar IDs used by Draft generation
+- subtle drift surfaces as a warning while significant drift triggers retry or conservative fallback
+- generic-prose warnings appear only when the phrase threshold is exceeded
 
 ## Non-negotiable guardrails
 

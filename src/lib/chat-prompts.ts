@@ -1,3 +1,4 @@
+import type { StyleExemplar } from "@/lib/types";
 import { EB1A_CRITERIA_CATALOG } from "@/lib/constants";
 import { fillPromptTemplate } from "@/lib/prompt-library";
 import type { ClientDocument, LibrarySnapshot, StrategyMemo } from "@/lib/types";
@@ -64,13 +65,26 @@ export function renderDraftPrompt(input: {
   criterionCode: string;
   strategyMemo: StrategyMemo | null;
   documents: ClientDocument[];
+  pinnedExhibitsBlock: string;
+  styleExemplars: StyleExemplar[];
 }) {
+  const stylebookExemplars = input.styleExemplars.length
+    ? input.styleExemplars
+        .map(
+          (exemplar, index) =>
+            `Exemplar ${index + 1} (${exemplar.criterionCode}) — ${exemplar.label}\n${exemplar.text}`,
+        )
+        .join("\n\n")
+    : "No style exemplars are currently available. Stay declarative and evidence-led.";
+
   return fillPromptTemplate(input.template, {
     candidateName: input.candidateName,
     sectionKey: input.sectionKey,
     criterionCode: input.criterionCode,
     strategyMemoBlock: input.strategyMemo ? JSON.stringify(input.strategyMemo) : "None",
     evidenceBlock: buildRetrievedDocsBlock(input.documents),
+    pinnedExhibitsBlock: input.pinnedExhibitsBlock,
+    stylebookExemplars,
     briefDraftSchema: JSON.stringify(briefDraftJsonSchema),
   });
 }

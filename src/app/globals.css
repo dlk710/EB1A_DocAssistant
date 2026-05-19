@@ -13,13 +13,21 @@
   --paper-secondary: #f5f4f0;
   --paper-tertiary: #faf9f5;
   --paper-cream: #faf8f3;
+  --paper-1: var(--paper-primary);
+  --paper-2: var(--paper-secondary);
+  --paper-3: var(--paper-tertiary);
 
   --ink-primary: #1a1a1f;
   --ink-secondary: #5b5b75;
   --ink-tertiary: #9295a8;
+  --text-1: var(--ink-primary);
+  --text-2: var(--ink-secondary);
+  --text-3: var(--ink-tertiary);
 
   --border-primary: #d8d6cf;
   --border-secondary: #e8e6df;
+  --border-1: var(--border-primary);
+  --border-2: var(--border-secondary);
 
   --state-warning: #92520c;
   --state-warning-soft: #fef3c7;
@@ -58,13 +66,21 @@
     --paper-secondary: #1f1f26;
     --paper-tertiary: #1a1a22;
     --paper-cream: #1f1d17;
+    --paper-1: var(--paper-primary);
+    --paper-2: var(--paper-secondary);
+    --paper-3: var(--paper-tertiary);
 
     --ink-primary: #e8e8f0;
     --ink-secondary: #b0b0c5;
     --ink-tertiary: #6e6e85;
+    --text-1: var(--ink-primary);
+    --text-2: var(--ink-secondary);
+    --text-3: var(--ink-tertiary);
 
     --border-primary: #3a3a48;
     --border-secondary: #2a2a33;
+    --border-1: var(--border-primary);
+    --border-2: var(--border-secondary);
 
     --state-warning: #fbbf24;
     --state-warning-soft: #4a3402;

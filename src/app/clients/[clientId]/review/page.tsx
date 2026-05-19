@@ -6,6 +6,7 @@ import {
   type ReviewBundleDecisionItem,
   type ReviewCategoryBandData,
 } from "@/components/review/ActionItemsSummary";
+import type { ReviewWorkspaceContext } from "@/components/review/RowContextMenu";
 import {
   getClient,
   getClientStageNumber,
@@ -36,8 +37,16 @@ function isWorkspaceReady(snapshot: LibrarySnapshot) {
 }
 
 function isDecisionDocument(document: ClientDocument) {
+  if (document.reviewStatus === "pending") {
+    return true;
+  }
+
+  if (document.reviewStatus !== "kept") {
+    return false;
+  }
+
   return (
-    document.reviewStatus === "pending" ||
+    document.reviewStatusSource !== "manual" &&
     document.criteriaTags.some((tag) => tag.confidence < 0.65)
   );
 }
@@ -47,6 +56,46 @@ function dominantCriterionTag(document: ClientDocument) {
   const pool = primary.length ? primary : document.criteriaTags;
 
   return [...pool].sort((left, right) => right.confidence - left.confidence)[0] ?? null;
+}
+
+function buildWorkspaceContext(snapshot: LibrarySnapshot): ReviewWorkspaceContext | null {
+  if (!snapshot.activeJobId) {
+    return null;
+  }
+
+  const bundleLookup = new Map(
+    (snapshot.eventBundles?.bundles ?? [])
+      .filter((bundle) => bundle.bundleKind === "standard")
+      .map((bundle) => [bundle.id, bundle]),
+  );
+  const bundleOptions: ReviewWorkspaceContext["bundleOptions"] = [
+    ...(snapshot.eventBundles?.bundles ?? [])
+      .filter((bundle) => bundle.bundleKind === "standard")
+      .map((bundle) => ({
+      id: bundle.id,
+      jobId: bundle.jobId,
+      parentBundleId: null,
+      name: bundle.name,
+      documentCount: bundle.evidenceDocumentIds.length,
+      kind: "bundle" as const,
+      })),
+    ...(snapshot.reviewState?.subBundles ?? []).map((subBundle) => ({
+      id: subBundle.id,
+      jobId: subBundle.jobId,
+      parentBundleId: subBundle.parentBundleId,
+      name: bundleLookup.has(subBundle.parentBundleId)
+        ? `${bundleLookup.get(subBundle.parentBundleId)?.name} → ${subBundle.name}`
+        : subBundle.name,
+      documentCount: subBundle.evidenceDocumentIds.length,
+      kind: "sub_bundle" as const,
+    })),
+  ];
+
+  return {
+    jobId: snapshot.activeJobId,
+    workspaceLabel: snapshot.activeJob?.folderLabel ?? "Workspace",
+    bundleOptions,
+  };
 }
 
 function deriveClientStatus(input: {
@@ -191,17 +240,98 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
 
   const categoryMap = new Map<string, ReviewCategoryBandData>();
   const archiveItems: string[] = [];
+  const referenceItems: ReviewCategoryBandData["decisions"] = [];
+  const criterionCounts: Record<string, number> = {};
   const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
+  const workspaceContexts = snapshots
+    .map((snapshot) => buildWorkspaceContext(snapshot))
+    .filter((entry): entry is ReviewWorkspaceContext => Boolean(entry));
 
   snapshots.forEach((snapshot) => {
+    const bundleLookup = new Map(
+      (snapshot.eventBundles?.bundles ?? [])
+        .filter((bundle) => bundle.bundleKind === "standard")
+        .map((bundle) => [bundle.id, bundle]),
+    );
+    const subBundleLookup = new Map(
+      (snapshot.reviewState?.subBundles ?? []).map((subBundle) => [subBundle.id, subBundle]),
+    );
+    const documentSubBundleLookup = new Map<string, string>();
+
+    (snapshot.reviewState?.subBundles ?? []).forEach((subBundle) => {
+      subBundle.evidenceDocumentIds.forEach((documentId) => {
+        documentSubBundleLookup.set(documentId, subBundle.id);
+      });
+    });
+
     snapshot.documents.forEach((document) => {
+      const criterion = dominantCriterionTag(document);
+      const currentSubBundleId = documentSubBundleLookup.get(document.id) ?? null;
+      const currentSubBundle = currentSubBundleId ? subBundleLookup.get(currentSubBundleId) ?? null : null;
+      const currentTopLevelBundle =
+        currentSubBundle
+          ? bundleLookup.get(currentSubBundle.parentBundleId) ?? null
+          : (snapshot.eventBundles?.bundles ?? [])
+              .filter((bundle) => bundle.bundleKind === "standard")
+              .find((bundle) =>
+              bundle.evidenceDocumentIds.includes(document.id),
+              ) ?? null;
+      const currentBundleName = currentSubBundle
+        ? currentTopLevelBundle
+          ? `${currentTopLevelBundle.name} → ${currentSubBundle.name}`
+          : currentSubBundle.name
+        : currentTopLevelBundle?.name ?? null;
+
+      const reviewItem =
+        criterion || document.reviewStatus === "reference"
+          ? {
+              id: document.id,
+              jobId: document.jobId,
+              title: document.summary?.title ?? document.fileName,
+              fileName: document.fileName,
+              workspaceLabel: snapshot.activeJob?.folderLabel ?? document.folderLabel,
+              confidence: criterion?.confidence ?? 1,
+              reasoning:
+                document.reviewStatusReason ??
+                criterion?.reasoning ??
+                "Setu could not confidently finalize this document without a human decision.",
+              shortSummary:
+                document.summary?.shortSummary ??
+                document.summary?.detailedSummary ??
+                "No summary is available yet.",
+              roleHint: criterion?.role ?? null,
+              denseReviewHref: snapshot.activeJobId ? `/review/${snapshot.activeJobId}` : "/",
+              previewHref: `/api/documents/${document.id}/preview?jobId=${encodeURIComponent(
+                document.jobId,
+              )}`,
+              sourceHref: `/api/documents/${document.id}/source?jobId=${encodeURIComponent(
+                document.jobId,
+              )}`,
+              reviewStatus: document.reviewStatus,
+              currentCriterionCode: criterion?.code ?? null,
+              currentCriterionLegalCode: criterion?.legalCode ?? null,
+              currentCriterionName: criterion?.name ?? null,
+              currentCriterionRole: criterion?.role ?? null,
+              currentBundleId: currentSubBundle?.id ?? currentTopLevelBundle?.id ?? null,
+              currentBundleName,
+              currentParentBundleId:
+                currentSubBundle?.parentBundleId ?? null,
+            }
+          : null;
+
       if (document.reviewStatus === "archived") {
         archiveItems.push(document.summary?.title ?? document.fileName);
+        return;
       }
 
-      const criterion = dominantCriterionTag(document);
+      if (document.reviewStatus === "reference") {
+        if (reviewItem) {
+          referenceItems.push(reviewItem);
+        }
+        return;
+      }
 
-      if (!criterion) {
+      if (!criterion || !reviewItem) {
         return;
       }
 
@@ -223,32 +353,10 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
         };
 
       band.taggedCount += 1;
+      criterionCounts[key] = (criterionCounts[key] ?? 0) + 1;
 
-      if (document.reviewStatus !== "archived" && isDecisionDocument(document)) {
-        band.decisions.push({
-          id: document.id,
-          jobId: document.jobId,
-          title: document.summary?.title ?? document.fileName,
-          fileName: document.fileName,
-          workspaceLabel: snapshot.activeJob?.folderLabel ?? document.folderLabel,
-          confidence: criterion.confidence,
-          reasoning:
-            document.reviewStatusReason ??
-            criterion.reasoning ??
-            "Setu could not confidently finalize this document without a human decision.",
-          shortSummary:
-            document.summary?.shortSummary ??
-            document.summary?.detailedSummary ??
-            "No summary is available yet.",
-          roleHint: criterion.role,
-          denseReviewHref: snapshot.activeJobId ? `/review/${snapshot.activeJobId}` : "/",
-          previewHref: `/api/documents/${document.id}/preview?jobId=${encodeURIComponent(
-            document.jobId,
-          )}`,
-          sourceHref: `/api/documents/${document.id}/source?jobId=${encodeURIComponent(
-            document.jobId,
-          )}`,
-        });
+      if (isDecisionDocument(document)) {
+        band.decisions.push(reviewItem);
       } else if (document.reviewStatus === "kept") {
         band.routine = {
           count: (band.routine?.count ?? 0) + 1,
@@ -304,6 +412,17 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
   });
 
   const strategyHref = `/clients/${clientId}/strategy`;
+  const summaryStateKey = JSON.stringify({
+    archiveCount: archiveItems.length,
+    reference: referenceItems.map((item) => item.id),
+    bands: bands.map((band) => ({
+      key: band.key,
+      decisions: band.decisions.map((item) => item.id),
+      routine: band.routine?.count ?? 0,
+      tagged: band.taggedCount,
+    })),
+    reviewQueue: humanReviewQueue.map((item) => item.id),
+  });
 
   return (
     <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
@@ -437,11 +556,15 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
             </section>
 
             <ActionItemsSummary
+              key={summaryStateKey}
               clientId={clientId}
               clientName={syncedClient.displayName}
               totalTagged={taggedCount}
               initialRoutineCount={routineCount}
               initialArchiveCount={archiveItems.length}
+              initialReferenceItems={referenceItems}
+              initialCriterionCounts={criterionCounts}
+              workspaceContexts={workspaceContexts}
               bands={bands}
               humanReviewQueue={humanReviewQueue}
               archiveSamples={archiveItems.slice(0, 4)}

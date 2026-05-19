@@ -1,6 +1,7 @@
 import { getJob } from "@/lib/jobs";
 import { getDocument, setDocumentPayload } from "@/lib/qdrant";
 import { appendClientTimelineEvent } from "@/lib/timeline";
+import type { EvidenceReviewStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const payload = (await request.json()) as { status?: "kept" | "pending" | "archived" } | null;
+  const payload = (await request.json()) as { status?: EvidenceReviewStatus } | null;
 
   if (!payload?.status) {
     return Response.json({ ok: false, error: { code: "bad_request", message: "status is required." } }, { status: 400 });

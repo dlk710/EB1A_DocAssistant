@@ -126,10 +126,11 @@ Verify:
 Verify:
 
 - pending evidence is easy to isolate
-- a `Keep`, `Archive`, or `Remove` action immediately removes the item from pending queues
+- a `Keep`, `Reference`, or `Archive` action immediately removes the item from pending queues
 - the count persists correctly after reload
 - quick peek still works
 - context menus remain inside the viewport
+- Reference items render in their own band and do not count toward coverage
 
 ### Pipeline behavior
 

@@ -288,6 +288,7 @@ The tagging pass works at the evidence-file level and produces:
 - default review state
   - `kept`
   - `pending`
+  - `reference`
   - `archived`
 
 ## 8. Review architecture
@@ -300,8 +301,20 @@ The client review page is action-oriented and groups work by:
 
 - actionable items still requiring human review
 - category bands
+- a dedicated Reference band for documents held aside without counting toward coverage
 - archive and cleanup bands
 - routine evidence that is already stabilized
+
+Each decision row on `/clients/<clientId>/review` supports a right-click context menu for:
+
+- keep as primary
+- keep as supporting
+- move to Reference
+- move to Archive
+- reassign criterion
+- move to bundle
+- Quick peek
+- AI reasoning
 
 This page is designed for incremental work across multiple sessions.
 

@@ -41,9 +41,9 @@ The live app at `http://localhost:3001` currently supports:
 - AI event bundling
 - AI EB1A bundle classification
 - AI document-level criteria tagging
-- human review states: `kept`, `pending`, `archived`, `removed`
+- human review states: `kept`, `pending`, `reference`, `archived`
 - manual overrides for evidence, event bundles, and criteria placement
-- human-review inbox behavior for pending items
+- human-review action bands with right-click keep/reference/archive/reassign actions
 - client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders

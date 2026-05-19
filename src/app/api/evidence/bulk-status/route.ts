@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const payload = (await request.json()) as {
     ids?: string[];
-    status?: "kept" | "pending" | "archived";
+    status?: "kept" | "pending" | "reference" | "archived";
   } | null;
 
   if (!payload?.ids?.length || !payload.status) {

@@ -94,7 +94,7 @@ function parseCriteriaTags(value: unknown) {
 }
 
 function parseReviewStatus(value: unknown): EvidenceReviewStatus {
-  if (value === "pending" || value === "archived") {
+  if (value === "pending" || value === "reference" || value === "archived") {
     return value;
   }
 

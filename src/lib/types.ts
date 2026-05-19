@@ -44,7 +44,7 @@ export type ReviewBucketKind =
   | "archive"
   | "unwanted"
   | "human_review";
-export type EvidenceReviewStatus = "kept" | "pending" | "archived";
+export type EvidenceReviewStatus = "kept" | "pending" | "reference" | "archived";
 export type CriterionTagRole = "primary" | "supporting";
 export type CriterionTagSource = "ai" | "manual";
 export type PetitionType = "EB-1A";

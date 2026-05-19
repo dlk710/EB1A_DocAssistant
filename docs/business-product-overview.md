@@ -121,7 +121,7 @@ The system preserves:
 
 ### Safer human review
 
-Reviewers can work through pending items intentionally instead of scanning an overwhelming full page to guess what remains unresolved.
+Reviewers can work through pending items intentionally instead of scanning an overwhelming full page to guess what remains unresolved. Documents that are real but not load-bearing can be moved into a Reference state so they stay available without inflating criterion coverage.
 
 ### Local control
 

@@ -11,6 +11,8 @@ interface CategoryBandProps {
   routineCount: number;
   note?: string | null;
   defaultOpen?: boolean;
+  headerClassName?: string;
+  headerChipClassName?: string;
   children: ReactNode;
 }
 
@@ -22,6 +24,8 @@ export function CategoryBand({
   routineCount,
   note,
   defaultOpen = false,
+  headerClassName,
+  headerChipClassName,
   children,
 }: CategoryBandProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -31,12 +35,16 @@ export function CategoryBand({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-start gap-3 px-4 py-4 text-left"
+        className={`flex w-full items-start gap-3 px-4 py-4 text-left ${headerClassName ?? ""}`}
       >
         <span className="mt-1 text-[11px] font-semibold text-[var(--muted)]">
           {open ? "▾" : "▸"}
         </span>
-        <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+        <span
+          className={`rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] ${
+            headerChipClassName ?? ""
+          }`}
+        >
           {legalCode}
         </span>
         <div className="min-w-0 flex-1">

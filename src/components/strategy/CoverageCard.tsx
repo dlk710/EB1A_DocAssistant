@@ -3,6 +3,7 @@ import type { WorkspaceCoverage } from "@/lib/types";
 export function CoverageCard(props: { coverage: WorkspaceCoverage | null }) {
   const criteria = props.coverage?.criteria ?? [];
   const strongCount = props.coverage?.strongCount ?? 0;
+  const totalCriteria = criteria.length || 11;
 
   return (
     <section className="rounded-[24px] bg-[var(--brand-charcoal)] px-5 py-5 text-white shadow-[0_24px_50px_rgba(15,23,42,0.18)]">
@@ -12,18 +13,21 @@ export function CoverageCard(props: { coverage: WorkspaceCoverage | null }) {
       <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="font-[var(--font-display)] text-[34px] tracking-[-0.05em] text-[var(--brand)]">
-            {strongCount} of 10 strong
+            {strongCount} of {totalCriteria} strong
           </h2>
           <p className="mt-1 text-[12px] leading-6 text-white/70">
             Strategy works from the client-wide kept and pending evidence set.
           </p>
         </div>
         <div className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
-          {props.coverage?.meetsMinimum ? "Meets 3-of-10 minimum" : "Below minimum"}
+          {props.coverage?.meetsMinimum ? "Meets threshold minimum" : "Below threshold"}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-10 gap-2">
+      <div
+        className="mt-4 grid gap-2"
+        style={{ gridTemplateColumns: `repeat(${Math.max(totalCriteria, 1)}, minmax(0, 1fr))` }}
+      >
         {criteria.map((criterion) => (
           <span
             key={criterion.code}

@@ -73,6 +73,21 @@ export function SynthesisWorkspace(props: {
   const selectedReference = props.approvedDrafts.find((entry) => entry.criterionCode === selectedReferenceCode) ?? null;
   const allApproved = (drafts["statement-of-eligibility"]?.latestApprovedVersion !== null) &&
     (drafts["final-merits-determination"]?.latestApprovedVersion !== null);
+  const hasBlockingFactCheck = visibleParagraphs.some((paragraph) => {
+    if (paragraph.factCheckStatus === "uncited") {
+      return true;
+    }
+
+    return (
+      paragraph.factCheckStatus === "drift-detected" &&
+      paragraph.factCheckNotes?.toLowerCase().includes("significant")
+    );
+  });
+  const headerStatusLine = allApproved
+    ? "Both sections approved"
+    : currentVersion
+      ? "Approval in progress"
+      : "All criterion drafts approved · ready to begin synthesis";
 
   function draftLabel(kind: SynthesisSectionKind) {
     return kind === "statement-of-eligibility" ? "Statement of Eligibility" : "Final Merits Determination";
@@ -226,7 +241,7 @@ export function SynthesisWorkspace(props: {
                   Synthesize approved criterion arguments into the petition’s analytical bookends.
                 </p>
                 <p className="setu-brand-meta">
-                  {draftLabel(activeKind)} · {currentVersion ? `v${currentVersion.version}` : "Not started"} · {allApproved ? "Both sections approved" : "Approval in progress"}
+                  {draftLabel(activeKind)} · {currentVersion ? `v${currentVersion.version}` : "Not started"} · {headerStatusLine}
                 </p>
               </div>
             </div>
@@ -299,6 +314,7 @@ export function SynthesisWorkspace(props: {
                 isSaving={isSaving}
                 isGenerating={isGenerating}
                 isApproving={isApproving}
+                approveDisabled={hasBlockingFactCheck}
                 onCompare={() => setCompareOpen(true)}
                 onRegenerate={() => void regenerateDraft()}
                 onApprove={() => void approveCurrentDraft()}

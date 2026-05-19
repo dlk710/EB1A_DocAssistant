@@ -183,6 +183,8 @@ export async function buildLibrarySnapshot(input?: {
     };
   });
 
+  const publicSettings = getPublicSettings();
+
   return {
     activeClientId,
     activeClient,
@@ -202,6 +204,9 @@ export async function buildLibrarySnapshot(input?: {
     clientCoverage: buildClientCoverage(clientDocumentsRaw),
     manualOverrides: effectiveStates.overrideState,
     reviewState,
-    settings: getPublicSettings(),
+    settings: {
+      ...publicSettings,
+      candidateName: activeClient?.displayName || publicSettings.candidateName,
+    },
   };
 }

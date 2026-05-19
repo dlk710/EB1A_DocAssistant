@@ -8,6 +8,7 @@ export function SynthesisToolbar(props: {
   isSaving: boolean;
   isGenerating: boolean;
   isApproving: boolean;
+  approveDisabled?: boolean;
   onRegenerate: () => void;
   onApprove: () => void;
   onCompare: () => void;
@@ -46,7 +47,7 @@ export function SynthesisToolbar(props: {
         <button
           type="button"
           onClick={props.onApprove}
-          disabled={props.isApproving || props.currentVersion === null}
+          disabled={props.isApproving || props.currentVersion === null || props.approveDisabled}
           className="setu-primary-button rounded-[10px] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40"
         >
           {props.isApproving ? "Approving…" : "Mark as approved"}

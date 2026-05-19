@@ -4223,8 +4223,8 @@ export function EvidenceWorkbench({
                         }`}
                       >
                         {library.coverage?.meetsMinimum
-                          ? "Meets 3-of-10 minimum"
-                          : "Below minimum"}
+                          ? "Meets threshold minimum"
+                          : "Below threshold"}
                       </span>
                     </div>
                     <div className="mt-4 grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
@@ -5213,7 +5213,7 @@ export function EvidenceWorkbench({
                             : "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
                         }`}
                       >
-                        {library.coverage?.meetsMinimum ? "Meets 3-of-10 minimum" : "Below minimum"}
+                        {library.coverage?.meetsMinimum ? "Meets threshold minimum" : "Below threshold"}
                       </span>
                     </div>
                     <div className="mt-3 space-y-1.5">

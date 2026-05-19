@@ -68,6 +68,122 @@ function clampStringArray(value: unknown, maxItems: number, maxLength: number) {
     .slice(0, maxItems);
 }
 
+function normalizeLooseText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function candidateNameLikelyMismatch(document: StoredDocument) {
+  const candidate = normalizeLooseText(document.candidateName);
+
+  if (!candidate) {
+    return false;
+  }
+
+  const supportingText = normalizeLooseText(
+    [
+      document.fileName,
+      document.relativePath,
+      document.summary?.title ?? "",
+      document.summary?.shortSummary ?? "",
+      document.summary?.detailedSummary ?? "",
+      ...(document.summary?.people ?? []),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  if (!supportingText) {
+    return false;
+  }
+
+  if (supportingText.includes(candidate)) {
+    return false;
+  }
+
+  const candidateTokens = candidate.split(" ").filter((token) => token.length >= 3);
+  if (candidateTokens.length > 0 && candidateTokens.every((token) => supportingText.includes(token))) {
+    return false;
+  }
+
+  return (document.summary?.people?.length ?? 0) > 0;
+}
+
+function inferFallbackCriteriaTags(document: StoredDocument) {
+  const combinedText = normalizeLooseText(
+    [
+      document.fileName,
+      document.relativePath,
+      document.summary?.title ?? "",
+      document.summary?.shortSummary ?? "",
+      document.summary?.detailedSummary ?? "",
+      document.summary?.documentType ?? "",
+      ...(document.summary?.tags ?? []),
+      ...(document.summary?.possibleCriteria ?? []),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  const taggedAt = new Date().toISOString();
+  const inferred: EvidenceCriterionTag[] = [];
+  const definitionLookup = new Map<
+    EvidenceCriterionTag["code"],
+    (typeof EB1A_CRITERIA_DEFINITIONS)[number]
+  >(
+    EB1A_CRITERIA_DEFINITIONS.map((criterion) => [
+      criterion.code as EvidenceCriterionTag["code"],
+      criterion,
+    ]),
+  );
+
+  function pushTag(
+    code: EvidenceCriterionTag["code"],
+    role: "primary" | "supporting",
+    reasoning: string,
+  ) {
+    const definition = definitionLookup.get(code);
+    if (!definition || inferred.some((tag) => tag.code === code)) {
+      return;
+    }
+
+    inferred.push({
+      code: definition.code,
+      legalCode: definition.legalCode,
+      name: definition.name,
+      role,
+      source: "ai",
+      confidence: role === "primary" ? 0.61 : 0.52,
+      reasoning,
+      taggedAt,
+    });
+  }
+
+  if (/\b(award|honor|prize|medal|recognition|certificate of appreciation|certificate of achievement)\b/.test(combinedText)) {
+    pushTag(
+      "01",
+      "primary",
+      "Heuristic fallback: the file path and summary contain obvious award or recognition language.",
+    );
+  }
+
+  if (/\b(membership|member|senior member|fellow|invitation to join|elected member)\b/.test(combinedText)) {
+    pushTag(
+      "02",
+      "primary",
+      "Heuristic fallback: the file path and summary contain obvious membership language.",
+    );
+  }
+
+  if (/\b(authorship|author|publication|publications|journal|conference paper|paper list|selected publications|book chapter)\b/.test(combinedText)) {
+    pushTag(
+      "06",
+      "primary",
+      "Heuristic fallback: the file path and summary contain obvious authorship or publication language.",
+    );
+  }
+
+  return inferred;
+}
+
 function sanitizeSummaryCandidate(raw: unknown) {
   const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 
@@ -414,11 +530,26 @@ export async function tagDocumentCriteria(input: {
   );
 
   const keepSuggestion = parsed.keepSuggestion as EvidenceReviewStatus;
+  const heuristicTags = inferFallbackCriteriaTags(input.document);
+  const hasCandidateMismatch = candidateNameLikelyMismatch(input.document);
+  const shouldEscalateForReview =
+    hasCandidateMismatch || (keepSuggestion === "archived" && criteriaTags.length === 0 && heuristicTags.length > 0);
+  const effectiveCriteriaTags = criteriaTags.length > 0 ? criteriaTags : heuristicTags;
+  const effectiveReviewStatus = hasCandidateMismatch
+    ? "pending"
+    : shouldEscalateForReview && keepSuggestion === "archived"
+      ? "pending"
+      : keepSuggestion;
+  const effectiveReviewReason = hasCandidateMismatch
+    ? `Setu paused because this file appears to describe a different subject than ${candidateLabel}; human review is required before archiving or keeping it.`
+    : shouldEscalateForReview && heuristicTags.length > 0
+      ? "Setu found obvious criterion cues in this file and sent it to human review instead of silently archiving it."
+      : parsed.keepReason;
 
   return {
-    criteriaTags,
-    reviewStatus: keepSuggestion,
-    reviewStatusReason: parsed.keepReason,
+    criteriaTags: effectiveCriteriaTags,
+    reviewStatus: effectiveReviewStatus,
+    reviewStatusReason: effectiveReviewReason,
     usage: combineUsage(buildTextUsage(settings.summaryModel, response.usage), null),
   };
 }

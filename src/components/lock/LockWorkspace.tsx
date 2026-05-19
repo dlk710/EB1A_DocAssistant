@@ -19,7 +19,7 @@ export function LockWorkspace(props: {
   const [narrativeSpine, setNarrativeSpine] = useState(
     props.strategyMemo?.leadArgument.narrativeSpine ?? "",
   );
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

@@ -245,17 +245,23 @@ function conservativeSynthesisParagraph(
   criterionRefs: string[],
   supportingDrafts: ApprovedDraftContext[],
 ) {
-  const citations: SynthesisCitation[] = supportingDrafts
-    .slice(0, 2)
-    .map((draft) => {
-      const paragraph = draft.paragraphs[0];
-      return {
-        criterionDraftId: draft.draftId,
-        draftVersionParagraphId: paragraph?.id,
-        draftExcerpt: paragraph?.text || "",
-        supports: firstSentence(paragraph?.text || text),
-      };
-    });
+  const selectedDraft =
+    supportingDrafts.find(
+      (draft) =>
+        criterionRefs.includes(draft.legalCode) || criterionRefs.includes(draft.criterionCode),
+    ) ??
+    supportingDrafts[0];
+  const selectedParagraph = selectedDraft?.paragraphs[0];
+  const citations: SynthesisCitation[] = selectedDraft
+    ? [
+        {
+          criterionDraftId: selectedDraft.draftId,
+          draftVersionParagraphId: selectedParagraph?.id,
+          draftExcerpt: selectedParagraph?.text || "",
+          supports: firstSentence(selectedParagraph?.text || text),
+        },
+      ]
+    : [];
 
   return {
     id: crypto.randomUUID(),

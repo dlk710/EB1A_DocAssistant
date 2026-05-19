@@ -5,11 +5,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
-  const snapshot = await buildLibrarySnapshot({ jobId: workspaceId });
+  const params = new URL(request.url).searchParams;
+  const workspaceId = params.get("workspaceId");
+  const clientId = params.get("clientId");
+  const snapshot = await buildLibrarySnapshot({
+    jobId: workspaceId,
+    clientId,
+  });
 
   return Response.json({
     ok: true,
-    data: buildWorkspaceCoverage(snapshot.documents),
+    data: clientId
+      ? buildWorkspaceCoverage(snapshot.clientDocuments)
+      : buildWorkspaceCoverage(snapshot.documents),
   });
 }

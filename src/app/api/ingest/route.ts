@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import mime from "mime-types";
-import { createClient, getClient, updateClient } from "@/lib/clients";
+import { createClient, getClient } from "@/lib/clients";
 import { startIngestionJob } from "@/lib/ingestion";
 import { createJob } from "@/lib/jobs";
 import { getRuntimeSettings } from "@/lib/settings";
@@ -63,18 +63,20 @@ export async function POST(request: Request) {
   );
   const folderLabel =
     String(formData.get("folderLabel") || "").trim() || inferFolderLabel(normalizedPaths);
+  const existingClient = requestedClientId ? getClient(requestedClientId) : null;
   const client =
-    (requestedClientId ? getClient(requestedClientId) : null) ??
+    existingClient ??
     createClient({
       displayName: candidateName,
       petitionType: "EB-1A",
     });
+  const effectiveCandidateName = existingClient?.displayName || candidateName;
   const jobId = crypto.randomUUID();
 
   createJob({
     id: jobId,
     clientId: client.id,
-    candidateName,
+    candidateName: effectiveCandidateName,
     folderLabel,
     totalFiles: files.length,
   });
@@ -91,11 +93,6 @@ export async function POST(request: Request) {
       fileCount: files.length,
     },
   });
-  if (client.displayName !== candidateName) {
-    updateClient(client.id, {
-      displayName: candidateName,
-    });
-  }
 
   const queuedDocuments: StoredDocument[] = [];
 
@@ -113,7 +110,7 @@ export async function POST(request: Request) {
     queuedDocuments.push({
       id: crypto.randomUUID(),
       jobId,
-      candidateName,
+      candidateName: effectiveCandidateName,
       folderLabel,
       fileName: path.basename(relativePath),
       relativePath,
@@ -161,7 +158,7 @@ export async function POST(request: Request) {
   return Response.json({
     ok: true,
     jobId,
-    candidateName,
+    candidateName: effectiveCandidateName,
     totalFiles: files.length,
     folderLabel,
   });

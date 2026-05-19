@@ -2,11 +2,12 @@
 
 ## 1. Purpose
 
-This playbook is the practical guide for operating, validating, and changing Setu safely across the first three lifecycle phases:
+This playbook is the practical guide for operating, validating, and changing Setu safely across the full seven-stage lifecycle:
 
 - Phase 1: client portfolio, home, and review
 - Phase 2: strategy, Ask Setu, and lock
 - Phase 3: criterion drafting and style profiles
+- Phase 4: synthesis, stitching, packet preview, and filable PDF export
 
 Use it when you are:
 
@@ -75,9 +76,12 @@ Treat these as local runtime state, not documentation artifacts.
 - `storage/state/clients/<clientId>/locked-strategy.json`
 - `storage/state/clients/<clientId>/pinboards/*.json`
 - `storage/state/clients/<clientId>/drafts/*.json`
+- `storage/state/clients/<clientId>/synthesis/*.json`
+- `storage/state/clients/<clientId>/assembled-packet.json`
 - `storage/state/clients/<clientId>/chat-sessions/*.json`
 - `storage/state/clients/<clientId>/strategy-memos/*.json`
 - `storage/state/clients/<clientId>/stress-test-reports/*.json`
+- `storage/packets/<clientId>/*.pdf`
 
 ### Style system state
 
@@ -164,6 +168,20 @@ Verify:
 - significant drift triggers retry or conservative fallback
 - generic-prose warnings appear only when phrase thresholds are exceeded
 
+### Phase 4: synthesis and stitching
+
+Verify:
+
+- `/clients/<clientId>/synthesis` renders both synthesis tabs and approved criterion references
+- synthesis generation creates versioned Statement of Eligibility and Final Merits Determination drafts
+- approving both synthesis sections advances the client to `stitching`
+- `/clients/<clientId>/stitching` renders readiness, sections, findings, and exhibit index
+- packet preview returns a non-empty PDF
+- filable packet generation succeeds when blocking findings are absent
+- packet download serves the current assembled PDF
+- Bates numbers are continuous from `PET-000001`
+- packet assembly does not mutate source drafts or uploaded exhibits
+
 ## 7. Prompt editing rules
 
 Prompt changes should preserve the contract of the corresponding pass:
@@ -236,6 +254,20 @@ Never break these:
 - `src/components/drafting/*`
 - `src/components/style-profiles/*`
 
+### Synthesis and stitching
+
+- `src/lib/synthesis.ts`
+- `src/lib/synthesis-service.ts`
+- `src/lib/assembly.ts`
+- `src/lib/audit.ts`
+- `src/lib/cross-reference.ts`
+- `src/lib/bates.ts`
+- `src/lib/pdf/*`
+- `src/app/clients/[clientId]/synthesis/page.tsx`
+- `src/app/clients/[clientId]/stitching/page.tsx`
+- `src/components/synthesis/*`
+- `src/components/stitching/*`
+
 ### UI shell
 
 - `src/components/evidence-workbench.tsx`
@@ -262,8 +294,8 @@ Never break these:
 
 - OCR quality still depends on the extractable text path or preview path
 - historical workspace migration can create duplicate clients when old jobs clearly belong to the same person but were not linked previously
-- Draft mode is criterion-scoped only in Phase 3; full petition stitching is intentionally deferred
 - style profiles are global and single-active in Phase 3; per-client overrides are later work
+- packet generation remains local and manual; Setu does not file with USCIS
 - some older internal names still reflect earlier product naming even though the live brand is Setu
 
 ## 12. Recommended commit discipline

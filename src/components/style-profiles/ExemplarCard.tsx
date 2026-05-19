@@ -1,5 +1,6 @@
 "use client";
 
+import { formatSynthesisSectionLabel } from "@/lib/prompt-library";
 import type { StyleExemplar } from "@/lib/types";
 
 export function ExemplarCard(props: {
@@ -13,7 +14,9 @@ export function ExemplarCard(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-            {props.exemplar.criterionCode}
+            {props.exemplar.kind
+              ? formatSynthesisSectionLabel(props.exemplar.kind)
+              : props.exemplar.criterionCode}
           </p>
           <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
             {props.exemplar.label}

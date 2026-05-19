@@ -4,6 +4,7 @@ import { deleteStyleExemplar, getStyleProfile, updateStyleExemplar } from "@/lib
 const updateExemplarSchema = z.object({
   label: z.string().min(1).max(200).optional(),
   criterionCode: z.string().min(1).max(8).optional(),
+  kind: z.enum(["statement-of-eligibility", "final-merits-determination"]).nullable().optional(),
   text: z.string().min(50).max(12000).optional(),
   approvedOutcome: z.boolean().optional(),
   notes: z.string().max(1000).optional(),

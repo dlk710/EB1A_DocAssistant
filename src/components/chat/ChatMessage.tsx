@@ -1,6 +1,7 @@
 import { BriefDraftCard } from "@/components/chat/BriefDraftCard";
 import { CitationChip } from "@/components/chat/CitationChip";
 import { ReasoningExpansion } from "@/components/chat/ReasoningExpansion";
+import { SynthesisDraftCard } from "@/components/chat/SynthesisDraftCard";
 import type { ChatTurn } from "@/lib/types";
 
 export function ChatMessage(props: { turn: ChatTurn }) {
@@ -31,6 +32,14 @@ export function ChatMessage(props: { turn: ChatTurn }) {
         {props.turn.response.artifact?.schemaVersion === "brief-draft/2.0" ? (
           <div className="mt-3">
             <BriefDraftCard
+              draft={props.turn.response.artifact}
+              citations={props.turn.response.citations}
+            />
+          </div>
+        ) : null}
+        {props.turn.response.artifact?.schemaVersion === "synthesis-draft/1.0" ? (
+          <div className="mt-3">
+            <SynthesisDraftCard
               draft={props.turn.response.artifact}
               citations={props.turn.response.citations}
             />

@@ -55,7 +55,9 @@ import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
 import {
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
+  DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
   DEFAULT_SUMMARY_PROMPT_TEMPLATE,
+  DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE,
   DEFAULT_TAGGING_PROMPT_TEMPLATE,
   DEFAULT_STRATEGY_PROMPT_TEMPLATE,
   DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
@@ -83,6 +85,8 @@ interface SettingsDraft {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  statementOfEligibilityPrompt: string;
+  finalMeritsDeterminationPrompt: string;
   activeStyleProfileId: string;
   apiKey: string;
   summaryModel: string;
@@ -756,6 +760,8 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,
     draftPrompt: settings.draftPrompt,
+    statementOfEligibilityPrompt: settings.statementOfEligibilityPrompt,
+    finalMeritsDeterminationPrompt: settings.finalMeritsDeterminationPrompt,
     activeStyleProfileId: settings.activeStyleProfileId,
     apiKey: "",
     summaryModel: settings.summaryModel,
@@ -2495,6 +2501,8 @@ export function EvidenceWorkbench({
           strategyPrompt: settingsDraft.strategyPrompt,
           stressTestPrompt: settingsDraft.stressTestPrompt,
           draftPrompt: settingsDraft.draftPrompt,
+          statementOfEligibilityPrompt: settingsDraft.statementOfEligibilityPrompt,
+          finalMeritsDeterminationPrompt: settingsDraft.finalMeritsDeterminationPrompt,
           activeStyleProfileId: settingsDraft.activeStyleProfileId,
           apiKey: settingsDraft.apiKey,
           summaryModel: settingsDraft.summaryModel,
@@ -5819,6 +5827,26 @@ export function EvidenceWorkbench({
                           reset: DEFAULT_DRAFT_PROMPT_TEMPLATE,
                           setter: (value: string) =>
                             setSettingsDraft((current) => ({ ...current, draftPrompt: value })),
+                        },
+                        {
+                          label: "Statement of Eligibility prompt",
+                          value: settingsDraft.statementOfEligibilityPrompt,
+                          reset: DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              statementOfEligibilityPrompt: value,
+                            })),
+                        },
+                        {
+                          label: "Final Merits Determination prompt",
+                          value: settingsDraft.finalMeritsDeterminationPrompt,
+                          reset: DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              finalMeritsDeterminationPrompt: value,
+                            })),
                         },
                       ].map((prompt) => (
                         <div

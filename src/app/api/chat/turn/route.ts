@@ -9,6 +9,9 @@ const turnInputSchema = z.object({
   message: z.string().min(1).max(4000),
   modeHint: z.enum(["triage", "strategy", "stress-test", "draft"]).optional(),
   criterionCode: z.string().min(1).max(8).optional(),
+  synthesisKind: z
+    .enum(["statement-of-eligibility", "final-merits-determination"])
+    .optional(),
 });
 
 export const runtime = "nodejs";
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
       modeHint: parsed.data.modeHint,
       sessionMode: existingSession.mode,
       criterionCode: parsed.data.criterionCode,
+      synthesisKind: parsed.data.synthesisKind,
     });
 
     const turn: ChatTurn = {

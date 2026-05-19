@@ -11,6 +11,7 @@ import { buildWorkspaceCoverage } from "@/lib/coverage";
 import {
   getClient,
   getClientStageNumber,
+  getSynthesisLifecycleStatus,
   listClientJobs,
   listClients,
   updateClient,
@@ -18,6 +19,7 @@ import {
 import { listCriterionDrafts } from "@/lib/drafts";
 import { buildLibrarySnapshot } from "@/lib/library";
 import { getLockedStrategy } from "@/lib/lock";
+import { listSynthesisDrafts } from "@/lib/synthesis";
 import { ensureClientTimelineEvent, listClientTimeline } from "@/lib/timeline";
 import type {
   ClientDocument,
@@ -85,10 +87,22 @@ function deriveClientStatus(input: {
   claimedCriteriaCount: number;
   generatedDraftCount: number;
   approvedDraftCount: number;
+  approvedSynthesisCount: number;
 }) {
-  if (input.clientStatus === "locked" || input.clientStatus === "drafting" || input.clientStatus === "stitching" || input.lockedStrategyVersion !== null) {
+  if (
+    input.clientStatus === "locked" ||
+    input.clientStatus === "drafting" ||
+    input.clientStatus === "synthesizing" ||
+    input.clientStatus === "stitching" ||
+    input.lockedStrategyVersion !== null
+  ) {
     if (input.claimedCriteriaCount > 0 && input.approvedDraftCount >= input.claimedCriteriaCount) {
-      return "stitching" satisfies ClientStatus;
+      return getSynthesisLifecycleStatus({
+        locked: true,
+        claimedCriteriaCount: input.claimedCriteriaCount,
+        approvedCriteriaCount: input.approvedDraftCount,
+        approvedSynthesisCount: input.approvedSynthesisCount,
+      });
     }
     if (input.generatedDraftCount > 0) {
       return "drafting" satisfies ClientStatus;
@@ -241,6 +255,9 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   const drafts = listCriterionDrafts(clientId);
   const generatedDraftCount = drafts.filter((draft) => draft.versions.length > 0).length;
   const approvedDraftCount = drafts.filter((draft) => draft.latestApprovedVersion !== null).length;
+  const approvedSynthesisCount = listSynthesisDrafts(clientId).filter(
+    (draft) => draft.latestApprovedVersion !== null,
+  ).length;
 
   const derivedStatus = deriveClientStatus({
     clientStatus: client.status,
@@ -251,6 +268,7 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
     claimedCriteriaCount,
     generatedDraftCount,
     approvedDraftCount,
+    approvedSynthesisCount,
   });
 
   const syncedClient =
@@ -289,6 +307,8 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   const strategyHref = `/clients/${clientId}/strategy`;
   const lockHref = `/clients/${clientId}/lock`;
   const draftingHref = `/clients/${clientId}/drafting`;
+  const synthesisHref = `/clients/${clientId}/synthesis`;
+  const stitchingHref = `/clients/${clientId}/stitching`;
   const workspaceHref = `/?view=workspace&clientId=${clientId}`;
   const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
   const coverageSummary = summarizeCoverage(aggregateCoverage);
@@ -303,8 +323,10 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
           ? "case theory locked"
         : derivedStatus === "drafting"
           ? "criterion drafting in progress"
+          : derivedStatus === "synthesizing"
+            ? "synthesis in progress"
           : derivedStatus === "stitching"
-            ? "ready for stitching"
+            ? "packet assembly in progress"
         : "strategy workspace ready"
   }`;
 
@@ -381,12 +403,21 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
               ctaLabel: "Open drafting",
               href: draftingHref,
             }
+        : derivedStatus === "synthesizing"
+          ? {
+              title: `Next: finalize ${Math.max(2 - approvedSynthesisCount, 0)} synthesis section${
+                Math.max(2 - approvedSynthesisCount, 0) === 1 ? "" : "s"
+              }`,
+              body: "The criterion arguments are approved. Draft and approve the Statement of Eligibility and Final Merits Determination before packet assembly.",
+              ctaLabel: "Open synthesis",
+              href: synthesisHref,
+            }
         : derivedStatus === "stitching"
           ? {
-              title: "Next: prepare for stitching",
-              body: "Every claimed criterion now has an approved draft. The packet is ready for the next assembly phase.",
-              ctaLabel: "Open drafting",
-              href: draftingHref,
+              title: "Next: assemble the filing packet",
+              body: "Setu now has the locked theory, approved criterion drafts, and approved synthesis sections. Open stitching to audit the record and export the packet PDF.",
+              ctaLabel: "Open stitching",
+              href: stitchingHref,
             }
         : {
             title: "Next: open strategy",
@@ -434,23 +465,37 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       state:
         derivedStatus === "strategizing"
           ? ("active" as const)
-          : derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+          : derivedStatus === "locked" ||
+              derivedStatus === "drafting" ||
+              derivedStatus === "synthesizing" ||
+              derivedStatus === "stitching"
             ? ("done" as const)
           : getClientStageNumber(derivedStatus) > 3
             ? ("done" as const)
             : ("locked" as const),
       href:
-        derivedStatus === "strategizing" || derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+        derivedStatus === "strategizing" ||
+        derivedStatus === "locked" ||
+        derivedStatus === "drafting" ||
+        derivedStatus === "synthesizing" ||
+        derivedStatus === "stitching"
           ? strategyHref
           : null,
       badge:
         derivedStatus === "strategizing"
           ? "Ready"
-          : derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+          : derivedStatus === "locked" ||
+              derivedStatus === "drafting" ||
+              derivedStatus === "synthesizing" ||
+              derivedStatus === "stitching"
             ? "Locked"
             : "Waiting",
       disabledReason:
-        derivedStatus !== "strategizing" && derivedStatus !== "locked" && derivedStatus !== "drafting" && derivedStatus !== "stitching"
+        derivedStatus !== "strategizing" &&
+        derivedStatus !== "locked" &&
+        derivedStatus !== "drafting" &&
+        derivedStatus !== "synthesizing" &&
+        derivedStatus !== "stitching"
           ? "Resolve onboarding and review requirements before opening strategy."
           : undefined,
     },
@@ -459,21 +504,33 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       title: "Lock",
       description: "Commit the final criterion mix and supporting exhibits.",
       state:
-        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+        derivedStatus === "locked" ||
+        derivedStatus === "drafting" ||
+        derivedStatus === "synthesizing" ||
+        derivedStatus === "stitching"
           ? ("done" as const)
           : getClientStageNumber(derivedStatus) > 4
             ? ("done" as const)
             : ("locked" as const),
       href:
-        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+        derivedStatus === "locked" ||
+        derivedStatus === "drafting" ||
+        derivedStatus === "synthesizing" ||
+        derivedStatus === "stitching"
           ? lockHref
           : null,
       badge:
-        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+        derivedStatus === "locked" ||
+        derivedStatus === "drafting" ||
+        derivedStatus === "synthesizing" ||
+        derivedStatus === "stitching"
           ? "Complete"
           : "Later",
       disabledReason:
-        derivedStatus !== "locked" && derivedStatus !== "drafting" && derivedStatus !== "stitching"
+        derivedStatus !== "locked" &&
+        derivedStatus !== "drafting" &&
+        derivedStatus !== "synthesizing" &&
+        derivedStatus !== "stitching"
           ? "Available after the strategy stage commits the case theory."
           : undefined,
     },
@@ -484,11 +541,14 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
       state:
         derivedStatus === "locked" || derivedStatus === "drafting"
           ? ("active" as const)
-          : derivedStatus === "stitching"
+          : derivedStatus === "synthesizing" || derivedStatus === "stitching"
             ? ("done" as const)
             : ("locked" as const),
       href:
-        derivedStatus === "locked" || derivedStatus === "drafting" || derivedStatus === "stitching"
+        derivedStatus === "locked" ||
+        derivedStatus === "drafting" ||
+        derivedStatus === "synthesizing" ||
+        derivedStatus === "stitching"
           ? draftingHref
           : null,
       badge:
@@ -496,7 +556,7 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
           ? "Ready next"
           : derivedStatus === "drafting"
             ? "Active"
-            : derivedStatus === "stitching"
+            : derivedStatus === "synthesizing" || derivedStatus === "stitching"
               ? "Complete"
               : "Later",
       disabledReason:
@@ -506,14 +566,41 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
     },
     {
       number: 6,
+      title: "Synthesis",
+      description:
+        "Draft and approve the Statement of Eligibility and Final Merits Determination.",
+      state:
+        derivedStatus === "synthesizing"
+          ? ("active" as const)
+          : derivedStatus === "stitching"
+            ? ("done" as const)
+            : ("locked" as const),
+      href:
+        derivedStatus === "synthesizing" || derivedStatus === "stitching"
+          ? synthesisHref
+          : null,
+      badge:
+        derivedStatus === "synthesizing"
+          ? "Active"
+          : derivedStatus === "stitching"
+            ? "Complete"
+            : "Later",
+      disabledReason:
+        derivedStatus === "synthesizing" || derivedStatus === "stitching"
+          ? undefined
+          : "Available after every claimed criterion draft is approved.",
+    },
+    {
+      number: 7,
       title: "Stitching",
       description: "Assemble the full petition packet, exhibits, and export package.",
       state: derivedStatus === "stitching" ? ("active" as const) : ("locked" as const),
-      badge: derivedStatus === "stitching" ? "Ready next" : "Later",
+      href: derivedStatus === "stitching" ? stitchingHref : null,
+      badge: derivedStatus === "stitching" ? "Active" : "Later",
       disabledReason:
         derivedStatus === "stitching"
-          ? "Stitching lands in Phase 4."
-          : "Available after every claimed criterion draft is approved.",
+          ? undefined
+          : "Available after both synthesis sections are approved.",
     },
   ];
 

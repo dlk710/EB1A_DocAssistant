@@ -9,6 +9,7 @@ export const STATE_ROOT = path.join(STORAGE_ROOT, "state");
 export const PREVIEW_ROOT = path.join(STORAGE_ROOT, "previews");
 export const QDRANT_STORAGE_ROOT = path.join(STORAGE_ROOT, "qdrant");
 export const EXPORT_ROOT = path.join(STORAGE_ROOT, "exports");
+export const PACKET_ROOT = path.join(STORAGE_ROOT, "packets");
 export const QDRANT_URL = process.env.QDRANT_URL || "http://127.0.0.1:6333";
 export const QDRANT_COLLECTION = "eb1a_evidence_documents";
 

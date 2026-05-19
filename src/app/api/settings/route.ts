@@ -10,6 +10,8 @@ const settingsInputSchema = z.object({
   strategyPrompt: z.string().min(1).max(12000),
   stressTestPrompt: z.string().min(1).max(12000),
   draftPrompt: z.string().min(1).max(12000),
+  statementOfEligibilityPrompt: z.string().min(1).max(12000),
+  finalMeritsDeterminationPrompt: z.string().min(1).max(12000),
   activeStyleProfileId: z.string().min(1).max(160).optional(),
   apiKey: z.string().optional(),
   summaryModel: z.string().min(1),

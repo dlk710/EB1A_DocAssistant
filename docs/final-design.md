@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Setu is a local-first evidence and drafting platform for immigration petition preparation. The system is designed to move from raw evidence folders to a client-scoped, strategy-aware, draft-producing workflow without losing source traceability, workspace isolation, or human override control.
+Setu is a local-first evidence and petition-assembly platform for immigration preparation. The system is designed to move from raw evidence folders to a client-scoped, strategy-aware, draft-producing, packet-exporting workflow without losing source traceability, workspace isolation, or human override control.
 
 The architecture is intentionally layered:
 
@@ -15,7 +15,8 @@ The architecture is intentionally layered:
 7. client-wide strategy reasoning
 8. lock and unlock
 9. per-criterion drafting
-10. downstream packaging
+10. synthesis
+11. stitching and packet export
 
 Each layer is preserved instead of collapsed into one irreversible decision.
 
@@ -33,6 +34,7 @@ The system follows these rules:
 8. Strategy, stress-test, and drafting outputs must remain client-scoped and citable.
 9. Locked exhibit numbering must remain stable until explicit unlock.
 10. Draft versions must be append-only and auditable.
+11. Packet assembly must not mutate source drafts or source exhibits.
 
 ## 3. System overview
 
@@ -63,6 +65,11 @@ flowchart LR
   W --> X["Locked case strategy + pinboards"]
   X --> Y["Drafting workspace\n/clients/<clientId>/drafting/<criterionCode>"]
   Y --> Z["Criterion drafts + versions\nstorage/state/clients/<clientId>/drafts"]
+  Z --> AB["Synthesis workspace\n/clients/<clientId>/synthesis"]
+  AB --> AC["Synthesis drafts + versions\nstorage/state/clients/<clientId>/synthesis"]
+  AC --> AD["Stitching workspace\n/clients/<clientId>/stitching"]
+  AD --> AE["Assembly + audit + Bates\nsrc/lib/assembly.ts"]
+  AE --> AF["Packet PDF\nstorage/packets/<clientId>"]
   X --> AA["Output packages\nstorage/exports"]
 ```
 
@@ -160,11 +167,19 @@ Operational and interpretation-layer state lives under `storage/state`.
   - per-criterion drafting anchors
 - `clients/<clientId>/drafts/*.json`
   - append-only criterion draft versions and approval metadata
+- `clients/<clientId>/synthesis/*.json`
+  - append-only synthesis draft versions and approval metadata
+- `clients/<clientId>/assembled-packet.json`
+  - latest assembled petition state, findings, and PDF path
 
 #### Style system state
 
 - `style-profiles/*.json`
   - user-editable style profiles
+
+### 5.4 Packet artifacts
+
+Phase 4 adds `storage/packets/<clientId>/<packetId>.pdf` for preview and filable packet output.
 
 ### 5.3 Filesystem artifacts
 
@@ -323,11 +338,13 @@ Phase 3 keeps four modes:
 
 The first three operate at client strategy scope. `Draft` operates at criterion scope and uses locked strategy plus criterion-scoped evidence retrieval.
 
+Phase 4 extends `Draft` so the same mode can also generate synthesis sections when a synthesis kind is active.
+
 ### Citation contract
 
 Setu does not allow factual draft or chat claims to survive without citations that resolve to client-visible documents. Draft mode adds a second layer on top of citation existence: fact-check drift detection against cited evidence.
 
-## 10. Lock and drafting architecture
+## 10. Lock, drafting, synthesis, and stitching architecture
 
 ### Lock
 
@@ -369,6 +386,38 @@ Style profiles let attorneys steer Draft mode toward a specific legal voice. The
 
 Phase 3 ships with a curated read-only default profile and supports user-created editable profiles.
 
+### Synthesis
+
+The synthesis layer introduces two `SynthesisDraft` records per client:
+
+- `statement-of-eligibility`
+- `final-merits-determination`
+
+Each synthesis draft:
+
+- is append-only by version
+- can be approved independently
+- cites both exhibits and approved criterion draft paragraphs
+- reuses the fact-check and generic-prose infrastructure
+- can draw from synthesis-specific exemplars in the active style profile
+
+### Stitching
+
+The stitching layer is deterministic and consumes approved upstream artifacts:
+
+- locked strategy
+- approved criterion drafts
+- approved synthesis sections
+- locked exhibit assignments and pinboards
+
+It produces:
+
+- ordered petition sections
+- normalized exhibit references
+- audit findings
+- Bates ranges
+- preview and filable packet PDFs
+
 ## 11. Migration behavior
 
 Phase 1 uses lazy migration for historical workspaces.
@@ -381,7 +430,7 @@ When older jobs are encountered:
 
 Default migration behavior is one client per historical workspace unless the data is later consolidated manually.
 
-## 12. API surface emphasized through Phase 3
+## 12. API surface emphasized through Phase 4
 
 ### Client routes
 
@@ -419,6 +468,17 @@ Default migration behavior is one client per historical workspace unless the dat
 - `GET /api/style-profiles/active`
 - `POST /api/style-profiles/active`
 
+### Synthesis and packet routes
+
+- `GET /api/clients/<clientId>/synthesis`
+- `POST /api/clients/<clientId>/synthesis/<kind>`
+- `POST /api/clients/<clientId>/synthesis/<kind>/approve`
+- `GET /api/clients/<clientId>/synthesis/<kind>/versions/<version>`
+- `GET /api/clients/<clientId>/packet`
+- `POST /api/clients/<clientId>/packet`
+- `GET /api/clients/<clientId>/packet/preview`
+- `GET /api/clients/<clientId>/packet/download`
+
 ## 13. Validation expectations
 
 Baseline validation:
@@ -438,6 +498,9 @@ Lifecycle validation should additionally confirm:
 - `/clients/<clientId>/lock` renders stable exhibit staging
 - `/clients/<clientId>/drafting` renders the criterion queue
 - `/clients/<clientId>/drafting/<criterionCode>` renders the full drafting workspace
+- `/clients/<clientId>/synthesis` renders synthesis tabs, approved criterion references, and section-specific Ask Setu
+- `/clients/<clientId>/stitching` renders readiness, sections, findings, and packet CTAs
 - pending review actions update counts immediately and persist after reload
 - workspace isolation remains intact across client views
 - cross-client retrieval never leaks into strategy or drafts
+- packet preview and packet generation succeed for a client with approved upstream artifacts

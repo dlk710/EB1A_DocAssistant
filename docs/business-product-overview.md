@@ -4,7 +4,7 @@
 
 Setu is a local-first immigration evidence platform built to help legal teams move from scattered evidence folders to a structured, reviewable petition-preparation workflow.
 
-Phase 1 changed the product frame from a single workspace tool into a **client-centered lifecycle system**. Phase 2 extended that system into strategy and case-theory commitment. Phase 3 turns that locked theory into controlled petition drafting:
+Phase 1 changed the product frame from a single workspace tool into a **client-centered lifecycle system**. Phase 2 extended that system into strategy and case-theory commitment. Phase 3 turned that locked theory into controlled petition drafting. Phase 4 completes the working petition path with synthesis and packet assembly:
 
 - a client can have multiple workspaces over time
 - the home surface starts with client status, blockers, and recent activity
@@ -12,8 +12,10 @@ Phase 1 changed the product frame from a single workspace tool into a **client-c
 - the strategy surface retrieves across the client’s ready workspaces
 - the lock stage commits the criteria mix and stable exhibits for later drafting
 - the drafting stage produces per-criterion prose with version history, fact-check signals, and attorney style profiles
+- the synthesis stage produces Statement of Eligibility and Final Merits Determination sections
+- the stitching stage assembles a Bates-numbered packet preview and filable PDF
 
-The current emphasis is still evidence intelligence, review discipline, attorney-guided strategy, and controlled drafting. Setu now drafts criterion arguments, but still stops short of full petition stitching and export.
+The current emphasis is still evidence intelligence, review discipline, attorney-guided strategy, and controlled writing, but the product now extends through packet assembly rather than stopping at criterion drafts.
 
 ## 2. Core business problem
 
@@ -91,6 +93,8 @@ Setu is currently a multi-pass evidence workbench wrapped in a client lifecycle 
 - evidence preview
 - output packaging
 - criterion-level drafting
+- synthesis sections
+- packet readiness and PDF export
 - style profile management
 
 The current product is not just a search tool and not just a document manager. It is a review system built around progressive interpretation and staged human action.
@@ -139,7 +143,9 @@ The live operating flow is:
 10. generate a client-wide strategy memo and stress-test it
 11. lock the criteria mix and stable exhibits
 12. draft criterion arguments with style-profile guidance
-13. approve criterion drafts for later stitching
+13. approve criterion drafts
+14. synthesize the opening and closing petition sections
+15. review packet findings, preview the assembled petition, and generate the filable packet
 
 This is intentionally progressive. Later passes do not erase earlier ones.
 
@@ -203,6 +209,26 @@ The drafting stage is the production-writing surface:
 - style-profile-driven Draft mode
 - fact-check and generic-prose warnings before approval
 
+### Synthesis stage
+
+The synthesis stage is where Setu turns approved criterion arguments into petition-level analytical sections:
+
+- Statement of Eligibility
+- Final Merits Determination
+- synthesis-specific fact-checking against exhibits and approved criterion drafts
+- synthesis-aware Draft mode in Ask Setu
+
+### Stitching stage
+
+The stitching stage is where Setu assembles the filing packet:
+
+- cover sheet and table of contents
+- synthesis sections and approved criterion arguments
+- exhibit index and exhibits
+- packet-level findings
+- Bates ranges
+- preview and filable PDF generation
+
 ## 10. Experience goals
 
 The intended experience is:
@@ -231,16 +257,14 @@ The current branch is not trying to become:
 - a multi-tenant cloud collaboration platform
 - a final end-to-end petition lifecycle suite
 
-Specifically deferred beyond Phase 3:
+Still deferred beyond the current branch:
 
-- full petition stitching
-- packet PDF assembly
-- exhibit auditing and Bates numbering
-- statement of eligibility assembly
-- final merits determination assembly
 - collaborative redlines and live co-editing
+- USCIS filing integration
+- packet variant management across refilings
+- multi-petition-type expansion beyond EB-1A
 
-The current scope ends at approved per-criterion drafts and preserved downstream structure.
+The current scope now reaches assembled packet preview and filable PDF generation, but not filing itself.
 
 ## 12. Success indicators
 
@@ -254,6 +278,8 @@ Useful signals for this stage:
 - drafts that require less attorney rewriting before approval
 - fewer factual drift issues reaching the attorney after draft generation
 - a drafting workflow that stays criterion-scoped and manageable instead of overwhelming
+- synthesis sections that are edit-quality instead of rewrite-quality
+- packet previews that surface filing blockers before export rather than after
 
 ## 13. Operational posture
 

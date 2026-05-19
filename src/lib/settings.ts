@@ -2,6 +2,8 @@ import { EXPORT_ROOT, QDRANT_COLLECTION, QDRANT_URL } from "@/lib/constants";
 import {
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
+  DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
+  DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE,
   DEFAULT_SUMMARY_PROMPT_TEMPLATE,
   DEFAULT_TAGGING_PROMPT_TEMPLATE,
   DEFAULT_STRATEGY_PROMPT_TEMPLATE,
@@ -22,6 +24,8 @@ export interface RuntimeSettings {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  statementOfEligibilityPrompt: string;
+  finalMeritsDeterminationPrompt: string;
   activeStyleProfileId: string;
   openAiApiKey: string | null;
   summaryModel: string;
@@ -41,6 +45,8 @@ interface PersistedSettingsState {
   strategyPrompt?: string | null;
   stressTestPrompt?: string | null;
   draftPrompt?: string | null;
+  statementOfEligibilityPrompt?: string | null;
+  finalMeritsDeterminationPrompt?: string | null;
   activeStyleProfileId?: string | null;
   openAiApiKey?: string | null;
   summaryModel?: string | null;
@@ -105,6 +111,14 @@ export function getRuntimeSettings(): RuntimeSettings {
       persisted.draftPrompt?.trim() ||
       process.env.EB1A_DRAFT_PROMPT ||
       DEFAULT_DRAFT_PROMPT_TEMPLATE,
+    statementOfEligibilityPrompt:
+      persisted.statementOfEligibilityPrompt?.trim() ||
+      process.env.EB1A_STATEMENT_OF_ELIGIBILITY_PROMPT ||
+      DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE,
+    finalMeritsDeterminationPrompt:
+      persisted.finalMeritsDeterminationPrompt?.trim() ||
+      process.env.EB1A_FINAL_MERITS_DETERMINATION_PROMPT ||
+      DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
     activeStyleProfileId:
       persisted.activeStyleProfileId?.trim() ||
       process.env.EB1A_ACTIVE_STYLE_PROFILE_ID ||
@@ -137,6 +151,8 @@ export function saveRuntimeSettings(input: {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  statementOfEligibilityPrompt: string;
+  finalMeritsDeterminationPrompt: string;
   activeStyleProfileId?: string;
   apiKey?: string;
   summaryModel: string;
@@ -158,6 +174,12 @@ export function saveRuntimeSettings(input: {
     stressTestPrompt:
       input.stressTestPrompt.trim() || DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
     draftPrompt: input.draftPrompt.trim() || DEFAULT_DRAFT_PROMPT_TEMPLATE,
+    statementOfEligibilityPrompt:
+      input.statementOfEligibilityPrompt.trim() ||
+      DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE,
+    finalMeritsDeterminationPrompt:
+      input.finalMeritsDeterminationPrompt.trim() ||
+      DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
     activeStyleProfileId: input.activeStyleProfileId?.trim() || current.activeStyleProfileId?.trim() || "default",
     openAiApiKey: input.apiKey?.trim() ? input.apiKey.trim() : current.openAiApiKey || null,
     summaryModel: input.summaryModel.trim(),
@@ -178,6 +200,8 @@ export function setActiveStyleProfileId(activeStyleProfileId: string) {
     strategyPrompt: current.strategyPrompt,
     stressTestPrompt: current.stressTestPrompt,
     draftPrompt: current.draftPrompt,
+    statementOfEligibilityPrompt: current.statementOfEligibilityPrompt,
+    finalMeritsDeterminationPrompt: current.finalMeritsDeterminationPrompt,
     activeStyleProfileId,
     summaryModel: current.summaryModel,
     embeddingModel: current.embeddingModel,
@@ -198,6 +222,8 @@ export function getPublicSettings(): SettingsSnapshot {
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,
     draftPrompt: settings.draftPrompt,
+    statementOfEligibilityPrompt: settings.statementOfEligibilityPrompt,
+    finalMeritsDeterminationPrompt: settings.finalMeritsDeterminationPrompt,
     activeStyleProfileId: settings.activeStyleProfileId,
     hasApiKey: Boolean(settings.openAiApiKey),
     apiKeyMask: maskSecret(settings.openAiApiKey),

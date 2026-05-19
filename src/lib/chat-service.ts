@@ -44,9 +44,14 @@ import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
 import { searchDocumentsAcrossWorkspaces } from "@/lib/qdrant";
 import { selectStyleExemplars } from "@/lib/style-profiles";
+import { generateSynthesisVersion } from "@/lib/synthesis-service";
 import type {
   BriefDraft,
   ChatMode,
+  ChatMessageCitation,
+  ChatResponse,
+  SynthesisChatDraft,
+  SynthesisSectionKind,
   ChatTurn,
   ClientDocument,
   LibrarySnapshot,
@@ -339,6 +344,54 @@ function buildCriterionStrategyBlock(clientId: string, criterionCode: string, st
       ? strategyMemo.leadArgument.narrativeSpine
       : lockedStrategy?.narrativeSpine ?? null,
   });
+}
+
+function formatSynthesisTitle(kind: SynthesisSectionKind) {
+  return kind === "statement-of-eligibility"
+    ? "Statement of Eligibility"
+    : "Final Merits Determination";
+}
+
+function buildSynthesisChatCitations(
+  artifact: SynthesisChatDraft,
+  snapshot: LibrarySnapshot,
+): ChatMessageCitation[] {
+  const documentLookup = new Map(
+    snapshot.clientDocuments.map((document) => [document.id, document]),
+  );
+  const seen = new Set<string>();
+
+  return artifact.paragraphs.flatMap((paragraph) =>
+    paragraph.citations.flatMap((citation) => {
+      if (!citation.docId) {
+        return [];
+      }
+
+      const document = documentLookup.get(citation.docId);
+      if (!document) {
+        return [];
+      }
+
+      const key = `${citation.docId}:${citation.supports}`;
+      if (seen.has(key)) {
+        return [];
+      }
+      seen.add(key);
+
+      return [
+        {
+          docId: citation.docId,
+          workspaceId: document.jobId,
+          excerpt: citation.excerpt || citation.supports,
+          supports: citation.supports,
+          label:
+            paragraph.exhibitRefs[0] ||
+            document.summary?.title ||
+            document.fileName,
+        },
+      ];
+    }),
+  );
 }
 
 export async function generateClientBriefDraft(input: {
@@ -822,6 +875,7 @@ export async function runClientChatTurn(input: {
   modeHint?: ChatMode | null;
   sessionMode: ChatMode;
   criterionCode?: string | null;
+  synthesisKind?: SynthesisSectionKind | null;
 }) {
   const snapshot = await buildLibrarySnapshot({ clientId: input.clientId });
   const readiness = getChatReadiness(snapshot);
@@ -952,6 +1006,60 @@ export async function runClientChatTurn(input: {
       },
       costUsd: report.costUsd + classificationResult.costUsd,
       pendingDocsConsidered: report.report.pendingDocsConsidered,
+      classification,
+    };
+
+    return {
+      turn,
+      snapshot,
+    };
+  }
+
+  if (input.synthesisKind) {
+    const synthesis = await generateSynthesisVersion({
+      clientId: input.clientId,
+      kind: input.synthesisKind,
+      message: input.message,
+      snapshot,
+    });
+    const artifact: SynthesisChatDraft = {
+      schemaVersion: "synthesis-draft/1.0",
+      clientId: input.clientId,
+      createdAt: now,
+      kind: input.synthesisKind,
+      title: synthesis.title,
+      paragraphs: synthesis.versionSeed.paragraphs,
+      wordCount: synthesis.versionSeed.wordCount,
+      genericProseWarning: synthesis.versionSeed.genericProseWarning ?? null,
+      styleProfileId: synthesis.versionSeed.styleProfileId ?? null,
+      styleExemplarIds: synthesis.versionSeed.styleExemplarIds ?? [],
+      referencedCriteria: synthesis.versionSeed.referencedCriteria,
+    };
+    const citations = buildSynthesisChatCitations(artifact, snapshot);
+    const turn: ChatTurn = {
+      id: crypto.randomUUID(),
+      sessionId: "",
+      occurredAt: now,
+      userMessage: input.message,
+      mode,
+      modeWasProposed: classification.mode !== mode,
+      retrieval: {
+        docIds: citations.map((citation) => citation.docId),
+        scope: "client",
+      },
+      response: {
+        text: `${formatSynthesisTitle(input.synthesisKind)} draft prepared. Review the section text, criterion references, and exhibit support before promoting it into the synthesis workspace.`,
+        artifact,
+        citations,
+        reasoning: synthesis.reasoning,
+        droppedClaims: [],
+        pendingDisclosure:
+          reviewSets.pendingDocuments.length > 0
+            ? `Pending evidence remains in this client (${reviewSets.pendingDocuments.length} documents).`
+            : null,
+      } satisfies ChatResponse,
+      costUsd: synthesis.costUsd + classificationResult.costUsd,
+      pendingDocsConsidered: reviewSets.pendingDocuments.length,
       classification,
     };
 

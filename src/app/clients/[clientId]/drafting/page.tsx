@@ -47,7 +47,7 @@ export default async function ClientDraftingPage({ params }: ClientDraftingPageP
           : draft?.versions.length
             ? `v${draft.versions.at(-1)?.version} · ${status.replaceAll("-", " ")}`
             : "Not started",
-    };
+      };
   });
 
   return (

@@ -379,7 +379,8 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
                 label: "Drafting",
                 state: derivedStatus === "locked" ? "active" : "locked",
               },
-              { number: 6, label: "Stitching", state: "locked" },
+              { number: 6, label: "Synthesis", state: "locked" },
+              { number: 7, label: "Stitching", state: "locked" },
             ].map((stage) => (
               <div
                 key={stage.number}

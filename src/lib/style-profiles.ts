@@ -4,7 +4,7 @@ import path from "node:path";
 import { STORAGE_ROOT } from "@/lib/constants";
 import { setActiveStyleProfileId } from "@/lib/settings";
 import { ensureStateSubdirectory, readAbsoluteStateFile, writeAbsoluteStateFile } from "@/lib/state-store";
-import type { StyleExemplar, StyleProfile } from "@/lib/types";
+import type { StyleExemplar, StyleProfile, SynthesisSectionKind } from "@/lib/types";
 
 const STYLE_PROFILE_STATE_DIR = ["style-profiles"];
 const DEFAULT_PROFILE_PATH = path.join(STORAGE_ROOT, "style-profiles", "default.json");
@@ -100,7 +100,12 @@ function normalizeProfile(profile: StyleProfile): StyleProfile {
     id: profile.id,
     attorneyId: profile.attorneyId || "default",
     displayName: profile.displayName || "Untitled profile",
-    exemplars: Array.isArray(profile.exemplars) ? profile.exemplars : [],
+    exemplars: Array.isArray(profile.exemplars)
+      ? profile.exemplars.map((exemplar) => ({
+          ...exemplar,
+          kind: exemplar.kind ?? null,
+        }))
+      : [],
     isDefault: Boolean(profile.isDefault),
     createdAt: profile.createdAt || new Date().toISOString(),
     updatedAt: profile.updatedAt || profile.createdAt || new Date().toISOString(),
@@ -273,10 +278,15 @@ function truncateWords(text: string, maxWords: number) {
 
 export function selectStyleExemplars(profileId: string, criterionCode: string) {
   const profile = getStyleProfile(profileId) || getDefaultStyleProfile();
-  const direct = profile.exemplars.filter((exemplar) => exemplar.criterionCode === criterionCode);
+  const direct = profile.exemplars.filter(
+    (exemplar) => !exemplar.kind && exemplar.criterionCode === criterionCode,
+  );
   const fallbackCodes = RELATED_CRITERIA[criterionCode] ?? [];
   const fallback = profile.exemplars.filter(
-    (exemplar) => !direct.some((entry) => entry.id === exemplar.id) && fallbackCodes.includes(exemplar.criterionCode),
+    (exemplar) =>
+      !exemplar.kind &&
+      !direct.some((entry) => entry.id === exemplar.id) &&
+      fallbackCodes.includes(exemplar.criterionCode),
   );
   const selected = [...direct, ...fallback]
     .sort((left, right) => right.text.length - left.text.length)
@@ -292,5 +302,32 @@ export function selectStyleExemplars(profileId: string, criterionCode: string) {
       ...exemplar,
       text: truncateWords(exemplar.text, 500),
     })),
+  };
+}
+
+export function selectSynthesisExemplars(
+  profileId: string,
+  kind: SynthesisSectionKind,
+) {
+  const profile = getStyleProfile(profileId) || getDefaultStyleProfile();
+  const direct = profile.exemplars.filter((exemplar) => exemplar.kind === kind);
+  const fallback = profile.exemplars.filter(
+    (exemplar) =>
+      !direct.some((entry) => entry.id === exemplar.id) &&
+      exemplar.kind === null &&
+      ["05", "08", "04", "06", "01"].includes(exemplar.criterionCode),
+  );
+  const selected = [...direct, ...fallback]
+    .sort((left, right) => right.text.length - left.text.length)
+    .slice(0, 3)
+    .map((exemplar) => ({
+      ...exemplar,
+      text: truncateWords(exemplar.text, 500),
+    }));
+
+  return {
+    profile,
+    exemplars: selected,
+    hasDirectKindExemplars: direct.length > 0,
   };
 }

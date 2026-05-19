@@ -4,6 +4,7 @@ import { addStyleExemplar, getStyleProfile } from "@/lib/style-profiles";
 const createExemplarSchema = z.object({
   label: z.string().min(1).max(200),
   criterionCode: z.string().min(1).max(8),
+  kind: z.enum(["statement-of-eligibility", "final-merits-determination"]).nullable().optional(),
   text: z.string().min(50).max(12000),
   approvedOutcome: z.boolean(),
   notes: z.string().max(1000),

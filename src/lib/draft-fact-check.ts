@@ -1,4 +1,9 @@
-import type { ClientDocument, DraftParagraph } from "@/lib/types";
+import type {
+  ClientDocument,
+  CriterionDraft,
+  DraftParagraph,
+  SynthesisParagraph,
+} from "@/lib/types";
 
 export interface FactCheckAssessment {
   drift: boolean;
@@ -8,6 +13,12 @@ export interface FactCheckAssessment {
 
 export interface DraftFactCheckResult {
   paragraphs: DraftParagraph[];
+  subtleCount: number;
+  blockingCount: number;
+}
+
+export interface SynthesisFactCheckResult {
+  paragraphs: SynthesisParagraph[];
   subtleCount: number;
   blockingCount: number;
 }
@@ -214,6 +225,137 @@ export function runDraftFactCheck(
       factCheckStatus: "verified" as const,
       factCheckNotes: undefined,
     };
+  });
+
+  return {
+    paragraphs: nextParagraphs,
+    subtleCount,
+    blockingCount,
+  };
+}
+
+function latestApprovedDraftParagraphs(draft: CriterionDraft | undefined | null) {
+  if (!draft || draft.latestApprovedVersion === null) {
+    return [];
+  }
+  return (
+    draft.versions.find((version) => version.version === draft.latestApprovedVersion)?.paragraphs ?? []
+  );
+}
+
+function synthesisCitationSupport(
+  paragraph: SynthesisParagraph,
+  approvedDraftLookup: Map<string, CriterionDraft>,
+) {
+  return paragraph.citations
+    .map((citation) => {
+      if (citation.docId) {
+        return citation.excerpt || "";
+      }
+
+      if (citation.criterionDraftId) {
+        const draft = approvedDraftLookup.get(citation.criterionDraftId);
+        const matchedParagraph = latestApprovedDraftParagraphs(draft).find(
+          (candidate) => candidate.id === citation.draftVersionParagraphId,
+        );
+        return citation.draftExcerpt || matchedParagraph?.text || "";
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+}
+
+export function factCheckSynthesisParagraph(input: {
+  paragraph: SynthesisParagraph;
+  documentLookup: Map<string, ClientDocument>;
+  approvedDraftLookup: Map<string, CriterionDraft>;
+}) {
+  const { paragraph, approvedDraftLookup } = input;
+
+  if (!paragraph.citations.length) {
+    return {
+      paragraph: {
+        ...paragraph,
+        factCheckStatus: "uncited" as const,
+        factCheckNotes: "No grounded citation backs this paragraph yet.",
+      },
+      subtle: false,
+      blocking: true,
+    };
+  }
+
+  const primaryClaim =
+    paragraph.citations[0]?.supports || paragraph.text.slice(0, 320);
+  const sources = synthesisCitationSupport(paragraph, approvedDraftLookup);
+  const assessments = sources.map((source) => factCheckClaimAgainstSource(primaryClaim, source));
+
+  if (!assessments.length || assessments.some((assessment) => assessment.severity === "significant")) {
+    return {
+      paragraph: {
+        ...paragraph,
+        factCheckStatus: "drift-detected" as const,
+        factCheckNotes:
+          `Significant drift: ${
+            assessments.find((assessment) => assessment.severity === "significant")?.note ||
+            "the paragraph and its cited support materially diverge."
+          }`,
+      },
+      subtle: false,
+      blocking: true,
+    };
+  }
+
+  if (assessments.some((assessment) => assessment.severity === "subtle")) {
+    return {
+      paragraph: {
+        ...paragraph,
+        factCheckStatus: "drift-detected" as const,
+        factCheckNotes:
+          `Subtle drift: ${
+            assessments.find((assessment) => assessment.severity === "subtle")?.note ||
+            "the paragraph is directionally supported but slightly stronger than its source material."
+          }`,
+      },
+      subtle: true,
+      blocking: false,
+    };
+  }
+
+  return {
+    paragraph: {
+      ...paragraph,
+      factCheckStatus: "verified" as const,
+      factCheckNotes: undefined,
+    },
+    subtle: false,
+    blocking: false,
+  };
+}
+
+export function runSynthesisFactCheck(
+  paragraphs: SynthesisParagraph[],
+  documentLookup: Map<string, ClientDocument>,
+  approvedDraftLookup: Map<string, CriterionDraft>,
+): SynthesisFactCheckResult {
+  let subtleCount = 0;
+  let blockingCount = 0;
+
+  const nextParagraphs = paragraphs.map((paragraph) => {
+    const result = factCheckSynthesisParagraph({
+      paragraph,
+      documentLookup,
+      approvedDraftLookup,
+    });
+
+    if (result.subtle) {
+      subtleCount += 1;
+    }
+    if (result.blocking) {
+      blockingCount += 1;
+    }
+
+    return result.paragraph;
   });
 
   return {

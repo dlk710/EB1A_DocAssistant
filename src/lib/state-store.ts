@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   EXPORT_ROOT,
+  PACKET_ROOT,
   PREVIEW_ROOT,
   QDRANT_STORAGE_ROOT,
   STATE_ROOT,
@@ -20,6 +21,7 @@ export function ensureStorageRoots() {
   ensureDirectory(PREVIEW_ROOT);
   ensureDirectory(QDRANT_STORAGE_ROOT);
   ensureDirectory(EXPORT_ROOT);
+  ensureDirectory(PACKET_ROOT);
 }
 
 function writeJsonAtomic(filePath: string, value: unknown) {
@@ -62,6 +64,13 @@ export function ensureStateSubdirectory(...segments: string[]) {
 
 export function ensureClientStorage(clientId: string) {
   return ensureStateSubdirectory("clients", clientId);
+}
+
+export function ensurePacketStorage(clientId: string) {
+  ensureStorageRoots();
+  const directoryPath = path.join(PACKET_ROOT, clientId);
+  ensureDirectory(directoryPath);
+  return directoryPath;
 }
 
 export function readAbsoluteStateFile<T>(filePath: string, fallback: T): T {

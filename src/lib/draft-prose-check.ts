@@ -20,13 +20,23 @@ export interface GenericProseCheckResult {
   message: string | null;
 }
 
+interface GenericProseCheckOptions {
+  shortParagraphThreshold?: number;
+  overallThreshold?: number;
+}
+
 function countPhrase(value: string, phrase: string) {
   const matches = value.match(new RegExp(`\\b${phrase.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "gi"));
   return matches?.length ?? 0;
 }
 
-export function runGenericProseCheck(paragraphs: Array<Pick<DraftParagraph, "text">>): GenericProseCheckResult {
+export function runGenericProseCheck(
+  paragraphs: Array<Pick<DraftParagraph, "text">>,
+  options: GenericProseCheckOptions = {},
+): GenericProseCheckResult {
   const joined = paragraphs.map((paragraph) => paragraph.text).join("\n");
+  const shortParagraphThreshold = options.shortParagraphThreshold ?? 3;
+  const overallThreshold = options.overallThreshold ?? 8;
   const perPhrase = GENERIC_PHRASES.map((phrase) => ({
     phrase,
     count: countPhrase(joined, phrase),
@@ -37,9 +47,12 @@ export function runGenericProseCheck(paragraphs: Array<Pick<DraftParagraph, "tex
     if (wordCount > 80) {
       return false;
     }
-    return perPhrase.reduce((sum, entry) => sum + countPhrase(paragraph.text, entry.phrase), 0) >= 3;
+    return (
+      perPhrase.reduce((sum, entry) => sum + countPhrase(paragraph.text, entry.phrase), 0) >=
+      shortParagraphThreshold
+    );
   });
-  const triggered = shortParagraphSpike || score >= 8;
+  const triggered = shortParagraphSpike || score >= overallThreshold;
 
   return {
     triggered,

@@ -36,7 +36,7 @@ export const triageAnswerSchema = z.object({
   schemaVersion: z.literal("triage-answer/1.0"),
   answer: z.array(
     z.object({
-      text: z.string().min(1).max(600),
+      text: z.string().min(1).max(1200),
       docIds: z.array(z.string().min(1)).min(1).max(6),
     }),
   ),

@@ -54,6 +54,7 @@ export type ClientStatus =
   | "strategizing"
   | "locked"
   | "drafting"
+  | "synthesizing"
   | "stitching"
   | "filed"
   | "rfe-response"
@@ -245,6 +246,8 @@ export interface SettingsSnapshot {
   strategyPrompt: string;
   stressTestPrompt: string;
   draftPrompt: string;
+  statementOfEligibilityPrompt: string;
+  finalMeritsDeterminationPrompt: string;
   activeStyleProfileId: string;
   hasApiKey: boolean;
   apiKeyMask: string | null;
@@ -560,6 +563,20 @@ export interface BriefDraft {
   retrievedDocIds?: string[];
 }
 
+export interface SynthesisChatDraft {
+  schemaVersion: "synthesis-draft/1.0";
+  clientId: string;
+  createdAt: string;
+  kind: SynthesisSectionKind;
+  title: string;
+  paragraphs: SynthesisParagraph[];
+  wordCount: number;
+  genericProseWarning?: string | null;
+  styleProfileId?: string | null;
+  styleExemplarIds?: string[];
+  referencedCriteria?: string[];
+}
+
 export interface ChatMessageCitation {
   docId: string;
   workspaceId: string;
@@ -576,7 +593,7 @@ export interface RetrievalResult {
 
 export interface ChatResponse {
   text: string;
-  artifact?: StrategyMemo | StressTestReport | BriefDraft;
+  artifact?: StrategyMemo | StressTestReport | BriefDraft | SynthesisChatDraft;
   citations: ChatMessageCitation[];
   reasoning: string;
   droppedClaims: string[];
@@ -729,10 +746,60 @@ export interface CriterionDraft {
   outOfDate?: boolean;
 }
 
+export type SynthesisSectionKind =
+  | "statement-of-eligibility"
+  | "final-merits-determination";
+
+export interface SynthesisCitation {
+  docId?: string;
+  workspaceId?: string;
+  excerpt?: string;
+  criterionDraftId?: string;
+  draftVersionParagraphId?: string;
+  draftExcerpt?: string;
+  supports: string;
+}
+
+export interface SynthesisParagraph {
+  id: string;
+  text: string;
+  exhibitRefs: string[];
+  criterionRefs: string[];
+  citations: SynthesisCitation[];
+  factCheckStatus: "verified" | "drift-detected" | "uncited" | "pending";
+  factCheckNotes?: string;
+}
+
+export interface SynthesisVersion {
+  version: number;
+  createdAt: string;
+  source: "ai" | "manual" | "ai-edited";
+  authorNotes: string;
+  paragraphs: SynthesisParagraph[];
+  wordCount: number;
+  costUsd: number;
+  referencedCriteria: string[];
+  genericProseWarning?: string | null;
+  styleProfileId?: string | null;
+  styleExemplarIds?: string[];
+}
+
+export interface SynthesisDraft {
+  id: string;
+  clientId: string;
+  kind: SynthesisSectionKind;
+  status: "in-progress" | "approved" | "out-of-date";
+  versions: SynthesisVersion[];
+  latestApprovedVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StyleExemplar {
   id: string;
   label: string;
   criterionCode: string;
+  kind?: SynthesisSectionKind | null;
   text: string;
   approvedOutcome: boolean;
   notes: string;
@@ -746,4 +813,110 @@ export interface StyleProfile {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BatesRange {
+  start: string;
+  end: string;
+}
+
+export interface ExhibitIndexEntry {
+  exhibitNumber: string;
+  title: string;
+  workspaceId: string;
+  docId: string;
+  pageRange: { start: number; end: number };
+  bates: BatesRange;
+}
+
+export interface AuditFinding {
+  id: string;
+  severity: "blocking" | "warning" | "info";
+  kind:
+    | "pinned-exhibit-uncited"
+    | "cited-exhibit-missing"
+    | "criterion-reference-out-of-sync"
+    | "draft-source-out-of-date"
+    | "exhibit-numbering-gap"
+    | "bates-pagination-error"
+    | "unsupported-exhibit-type"
+    | string;
+  description: string;
+  affectedSection?: string;
+  affectedExhibit?: string;
+  suggestedActions: Array<{ label: string; action: string }>;
+}
+
+export interface CoverSheetContent {
+  candidateName: string;
+  petitionType: string;
+  filedDate: string | null;
+  attorneyName: string | null;
+  firmName: string | null;
+  preparedBy: "Setu";
+}
+
+export interface TocEntry {
+  sectionTitle: string;
+  startingBates: string;
+  startingPage: number;
+}
+
+export type PetitionSection =
+  | { kind: "cover"; content: CoverSheetContent; bates: BatesRange; pageCount: number }
+  | { kind: "table-of-contents"; entries: TocEntry[]; bates: BatesRange; pageCount: number }
+  | {
+      kind: "statement-of-eligibility";
+      sourceSynthesisVersion: number;
+      content: string;
+      bates: BatesRange;
+      pageCount: number;
+    }
+  | {
+      kind: "criterion-argument";
+      criterionCode: string;
+      sourceDraftVersion: number;
+      content: string;
+      bates: BatesRange;
+      pageCount: number;
+    }
+  | {
+      kind: "final-merits-determination";
+      sourceSynthesisVersion: number;
+      content: string;
+      bates: BatesRange;
+      pageCount: number;
+    }
+  | {
+      kind: "exhibit-index";
+      entries: ExhibitIndexEntry[];
+      bates: BatesRange;
+      pageCount: number;
+    }
+  | {
+      kind: "exhibit";
+      exhibitNumber: string;
+      sourceDocId: string;
+      workspaceId: string;
+      title: string;
+      sourcePath: string;
+      sourceMimeType: string;
+      bates: BatesRange;
+      pageCount: number;
+    };
+
+export interface AssembledPetition {
+  id: string;
+  clientId: string;
+  generatedAt: string;
+  generatedBy: string;
+  status: "draft" | "ready" | "exported";
+  sections: PetitionSection[];
+  exhibitIndex: ExhibitIndexEntry[];
+  batesRange: { start: string; end: string };
+  totalPages: number;
+  findings: AuditFinding[];
+  invalidatedAt: string | null;
+  invalidationReason: string | null;
+  pdfPath: string | null;
 }

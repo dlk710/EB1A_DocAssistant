@@ -4,6 +4,7 @@ const PIPELINE_STAGES = [
   "Strategy",
   "Lock",
   "Drafting",
+  "Synthesis",
   "Stitching",
 ] as const;
 

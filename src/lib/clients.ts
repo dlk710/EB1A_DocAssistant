@@ -283,12 +283,16 @@ export function getClientStageNumber(status: ClientStatus) {
       return 4;
     case "drafting":
       return 5;
+    case "synthesizing":
+      return 6;
     case "stitching":
+      return 7;
     case "filed":
+      return 7;
     case "rfe-response":
     case "decided":
     case "archived":
-      return 6;
+      return 7;
     default:
       return 1;
   }
@@ -304,10 +308,31 @@ export function getDraftLifecycleStatus(input: {
   }
 
   if (input.claimedCriteriaCount > 0 && input.approvedCriteriaCount >= input.claimedCriteriaCount) {
-    return "stitching" satisfies ClientStatus;
+    return "synthesizing" satisfies ClientStatus;
   }
 
   return "drafting" satisfies ClientStatus;
+}
+
+export function getSynthesisLifecycleStatus(input: {
+  locked: boolean;
+  claimedCriteriaCount: number;
+  approvedCriteriaCount: number;
+  approvedSynthesisCount: number;
+}) {
+  if (!input.locked) {
+    return "strategizing" satisfies ClientStatus;
+  }
+
+  if (input.claimedCriteriaCount === 0 || input.approvedCriteriaCount < input.claimedCriteriaCount) {
+    return "drafting" satisfies ClientStatus;
+  }
+
+  if (input.approvedSynthesisCount >= 2) {
+    return "stitching" satisfies ClientStatus;
+  }
+
+  return "synthesizing" satisfies ClientStatus;
 }
 
 export function listClientJobs(clientId: string) {

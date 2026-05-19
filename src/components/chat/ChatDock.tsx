@@ -11,6 +11,7 @@ import type {
   ChatMode,
   ChatSession,
   ChatTurn,
+  SynthesisSectionKind,
 } from "@/lib/types";
 
 interface ChatReadyResponse {
@@ -59,6 +60,7 @@ export function ChatDock(props: {
   variant?: "launcher" | "panel";
   initialMode?: ChatMode;
   criterionCode?: string | null;
+  synthesisKind?: SynthesisSectionKind | null;
   draftEnabled?: boolean;
 }) {
   const variant = props.variant ?? "launcher";
@@ -181,6 +183,7 @@ export function ChatDock(props: {
           message: draftMessage.trim(),
           modeHint: mode,
           criterionCode: props.criterionCode,
+          synthesisKind: props.synthesisKind,
         }),
       });
 

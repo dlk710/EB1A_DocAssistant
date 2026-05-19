@@ -41,7 +41,7 @@ export default function StyleProfilesPage() {
                 </span>
               </div>
               <p className="setu-brand-tagline">
-                Curate exemplar prose so Draft mode matches your petition voice.
+                Curate exemplar prose so drafting and synthesis match your petition voice.
               </p>
             </div>
             <Link

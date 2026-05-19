@@ -72,6 +72,7 @@ export function DraftingWorkspace(props: {
     () => currentVersion?.paragraphs ?? [],
     [currentVersion],
   );
+  const allApproved = props.tabs.every((tab) => tab.status === "approved");
 
   function updateParagraphText(paragraphId: string, text: string) {
     setDraft((current) => ({
@@ -273,7 +274,17 @@ export function DraftingWorkspace(props: {
         </header>
 
         <div className="mt-5 space-y-4">
-          <CriterionTabStrip tabs={props.tabs} />
+          <CriterionTabStrip
+            tabs={props.tabs}
+            completionCta={
+              allApproved
+                ? {
+                    label: "Continue to synthesis",
+                    href: `/clients/${props.clientId}/synthesis`,
+                  }
+                : null
+            }
+          />
 
           {errorMessage ? (
             <div className="rounded-[16px] border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] px-4 py-3 text-[12px] leading-6 text-[var(--state-danger)]">

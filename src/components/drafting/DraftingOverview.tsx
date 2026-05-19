@@ -16,6 +16,9 @@ export function DraftingOverview(props: {
   clientName: string;
   entries: DraftingOverviewEntry[];
 }) {
+  const approvedCount = props.entries.filter((entry) => entry.status === "approved").length;
+  const allApproved = props.entries.length > 0 && approvedCount === props.entries.length;
+
   return (
     <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
       <div className="mx-auto max-w-[1360px]">
@@ -49,6 +52,14 @@ export function DraftingOverview(props: {
               >
                 Style profiles
               </Link>
+              {allApproved ? (
+                <Link
+                  href={`/clients/${props.clientId}/synthesis`}
+                  className="setu-primary-button inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[11px] font-semibold text-white"
+                >
+                  Continue to synthesis
+                </Link>
+              ) : null}
             </div>
           </div>
         </header>
@@ -58,10 +69,14 @@ export function DraftingOverview(props: {
             Drafting queue
           </p>
           <h1 className="mt-2 text-[28px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-            Approved criterion drafts ready for stitching start here
+            {allApproved
+              ? "All claimed criteria are approved and ready for synthesis"
+              : "Build each claimed criterion into approved petition prose"}
           </h1>
           <p className="mt-2 max-w-[820px] text-[13px] leading-7 text-[var(--muted)]">
-            Open any claimed criterion to generate, edit, compare, and approve the argument draft. Setu keeps versions, fact-check signals, and Ask Setu Draft mode scoped to the selected criterion.
+            {allApproved
+              ? "The per-criterion argument set is complete. Continue into synthesis to draft the Statement of Eligibility and Final Merits Determination."
+              : "Open any claimed criterion to generate, edit, compare, and approve the argument draft. Setu keeps versions, fact-check signals, and Ask Setu Draft mode scoped to the selected criterion."}
           </p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

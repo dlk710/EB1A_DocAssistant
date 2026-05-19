@@ -105,7 +105,7 @@ export default function StyleProfileEditorPage() {
                   <p className="mt-1 text-[12px] leading-6 text-[var(--muted)]">
                     {profile.isDefault
                       ? "The default profile is read-only."
-                      : "Add the attorney’s strongest approved petition prose as reference style."}
+                      : "Add the attorney’s strongest approved petition prose as reference style, including Statement of Eligibility and Final Merits examples."}
                   </p>
                 </div>
                 {!profile.isDefault ? (

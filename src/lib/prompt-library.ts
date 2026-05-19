@@ -98,6 +98,55 @@ export const DEFAULT_DRAFT_PROMPT_TEMPLATE = [
   "Write in the voice of an immigration attorney: declarative, evidence-led, sparing on adjectives.",
 ].join(" ");
 
+export const DEFAULT_STATEMENT_OF_ELIGIBILITY_PROMPT_TEMPLATE = [
+  "You are drafting the Statement of Eligibility for {{candidateName}}'s EB-1A petition.",
+  "This section opens the petition.",
+  "It must identify the petitioner and the basis of the petition under 8 CFR §204.5(h)(3).",
+  "It must enumerate the claimed criteria by code and name and state that the threshold is satisfied.",
+  "It must briefly frame the lead argument from the locked strategy without repeating full criterion arguments.",
+  "Keep the section concise: 150 to 250 words.",
+  "Locked strategy: {{lockedStrategyBlock}}.",
+  "Approved criterion drafts (abbreviated): {{approvedDraftsBlock}}.",
+  "{{stylebookExemplars}}",
+  "HARD RULES:",
+  "Every claim must reference either an exhibit or an approved per-criterion draft.",
+  "Do not characterize claims more strongly than the underlying drafts characterize them.",
+  "Do not introduce facts not present in approved drafts or referenced exhibits.",
+  "State, do not argue. Detailed arguments live in the criterion sections.",
+  "Use declarative voice. No hedging unless the evidence requires it.",
+  "Reference 8 CFR §204.5(h)(3) explicitly.",
+  "Produce a SynthesisDraft JSON object matching schema {{synthesisSchema}}.",
+].join(" ");
+
+export const DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE = [
+  "You are drafting the Final Merits Determination for {{candidateName}}'s EB-1A petition.",
+  "This section closes the petition and must follow the Kazarian two-step structure.",
+  "Step one: state that the petitioner satisfies at least three of the ten criteria in 8 CFR §204.5(h)(3), and identify the specific criteria by code and name.",
+  "Step two: synthesize across the approved criterion drafts to argue that the totality of the evidence demonstrates sustained national or international acclaim and that the petitioner is among the small percentage at the very top of the field.",
+  "Length: 250 to 450 words across three to five paragraphs.",
+  "Locked strategy: {{lockedStrategyBlock}}.",
+  "Approved criterion drafts (full text): {{approvedDraftsBlock}}.",
+  "{{stylebookExemplars}}",
+  "HARD RULES:",
+  "Every paragraph must reference at least one exhibit or one approved per-criterion draft section.",
+  "Do not introduce facts not present in approved drafts or referenced exhibits.",
+  "Do not characterize the case more strongly than the underlying drafts characterize it.",
+  "Do not cite case law by name unless it is in the workspace as evidence.",
+  "Be analytical, not rhetorical.",
+  "Avoid superlatives unless the source text uses them.",
+  "The Step One paragraph must enumerate the satisfied criteria by code and name.",
+  "The Step Two paragraphs must synthesize patterns rather than repeat criterion arguments.",
+  "Produce a SynthesisDraft JSON object matching schema {{synthesisSchema}}.",
+].join(" ");
+
+export function formatSynthesisSectionLabel(kind: string) {
+  return kind === "statement-of-eligibility"
+    ? "Statement of Eligibility"
+    : kind === "final-merits-determination"
+      ? "Final Merits Determination"
+      : kind;
+}
+
 export function fillPromptTemplate(
   template: string,
   replacements: Record<string, string>,

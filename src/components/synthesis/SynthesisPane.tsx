@@ -17,7 +17,7 @@ export function SynthesisPane(props: {
       {props.referenceDraft ? (
         <div className="mb-4 rounded-[16px] border border-[var(--brand)]/18 bg-[var(--brand-soft)]/55 px-4 py-4">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--brand-deep)]">
-            Reference draft · {props.referenceDraft.legalCode}
+            Reference draft
           </p>
           <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
             {props.referenceDraft.criterionName}

@@ -22,7 +22,9 @@ export function RoutineRow({ label, count, samples, href, onContextMenu }: Routi
           {count} {label}
         </p>
         <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-          {samples.length ? samples.join(", ") : "Open the dense workbench when you want to spot-check the routine work."}
+          {samples.length
+            ? samples.join(", ")
+            : "Open the dense workbench when you want to spot-check the routine work."}
         </p>
       </div>
       {href ? (

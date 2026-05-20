@@ -1,6 +1,7 @@
 "use client";
 
 import { Pin } from "lucide-react";
+import { getCriterionDisplayName } from "@/lib/constants";
 import type { ChatMessageCitation, StressTestReport } from "@/lib/types";
 
 export function StressTestReportCard(props: {
@@ -39,7 +40,7 @@ export function StressTestReportCard(props: {
           <div key={`${challenge.criterionCode}-${index}`} className="rounded-[12px] bg-rose-50 px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-rose-800">
-                {challenge.criterionCode}
+                {getCriterionDisplayName(challenge.criterionCode)}
               </span>
               <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-rose-800">
                 {challenge.severity}

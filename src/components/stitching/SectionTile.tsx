@@ -1,5 +1,6 @@
 "use client";
 
+import { getCriterionDisplayName } from "@/lib/constants";
 import type { PetitionSection } from "@/lib/types";
 
 function sectionLabel(section: PetitionSection) {
@@ -11,7 +12,7 @@ function sectionLabel(section: PetitionSection) {
     case "statement-of-eligibility":
       return "Statement of Eligibility";
     case "criterion-argument":
-      return `Criterion ${section.criterionCode}`;
+      return getCriterionDisplayName(section.criterionCode, "Criterion");
     case "final-merits-determination":
       return "Final Merits Determination";
     case "exhibit-index":

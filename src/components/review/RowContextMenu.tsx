@@ -65,7 +65,7 @@ export function RowContextMenu({
   const workspace = workspaceContexts.find((entry) => entry.jobId === item.jobId) ?? null;
   const criterionItems = EB1A_CRITERIA_DEFINITIONS.map<ContextMenuEntry>((criterion) => ({
     id: `criterion-${criterion.code}`,
-    label: `${criterion.legalCode} ${criterion.name} · ${criterionCounts[criterion.code] ?? 0} docs`,
+    label: `${criterion.name} · ${criterionCounts[criterion.code] ?? 0} docs`,
   }));
 
   const keepPrimaryChildren = criterionItems.map((criterion) => ({

@@ -12,7 +12,7 @@ export function LockedCriterionRow(props: { entry: LockedCriterionEntry }) {
       <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-            {props.entry.legalCode}
+            {props.entry.role} criterion
           </p>
           <h3 className="mt-1 text-[15px] font-semibold text-[var(--foreground)]">
             {props.entry.criterionName}

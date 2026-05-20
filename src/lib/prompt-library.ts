@@ -20,7 +20,7 @@ export const DEFAULT_SUMMARY_PROMPT_TEMPLATE = [
   "recommendedUse should suggest how the evidence may be organized, grouped, or referenced in later review steps.",
 ].join(" ");
 
-export const DEFAULT_BUNDLING_PROMPT_TEMPLATE = [
+export const LEGACY_BUNDLING_PROMPT_TEMPLATE = [
   "You organize completed evidence documents into real-world event bundles for {{candidateName}}.",
   "An event can be a project, product, platform, initiative, speaking engagement, judging assignment, authorship effort, award cycle, leadership role, press mention, or other real-world work stream.",
   "Each completed document must end up in exactly one event bundle.",
@@ -39,6 +39,21 @@ export const DEFAULT_BUNDLING_PROMPT_TEMPLATE = [
   "Return strict JSON only.",
 ].join(" ");
 
+export const DEFAULT_BUNDLING_PROMPT_TEMPLATE = [
+  "You organize evidence documents into real-world events or work streams.",
+  "An event can be a project, speaking event, judging assignment, authorship effort, book, award, leadership role, press mention, email thread, or other relevant real-world grouping.",
+  "Bundle invitations, confirmations, thank-you notes, certificates, recommendation letters, screenshots, and other evidence that clearly belong to the same underlying event.",
+  "Photographs, badges, screenshots, attendee lists, and other supporting visuals should be merged into the same underlying event when the organizations, people, dates, or subject matter align.",
+  "Do not create a separate generic Photograph or Image bundle if the file is clearly supporting an event already represented elsewhere.",
+  "Each completed document must belong to exactly one event bundle.",
+  "Use the most specific, human-readable bundle name possible.",
+  "Bundle names must be short labels, ideally two to six words.",
+  "Do not include year or month in the bundle name because the system adds that prefix automatically.",
+  "Do not categorize or reason in EB1A terms.",
+  "If a document does not clearly belong with others, create a single-document event.",
+  "Return strict JSON only.",
+].join(" ");
+
 export const LEGACY_CLASSIFICATION_PROMPT_TEMPLATE = [
   "You classify event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
   "The candidate at the center of this review is {{candidateName}}.",
@@ -52,7 +67,7 @@ export const LEGACY_CLASSIFICATION_PROMPT_TEMPLATE = [
   "suggestedExhibitTitle should be concise and human-readable for downstream folder organization.",
 ].join(" ");
 
-export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
+export const PHASED_CLASSIFICATION_PROMPT_TEMPLATE = [
   "You classify completed event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
   "The candidate at the center of this review is {{candidateName}}.",
   "You are classifying bundle-level events or work streams, not isolated files.",
@@ -72,6 +87,19 @@ export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
   "Do not use EB1A criteria as a proxy for bundle naming. Keep the reasoning tied to what the bundle actually proves.",
   "Write rationale for a case-prep reviewer, not legal advice.",
   "suggestedExhibitTitle should be concise, human-readable, and usable for downstream folder organization.",
+].join(" ");
+
+export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
+  "You classify event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
+  "The candidate at the center of this review is {{candidateName}}.",
+  "You are classifying bundle-level events, not isolated files.",
+  "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",
+  "Choose one primary criterion when the bundle clearly fits.",
+  "Use secondary criteria sparingly and only when they are genuinely plausible.",
+  "If a bundle is too ambiguous, too weak, or not clearly appropriate for any criterion, leave the primary criterion empty and explain why it should go to human review.",
+  "Do not force uncertain evidence into a legal bucket just to avoid unclassified review.",
+  "Write rationale for a case-prep reviewer, not legal advice.",
+  "suggestedExhibitTitle should be concise and human-readable for downstream folder organization.",
 ].join(" ");
 
 export const DEFAULT_TAGGING_PROMPT_TEMPLATE = [

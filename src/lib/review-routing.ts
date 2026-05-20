@@ -231,6 +231,18 @@ export function getReviewBucketForCode(bucketCode: string) {
     };
   }
 
+  if (specialBucket?.bucketKind === "other") {
+    return {
+      bucketCode: specialBucket.code,
+      bucketName: specialBucket.name,
+      folderName: specialBucket.folderName,
+      bucketKind: specialBucket.bucketKind,
+      reviewDisposition: "unclassified" as ReviewDisposition,
+      primaryCriterionCode: null,
+      primaryCriterionName: null,
+    };
+  }
+
   return {
     bucketCode: "REVIEW",
     bucketName: "Human Review",

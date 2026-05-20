@@ -90,6 +90,50 @@ export const EB1A_CRITERIA_CATALOG = EB1A_CRITERIA_DEFINITIONS.map(
   (criterion) => `${criterion.legalCode} ${criterion.name}`,
 ).join(", ");
 
+const criterionIdentifierLookup = new Map<string, (typeof EB1A_CRITERIA_DEFINITIONS)[number]>();
+
+function normalizeCriterionIdentifier(value: string) {
+  return value.trim().toLowerCase();
+}
+
+for (const criterion of EB1A_CRITERIA_DEFINITIONS) {
+  criterionIdentifierLookup.set(normalizeCriterionIdentifier(criterion.code), criterion);
+  criterionIdentifierLookup.set(normalizeCriterionIdentifier(criterion.legalCode), criterion);
+  criterionIdentifierLookup.set(normalizeCriterionIdentifier(criterion.name), criterion);
+}
+
+export function getCriterionDefinition(identifier: string | null | undefined) {
+  if (!identifier) {
+    return null;
+  }
+
+  return criterionIdentifierLookup.get(normalizeCriterionIdentifier(identifier)) ?? null;
+}
+
+export function getCriterionDisplayName(
+  identifier: string | null | undefined,
+  fallback?: string | null,
+) {
+  return getCriterionDefinition(identifier)?.name || fallback || identifier || "Unknown criterion";
+}
+
+export function getCriterionDisplayLabel(
+  identifier: string | null | undefined,
+  options?: {
+    fallbackName?: string | null;
+    includeLegalCode?: boolean;
+  },
+) {
+  const definition = getCriterionDefinition(identifier);
+  const name = definition?.name || options?.fallbackName || identifier || "Unknown criterion";
+
+  if (options?.includeLegalCode && definition?.legalCode) {
+    return `${name} ${definition.legalCode}`;
+  }
+
+  return name;
+}
+
 export const SPECIAL_REVIEW_BUCKET_DEFINITIONS = [
   {
     code: "ARCHIVE",
@@ -102,6 +146,12 @@ export const SPECIAL_REVIEW_BUCKET_DEFINITIONS = [
     name: "Unwanted",
     folderName: "_Unwanted",
     bucketKind: "unwanted",
+  },
+  {
+    code: "OTHER",
+    name: "OTHER",
+    folderName: "_Other",
+    bucketKind: "other",
   },
   {
     code: "REVIEW",

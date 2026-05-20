@@ -13,7 +13,7 @@ export function StrategyNotesCard(props: {
         Locked strategy notes
       </p>
       <h2 className="mt-2 text-[14px] font-semibold text-[var(--foreground)]">
-        {props.legalCode} {props.criterionName}
+        {props.criterionName}
       </h2>
       <p className="mt-3 text-[12px] leading-6 text-[var(--foreground)]">{props.rationale}</p>
       <p className="mt-3 text-[11px] leading-6 text-[var(--muted)]">{props.narrativeSpine}</p>

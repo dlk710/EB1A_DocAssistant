@@ -1,5 +1,6 @@
 "use client";
 
+import { getCriterionDisplayName } from "@/lib/constants";
 import { formatSynthesisSectionLabel } from "@/lib/prompt-library";
 import type { StyleExemplar } from "@/lib/types";
 
@@ -16,7 +17,7 @@ export function ExemplarCard(props: {
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
             {props.exemplar.kind
               ? formatSynthesisSectionLabel(props.exemplar.kind)
-              : props.exemplar.criterionCode}
+              : getCriterionDisplayName(props.exemplar.criterionCode)}
           </p>
           <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
             {props.exemplar.label}

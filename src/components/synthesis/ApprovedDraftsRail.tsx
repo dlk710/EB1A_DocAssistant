@@ -32,7 +32,7 @@ export function ApprovedDraftsRail(props: {
               }`}
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                {entry.legalCode}
+                Approved draft
               </p>
               <p className="mt-1 text-[12px] font-semibold text-[var(--foreground)]">
                 {entry.criterionName}

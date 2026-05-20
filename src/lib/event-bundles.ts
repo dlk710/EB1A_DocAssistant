@@ -19,20 +19,8 @@ interface EventBundleStateFile {
 }
 
 const EVENT_BUNDLES_FILE = "event-bundles.json";
-const EVENT_BUNDLE_VERSION = 12;
+const EVENT_BUNDLE_VERSION = 13;
 const AUXILIARY_BUNDLE_MERGE_THRESHOLD = 5;
-const ROLE_ANCHOR_MERGE_THRESHOLD = 8;
-
-type StructuredRolePrefix = "CR" | "LR" | "OC";
-
-interface StructuredBundleHint {
-  prefix: StructuredRolePrefix;
-  projectName: string | null;
-  aliases: string[];
-  reason: string;
-}
-
-type RawBundleCandidate = ReturnType<typeof sanitizeEventBundleCandidate>["bundles"][number];
 
 declare global {
   var __eb1aActiveEventBundleJobs: Set<string> | undefined;
@@ -180,8 +168,6 @@ function isBundleStateCurrent(
 }
 
 function buildWorkspaceDocumentDigest(documents: StoredDocument[]) {
-  const structuredHintLookup = buildStructuredHintLookup(documents);
-
   return documents
     .filter(
       (document) =>
@@ -190,8 +176,6 @@ function buildWorkspaceDocumentDigest(documents: StoredDocument[]) {
         !getFilenameReviewDisposition(document.fileName),
     )
     .map((document) => {
-      const structuredHint = structuredHintLookup.get(document.id) ?? null;
-
       return {
         id: document.id,
         fileName: document.fileName,
@@ -208,13 +192,6 @@ function buildWorkspaceDocumentDigest(documents: StoredDocument[]) {
         locations: document.summary?.locations ?? [],
         tags: document.summary?.tags ?? [],
         candidateName: document.candidateName,
-        structuredRolePrefix: structuredHint?.prefix ?? null,
-        bundleHintName:
-          structuredHint?.projectName && structuredHint?.prefix
-            ? formatStructuredBundleName(structuredHint.prefix, structuredHint.projectName)
-            : null,
-        bundleHintAliases: structuredHint?.aliases ?? [],
-        bundleHintReason: structuredHint?.reason ?? null,
       };
     });
 }
@@ -287,34 +264,25 @@ function sanitizeEventBundleCandidate(raw: unknown) {
 
 function buildFallbackBundle(document: StoredDocument): EventBundle {
   const latestRelevantDate = normalizePrimaryDate(document.summary?.primaryDate ?? null);
-  const structuredHint = inferStructuredBundleHint(document);
 
   return {
     id: crypto.randomUUID(),
     jobId: document.jobId,
     bundleKind: "standard",
     name: formatBundleDisplayName(
-      structuredHint?.projectName
-        ? formatStructuredBundleName(structuredHint.prefix, structuredHint.projectName)
-        : document.summary?.title || document.fileName,
+      document.summary?.title || document.fileName,
       latestRelevantDate,
     ),
     shortSummary: document.summary?.shortSummary || "Summary unavailable.",
     detailedSummary:
       document.summary?.detailedSummary || "Detailed summary unavailable for this evidence.",
-    eventType:
-      structuredHint?.projectName
-        ? getStructuredEventType(structuredHint.prefix)
-        : document.summary?.documentType || "Evidence item",
+    eventType: document.summary?.documentType || "Evidence item",
     latestRelevantDate,
     timeframeLabel: document.summary?.primaryDateReason || "Single supporting evidence item.",
     location: document.summary?.locations?.[0] || "Location not specified",
     organizations: document.summary?.organizations ?? [],
     people: document.summary?.people ?? [],
-    keywords: uniqueMergedValues(
-      document.summary?.tags ?? [],
-      structuredHint ? [structuredHint.prefix, ...(structuredHint.projectName ? [structuredHint.projectName] : []), ...structuredHint.aliases] : [],
-    ),
+    keywords: document.summary?.tags ?? [],
     confidence: Math.min(document.summary?.confidence ?? 0, 72),
     leadDocumentId: document.id,
     evidenceDocumentIds: [document.id],
@@ -361,358 +329,6 @@ function buildSpecialReviewBundle(
 
 function normalizeToken(value: string) {
   return value.trim().toLowerCase();
-}
-
-function normalizeWhitespace(value: string) {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function normalizePhrase(value: string) {
-  return normalizeWhitespace(value).replace(/[^\p{L}\p{N}\s]+/gu, "").toLowerCase();
-}
-
-function buildPhraseAcronym(value: string) {
-  const initials = normalizeWhitespace(value)
-    .split(/\s+/)
-    .filter((part) => /^[A-Za-z]/.test(part))
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-
-  return initials.length >= 2 && initials.length <= 8 ? initials : null;
-}
-
-function extractUppercaseAliases(value: string) {
-  const matches = Array.from(value.matchAll(/\b[A-Z]{2,8}\b/g), (match) => match[0]);
-  return uniqueMergedValues(matches);
-}
-
-function cleanInitiativeLabel(value: string) {
-  return normalizeWhitespace(
-    value
-      .replace(/^[^A-Za-z0-9]+/, "")
-      .replace(/[^A-Za-z0-9)\]]+$/, "")
-      .replace(
-        /\b(Project|Platform|Finder|Search|Match|Engine|API|System|Program|Initiative|Framework|App|Suite)(Project|Platform|Finder|Search|Match|Engine|API|System|Program|Initiative|Framework|App|Suite)\b/g,
-        "$1 $2",
-      )
-      .replace(/\.\s*(Project|Platform|Finder|Search|Match|Engine|API|System|Program|Initiative|Framework|App|Suite)$/gi, "")
-      .replace(/\b(Project|Platform|Finder|Search|Match|Engine|API|System|Program|Initiative|Framework|App|Suite)\s+\1\b/gi, "$1")
-      .replace(/\s+(?:at|for|with|within)\s+[A-Z].*$/, "")
-      .replace(/\s+\([A-Z]{2,8}\)$/, ""),
-  );
-}
-
-function isGenericInitiativeLabel(value: string) {
-  const normalized = normalizePhrase(value);
-
-  if (
-    /[\\/]/.test(value) ||
-    /\b(raw|eb1a|for client review|critical role|original contributions|email evidences|newsletter|signed|final)\b/i.test(
-      value,
-    )
-  ) {
-    return true;
-  }
-
-  return [
-    "ai leadership",
-    "leadership",
-    "technical leadership",
-    "data science leadership",
-    "healthcare ai",
-    "healthcare innovation",
-    "healthcare digital innovation",
-    "team collaboration",
-    "product architect",
-    "advanced analytics",
-    "digital transformation",
-    "cost savings",
-    "enterprise scale ai",
-    "machine learning models",
-    "operational excellence",
-    "cross functional collaboration",
-    "software release",
-    "project release",
-    "internal newsletter",
-    "enterprise initiative",
-    "project success",
-    "evidence item",
-    "docx",
-    "ai project",
-    "ai in health",
-    "ai health use cases",
-    "app development",
-    "provider search",
-    "smart provider search",
-    "government initiative",
-    "initiated platform",
-    "indiaai",
-    "ai system development",
-    "business app",
-    "data science",
-    "ai deployment",
-    "ai data science",
-  ].includes(normalized);
-}
-
-function isStrongInitiativeLabel(value: string) {
-  const cleaned = cleanInitiativeLabel(value);
-  const normalized = normalizePhrase(cleaned);
-
-  if (!normalized || normalized.length < 4 || isGenericInitiativeLabel(cleaned)) {
-    return false;
-  }
-
-  if (
-    /\b(platform|finder|search|match|engine|api|system|project|program|initiative|framework|app|suite)\b/i.test(
-      cleaned,
-    )
-  ) {
-    return true;
-  }
-
-  if (/[A-Z]{2,8}/.test(cleaned) || /[a-z][A-Z]/.test(cleaned)) {
-    return true;
-  }
-
-  const words = cleaned.split(/\s+/);
-  return words.length >= 2 && words.every((word) => /[A-Z]/.test(word[0] ?? ""));
-}
-
-function pickBestProjectName(candidates: string[]) {
-  const cleanedCandidates = candidates
-    .map(cleanInitiativeLabel)
-    .filter((value) => value && isStrongInitiativeLabel(value));
-  const frequencyByNormalizedValue = new Map<string, number>();
-
-  cleanedCandidates.forEach((value) => {
-    const normalized = normalizePhrase(value);
-    frequencyByNormalizedValue.set(normalized, (frequencyByNormalizedValue.get(normalized) ?? 0) + 1);
-  });
-
-  const scored = uniqueMergedValues(cleanedCandidates)
-    .map((value) => {
-      let score = 0;
-
-      if (
-        /\b(platform|finder|search|match|engine|api|system|project|program|initiative|framework|app|suite)\b/i.test(
-          value,
-        )
-      ) {
-        score += 5;
-      }
-
-      if (/[A-Z]{2,8}/.test(value) || /\([A-Z]{2,8}\)/.test(value)) {
-        score += 3;
-      }
-
-      score += Math.min(frequencyByNormalizedValue.get(normalizePhrase(value)) ?? 0, 4) * 2;
-      score += Math.min(value.split(/\s+/).length, 5);
-
-      return { value, score };
-    })
-    .sort((left, right) => right.score - left.score || left.value.length - right.value.length);
-
-  return scored[0]?.value ?? null;
-}
-
-function extractStructuredProjectCandidates(value: string) {
-  const cleaned = normalizeWhitespace(value);
-  const matches = new Set<string>();
-  const pattern =
-    /\b([A-Z][A-Za-z0-9&/℠.-]*(?:\s+[A-Z][A-Za-z0-9&/℠.-]*){0,5}\s+(?:Platform|Finder|Search|Match|Engine|API|System|Project|Program|Initiative|Framework|App|Suite))\b/g;
-
-  for (const match of cleaned.matchAll(pattern)) {
-    const candidate = cleanInitiativeLabel(match[1] ?? "");
-    if (candidate && isStrongInitiativeLabel(candidate)) {
-      matches.add(candidate);
-    }
-  }
-
-  return Array.from(matches);
-}
-
-function buildAcronymExpansionMap(value: string) {
-  const expansions = new Map<string, string>();
-  const normalized = normalizeWhitespace(value);
-  const phraseFirstPattern =
-    /\b([A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*){1,5})\s+\(([A-Z]{2,8})\)/g;
-  const acronymFirstPattern =
-    /\b([A-Z]{2,8})\s+\(([A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*){1,5})\)/g;
-
-  for (const match of normalized.matchAll(phraseFirstPattern)) {
-    const phrase = cleanInitiativeLabel(match[1] ?? "");
-    const acronym = (match[2] ?? "").toUpperCase();
-
-    if (phrase && acronym && isStrongInitiativeLabel(phrase)) {
-      expansions.set(acronym, phrase);
-    }
-  }
-
-  for (const match of normalized.matchAll(acronymFirstPattern)) {
-    const acronym = (match[1] ?? "").toUpperCase();
-    const phrase = cleanInitiativeLabel(match[2] ?? "");
-
-    if (phrase && acronym && isStrongInitiativeLabel(phrase)) {
-      expansions.set(acronym, phrase);
-    }
-  }
-
-  return expansions;
-}
-
-function stripCandidateNameFromLabel(value: string, candidateName: string | null | undefined) {
-  const cleanedValue = cleanInitiativeLabel(value);
-  const trimmedCandidateName = normalizeWhitespace(candidateName ?? "");
-
-  if (!trimmedCandidateName) {
-    return cleanedValue;
-  }
-
-  const candidateVariants = uniqueMergedValues([
-    trimmedCandidateName,
-    trimmedCandidateName.split(/\s+/).slice(0, 2).join(" "),
-    trimmedCandidateName.split(/\s+/)[0] ?? "",
-  ]).filter(Boolean);
-
-  let stripped = cleanedValue;
-
-  candidateVariants.forEach((variant) => {
-    stripped = stripped.replace(new RegExp(`^${variant}\\b\\s*`, "i"), "");
-  });
-
-  return cleanInitiativeLabel(stripped);
-}
-
-function expandAcronymProjectName(projectName: string | null, sourceText: string) {
-  if (!projectName) {
-    return null;
-  }
-
-  const acronymExpansions = buildAcronymExpansionMap(sourceText);
-  const cleanedProjectName = cleanInitiativeLabel(projectName);
-  const leadingAcronym = cleanedProjectName.match(/^([A-Z]{2,8})\b/)?.[1]?.toUpperCase() ?? null;
-
-  if (!leadingAcronym) {
-    return cleanedProjectName;
-  }
-
-  const expansion = acronymExpansions.get(leadingAcronym);
-
-  if (!expansion) {
-    return cleanedProjectName;
-  }
-
-  if (normalizePhrase(cleanedProjectName) === normalizePhrase(leadingAcronym)) {
-    return expansion;
-  }
-
-  return cleanInitiativeLabel(cleanedProjectName.replace(new RegExp(`^${leadingAcronym}\\b\\s*`, "i"), expansion));
-}
-
-function detectStructuredRolePrefix(document: StoredDocument) {
-  const signalText = [
-    document.fileName,
-    document.relativePath,
-    document.summary?.title ?? "",
-    document.summary?.shortSummary ?? "",
-    document.summary?.detailedSummary ?? "",
-  ].join(" ");
-
-  if (/\bOC[_\s-]|\boriginal contributions?\b|\boriginal contribution\b/i.test(signalText)) {
-    return "OC" as const;
-  }
-
-  if (/\bLR[_\s-]|\bleading role\b|\bleadership role\b/i.test(signalText)) {
-    return "LR" as const;
-  }
-
-  if (/\bCR[_\s-]|\bcritical role\b/i.test(signalText)) {
-    return "CR" as const;
-  }
-
-  return null;
-}
-
-function inferStructuredBundleHint(document: StoredDocument): StructuredBundleHint | null {
-  const prefix = detectStructuredRolePrefix(document);
-
-  if (!prefix) {
-    return null;
-  }
-
-  const title = document.summary?.title ?? "";
-  const detailedSummary = document.summary?.detailedSummary ?? "";
-  const notableFacts = document.summary?.notableFacts ?? [];
-  const tags = document.summary?.tags ?? [];
-  const sourceText = [
-    document.fileName,
-    title,
-    detailedSummary,
-    notableFacts.join(" "),
-    tags.join(" "),
-  ].join(" ");
-  const candidateProjectNames = [
-    ...tags,
-    ...extractStructuredProjectCandidates(title),
-    ...extractStructuredProjectCandidates(detailedSummary),
-    ...extractStructuredProjectCandidates(notableFacts.join(" ")),
-    ...extractStructuredProjectCandidates(document.fileName.replace(/[_-]+/g, " ")),
-  ].map((candidate) => stripCandidateNameFromLabel(candidate, document.candidateName));
-  const projectName = pickBestProjectName(candidateProjectNames);
-  const expandedProjectName = expandAcronymProjectName(projectName, sourceText);
-  const projectAcronym = expandedProjectName ? buildPhraseAcronym(expandedProjectName) : null;
-  const aliases = uniqueMergedValues([
-    ...(expandedProjectName ? [expandedProjectName] : []),
-    ...(projectAcronym ? [projectAcronym] : []),
-    ...extractUppercaseAliases(sourceText),
-    ...tags.filter((tag) => isStrongInitiativeLabel(tag)),
-  ]).slice(0, 8);
-
-  const reason = expandedProjectName
-    ? `Structured ${prefix} dossier anchored to ${expandedProjectName}.`
-    : `Structured ${prefix} dossier with role-specific evidence.`;
-
-  return {
-    prefix,
-    projectName: expandedProjectName,
-    aliases,
-    reason,
-  };
-}
-
-function getStructuredEventType(prefix: StructuredRolePrefix) {
-  if (prefix === "CR") {
-    return "Critical role project";
-  }
-
-  if (prefix === "LR") {
-    return "Leading role project";
-  }
-
-  return "Original contribution project";
-}
-
-function formatStructuredBundleName(prefix: StructuredRolePrefix, projectName: string | null) {
-  if (!projectName) {
-    return prefix;
-  }
-
-  const cleanedProjectName = cleanInitiativeLabel(projectName);
-  return cleanedProjectName.startsWith(`${prefix} `)
-    ? cleanedProjectName
-    : `${prefix} ${cleanedProjectName}`;
-}
-
-function buildStructuredHintLookup(documents: StoredDocument[]) {
-  return new Map(
-    documents
-      .map((document) => {
-        const hint = inferStructuredBundleHint(document);
-        return hint ? ([document.id, hint] as const) : null;
-      })
-      .filter((entry): entry is readonly [string, StructuredBundleHint] => Boolean(entry)),
-  );
 }
 
 function uniqueMergedValues(...valueGroups: string[][]) {
@@ -874,222 +490,24 @@ function mergeAuxiliaryBundles(bundles: EventBundle[]) {
   return sortedBundles.filter((bundle) => !consumedSourceIds.has(bundle.id));
 }
 
-function splitStructuredRoleCandidates(
-  rawBundles: RawBundleCandidate[],
-  structuredHintLookup: Map<string, StructuredBundleHint>,
-) {
-  const normalizedBundles: RawBundleCandidate[] = [];
-
-  rawBundles.forEach((bundle) => {
-    const groupedStructuredDocs = new Map<
-      string,
-      { hint: StructuredBundleHint; documentIds: string[] }
-    >();
-
-    bundle.evidenceDocumentIds.forEach((documentId) => {
-      const hint = structuredHintLookup.get(documentId);
-
-      if (!hint?.projectName) {
-        return;
-      }
-
-      const key = `${hint.prefix}::${normalizePhrase(hint.projectName)}`;
-      const existing = groupedStructuredDocs.get(key);
-
-      if (existing) {
-        existing.documentIds.push(documentId);
-        return;
-      }
-
-      groupedStructuredDocs.set(key, {
-        hint,
-        documentIds: [documentId],
-      });
-    });
-
-    if (groupedStructuredDocs.size <= 1) {
-      normalizedBundles.push(bundle);
-      return;
-    }
-
-    const consumedStructuredIds = new Set<string>();
-
-    groupedStructuredDocs.forEach(({ hint, documentIds }) => {
-      documentIds.forEach((documentId) => consumedStructuredIds.add(documentId));
-      normalizedBundles.push({
-        ...bundle,
-        name: formatStructuredBundleName(hint.prefix, hint.projectName),
-        shortSummary: hint.projectName
-          ? `Structured ${hint.prefix} bundle centered on ${hint.projectName}.`
-          : bundle.shortSummary,
-        eventType: getStructuredEventType(hint.prefix),
-        leadDocumentId: documentIds[0] ?? bundle.leadDocumentId,
-        evidenceDocumentIds: documentIds,
-      });
-    });
-
-    const remainderDocumentIds = bundle.evidenceDocumentIds.filter(
-      (documentId) => !consumedStructuredIds.has(documentId),
-    );
-
-    if (remainderDocumentIds.length) {
-      normalizedBundles.push({
-        ...bundle,
-        leadDocumentId: remainderDocumentIds.includes(bundle.leadDocumentId ?? "")
-          ? bundle.leadDocumentId
-          : remainderDocumentIds[0],
-        evidenceDocumentIds: remainderDocumentIds,
-      });
-    }
-  });
-
-  return normalizedBundles;
-}
-
-function countAliasMatches(aliases: string[], haystack: string) {
-  return aliases.reduce((count, alias) => {
-    const normalizedAlias = normalizePhrase(alias);
-    return normalizedAlias && haystack.includes(normalizedAlias) ? count + 1 : count;
-  }, 0);
-}
-
-function getBundleStructuredHint(
-  bundle: EventBundle,
-  structuredHintLookup: Map<string, StructuredBundleHint>,
-) {
-  return bundle.evidenceDocumentIds
-    .map((documentId) => structuredHintLookup.get(documentId) ?? null)
-    .find((hint): hint is StructuredBundleHint => Boolean(hint)) ?? null;
-}
-
-function mergeStructuredRoleBundles(
-  bundles: EventBundle[],
-  structuredHintLookup: Map<string, StructuredBundleHint>,
-) {
-  const sortedBundles = [...bundles].sort(
-    (left, right) => right.evidenceDocumentIds.length - left.evidenceDocumentIds.length,
-  );
-  const consumedSourceIds = new Set<string>();
-
-  for (const anchorBundle of sortedBundles) {
-    if (consumedSourceIds.has(anchorBundle.id) || anchorBundle.bundleKind !== "standard") {
-      continue;
-    }
-
-    const anchorHint = getBundleStructuredHint(anchorBundle, structuredHintLookup);
-
-    if (!anchorHint?.projectName) {
-      continue;
-    }
-
-    anchorBundle.name = formatStructuredBundleName(anchorHint.prefix, anchorHint.projectName);
-    anchorBundle.eventType = getStructuredEventType(anchorHint.prefix);
-    anchorBundle.keywords = uniqueMergedValues(anchorBundle.keywords, [
-      anchorHint.prefix,
-      anchorHint.projectName,
-      ...anchorHint.aliases,
-    ]);
-
-    const anchorAliases = uniqueMergedValues([
-      anchorHint.projectName,
-      ...anchorHint.aliases,
-    ]).map(normalizePhrase);
-    const anchorKey = `${anchorHint.prefix}::${normalizePhrase(anchorHint.projectName)}`;
-
-    for (const sourceBundle of sortedBundles) {
-      if (
-        sourceBundle.id === anchorBundle.id ||
-        consumedSourceIds.has(sourceBundle.id) ||
-        sourceBundle.bundleKind !== "standard"
-      ) {
-        continue;
-      }
-
-      const sourceHint = getBundleStructuredHint(sourceBundle, structuredHintLookup);
-
-      if (sourceHint?.projectName) {
-        const sourceKey = `${sourceHint.prefix}::${normalizePhrase(sourceHint.projectName)}`;
-
-        if (sourceKey !== anchorKey) {
-          continue;
-        }
-
-        anchorBundle.evidenceDocumentIds = uniqueMergedValues(
-          anchorBundle.evidenceDocumentIds,
-          sourceBundle.evidenceDocumentIds,
-        );
-        anchorBundle.organizations = uniqueMergedValues(
-          anchorBundle.organizations,
-          sourceBundle.organizations,
-        );
-        anchorBundle.people = uniqueMergedValues(anchorBundle.people, sourceBundle.people);
-        anchorBundle.keywords = uniqueMergedValues(anchorBundle.keywords, sourceBundle.keywords, [
-          sourceHint.prefix,
-          sourceHint.projectName,
-          ...sourceHint.aliases,
-        ]);
-        consumedSourceIds.add(sourceBundle.id);
-        continue;
-      }
-
-      const haystack = normalizePhrase(
-        [
-          sourceBundle.name,
-          sourceBundle.eventType,
-          sourceBundle.keywords.join(" "),
-          sourceBundle.organizations.join(" "),
-          sourceBundle.people.join(" "),
-        ].join(" "),
-      );
-
-      const aliasMatches = countAliasMatches(anchorAliases, haystack);
-
-      if (aliasMatches === 0) {
-        continue;
-      }
-
-      let score = aliasMatches * 6;
-      score += countOverlap(anchorBundle.organizations, sourceBundle.organizations) * 2;
-      score += countOverlap(anchorBundle.keywords, sourceBundle.keywords) * 2;
-
-      if (isDateClose(anchorBundle.latestRelevantDate, sourceBundle.latestRelevantDate, 540)) {
-        score += 1;
-      }
-
-      if (score < ROLE_ANCHOR_MERGE_THRESHOLD) {
-        continue;
-      }
-
-      anchorBundle.evidenceDocumentIds = uniqueMergedValues(
-        anchorBundle.evidenceDocumentIds,
-        sourceBundle.evidenceDocumentIds,
-      );
-      anchorBundle.organizations = uniqueMergedValues(
-        anchorBundle.organizations,
-        sourceBundle.organizations,
-      );
-      anchorBundle.people = uniqueMergedValues(anchorBundle.people, sourceBundle.people);
-      anchorBundle.keywords = uniqueMergedValues(anchorBundle.keywords, sourceBundle.keywords);
-
-      if (
-        anchorBundle.location === "Location not specified" &&
-        sourceBundle.location !== "Location not specified"
-      ) {
-        anchorBundle.location = sourceBundle.location;
-      }
-
-      consumedSourceIds.add(sourceBundle.id);
-    }
-  }
-
-  return sortedBundles.filter((bundle) => !consumedSourceIds.has(bundle.id));
-}
-
 function postProcessBundles(
   jobId: string,
   documents: StoredDocument[],
-  rawBundles: RawBundleCandidate[],
-  structuredHintLookup: Map<string, StructuredBundleHint>,
+  rawBundles: Array<{
+    name: string;
+    shortSummary: string;
+    detailedSummary: string;
+    eventType: string;
+    latestRelevantDate: string | null;
+    timeframeLabel: string;
+    location: string;
+    organizations: string[];
+    people: string[];
+    keywords: string[];
+    confidence: number;
+    leadDocumentId: string | null;
+    evidenceDocumentIds: string[];
+  }>,
 ) {
   const completedDocuments = documents.filter(
     (document) =>
@@ -1158,12 +576,8 @@ function postProcessBundles(
   );
 
   const fallbackBundles = unassignedDocuments.map((document) => buildFallbackBundle(document));
-  const normalizedBundles = mergeStructuredRoleBundles(
-    mergeAuxiliaryBundles([...bundles, ...fallbackBundles]),
-    structuredHintLookup,
-  );
 
-  return [...normalizedBundles, ...specialBundles].sort((left, right) => {
+  return [...mergeAuxiliaryBundles([...bundles, ...fallbackBundles]), ...specialBundles].sort((left, right) => {
     if (left.latestRelevantDate && right.latestRelevantDate) {
       return right.latestRelevantDate.localeCompare(left.latestRelevantDate);
     }
@@ -1202,12 +616,7 @@ async function generateEventBundles(
   );
 
   if (!groupableDocuments.length) {
-    const specialBundles = postProcessBundles(
-      jobId,
-      completedDocuments,
-      [],
-      buildStructuredHintLookup(completedDocuments),
-    );
+    const specialBundles = postProcessBundles(jobId, completedDocuments, []);
 
     return {
       bundles: specialBundles,
@@ -1218,7 +627,6 @@ async function generateEventBundles(
 
   const { client, settings } = getOpenAiContext();
   const documentDigest = buildWorkspaceDocumentDigest(completedDocuments);
-  const structuredHintLookup = buildStructuredHintLookup(completedDocuments);
 
   const response = await client.responses.create({
     model: settings.summaryModel,
@@ -1261,16 +669,8 @@ async function generateEventBundles(
   const parsed = eventBundleCandidateSchema.parse(
     sanitizeEventBundleCandidate(JSON.parse(response.output_text)),
   );
-  const normalizedCandidates = splitStructuredRoleCandidates(
-    parsed.bundles,
-    structuredHintLookup,
-  );
-  const bundles = postProcessBundles(
-    jobId,
-    completedDocuments,
-    normalizedCandidates,
-    structuredHintLookup,
-  );
+
+  const bundles = postProcessBundles(jobId, completedDocuments, parsed.bundles);
   const archiveCount = bundles.filter((bundle) => bundle.bundleKind === "archive").length;
   const unwantedCount = bundles.filter((bundle) => bundle.bundleKind === "unwanted").length;
   const standardCount = bundles.length - archiveCount - unwantedCount;

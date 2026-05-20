@@ -175,6 +175,21 @@ The client review page is the human-action surface. It is meant to answer:
 - what has already been reviewed
 - what is archived or cleanup-only
 
+The current review UX supports four complementary working modes:
+
+- `Inbox` for fast one-at-a-time triage
+- `Table` for scanning and acting across open items
+- `Workbench` for detailed master-detail inspection
+- `By category` for structured category and queue cleanup
+
+The human-review sequence is intentionally staged:
+
+- decide whether the file is kept or archived
+- confirm whether the kept file belongs in the right bundle
+- confirm whether the bundle belongs in the right criterion
+
+When the reviewer is not ready to make a final bundle or criterion call, Setu exposes an `OTHER` placeholder so the item stays visible without blocking the rest of the case.
+
 ### Workspace dashboard
 
 The workspace dashboard remains for operational intake, job progress, and dense workspace intervention.

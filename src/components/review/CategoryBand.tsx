@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 interface CategoryBandProps {
-  legalCode: string;
+  legalCode?: string;
   title: string;
   taggedCount: number;
   decisionCount: number;
@@ -29,24 +29,37 @@ export function CategoryBand({
   children,
 }: CategoryBandProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const hasDecisions = decisionCount > 0;
 
   return (
-    <div className="overflow-hidden rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)]">
+    <div
+      className={`overflow-hidden rounded-[18px] border bg-[var(--paper-primary)] ${
+        hasDecisions ? "border-[var(--brand)]/30" : "border-[var(--border-secondary)]"
+      }`}
+    >
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className={`flex w-full items-start gap-3 px-4 py-4 text-left ${headerClassName ?? ""}`}
+        className={`flex w-full items-start gap-3 px-4 py-4 text-left transition ${
+          open
+            ? hasDecisions
+              ? "bg-[var(--brand-soft)]/55"
+              : "bg-[var(--paper-tertiary)]"
+            : ""
+        } ${headerClassName ?? ""}`}
       >
-        <span className="mt-1 text-[11px] font-semibold text-[var(--muted)]">
+        <span className={`mt-1 text-[11px] font-semibold ${open ? "text-[var(--brand)]" : "text-[var(--muted)]"}`}>
           {open ? "▾" : "▸"}
         </span>
-        <span
-          className={`rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] ${
-            headerChipClassName ?? ""
-          }`}
-        >
-          {legalCode}
-        </span>
+        {legalCode ? (
+          <span
+            className={`rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] ${
+              headerChipClassName ?? ""
+            }`}
+          >
+            {legalCode}
+          </span>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -56,7 +69,7 @@ export function CategoryBand({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {decisionCount > 0 ? (
+              {hasDecisions ? (
                 <span className="rounded-full border border-[var(--brand)]/30 bg-[var(--brand-soft)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
                   {decisionCount} decision{decisionCount === 1 ? "" : "s"}
                 </span>

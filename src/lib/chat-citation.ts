@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { getCriterionDisplayName } from "@/lib/constants";
 import type {
   BriefDraft,
   ChatMessageCitation,
@@ -207,7 +208,7 @@ export function applyCitationContractToStrategy(memo: StrategyMemo, documents: C
 
   const filterRecommendations = (entries: StrategyMemo["recommendedMix"]["primary"]) =>
     entries.filter((entry) => {
-      const claim = `${entry.criterionCode} ${entry.rationale}`;
+      const claim = `${getCriterionDisplayName(entry.criterionCode)} ${entry.rationale}`;
       const supportedDocuments = resolveSupportedDocuments(claim, entry.anchorDocIds, documents);
       const supported =
         supportedDocuments.length > 0 || hasCitationCoverageForClaim(entry.rationale, citations);
@@ -228,7 +229,7 @@ export function applyCitationContractToStrategy(memo: StrategyMemo, documents: C
     (entry) => !primary.some((primaryEntry) => primaryEntry.criterionCode === entry.criterionCode),
   );
   const gaps = memo.gaps.filter((gap) => {
-    const claim = `${gap.criterionCode} ${gap.description}`;
+    const claim = `${getCriterionDisplayName(gap.criterionCode)} ${gap.description}`;
     const supported = hasCitationCoverageForClaim(claim, citations);
 
     if (!supported) {

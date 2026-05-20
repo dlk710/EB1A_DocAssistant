@@ -131,8 +131,11 @@ Verify:
 - quick peek still works
 - context menus remain inside the viewport
 - Reference items render in their own band and do not count toward coverage
+- `OTHER` items render in their own placeholder band and do not count toward coverage
 - evidence rows expose visible `Assign criterion` and `Actions` controls in addition to right-click
 - bundle cards in the human-review queue can be reassigned directly into a criterion
+- the review page supports `Inbox`, `Table`, `Workbench`, and `By category` without breaking existing actions
+- the review flow still honors the sequence `file -> bundle -> criterion`
 
 ### Pipeline behavior
 

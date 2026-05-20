@@ -18,6 +18,8 @@ import type {
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import type { EvidenceReviewStatus } from "@/lib/types";
 
+const OTHER_REVIEW_BUCKET_CODE = "OTHER";
+
 interface ActionItemsSummaryProps {
   clientId: string;
   clientName: string;
@@ -93,6 +95,28 @@ interface BundleActionMenuState {
   x: number;
   y: number;
 }
+
+type ReviewMode = "inbox" | "table" | "workbench" | "by-category";
+type ReviewStageFilter = "all" | "file" | "bundle" | "criterion";
+type WorkbenchGroupBy = "stage" | "bundle" | "workspace";
+
+type ReviewFocusEntry =
+  | {
+      key: string;
+      kind: "file";
+      item: ReviewDecisionItem;
+    }
+  | {
+      key: string;
+      kind: "bundle";
+      item: ReviewDecisionItem;
+      groupName: string;
+    }
+  | {
+      key: string;
+      kind: "criterion";
+      item: ReviewBundleDecisionItem;
+    };
 
 function cloneViewState(state: ViewState): ViewState {
   return structuredClone(state);
@@ -189,7 +213,7 @@ function addToOtherBundleGroups(state: ViewState, item: ReviewDecisionItem) {
         jobId: item.jobId,
         workspaceLabel: item.workspaceLabel,
         bundleId: null,
-        bundleName: "Other bundle",
+        bundleName: "OTHER",
       },
       { ...item, reviewStatus: "kept" as const },
     ),
@@ -252,12 +276,20 @@ function buildCriterionPickerItems(
   item: ReviewBundleDecisionItem,
   onSelect: (criterionCode: string) => void,
 ) {
-  return EB1A_CRITERIA_DEFINITIONS.map<ContextMenuEntry>((criterion) => ({
-    id: `criterion-${criterion.code}`,
-    label: `${criterion.legalCode} ${criterion.name}`,
-    disabled: item.bucketCode === criterion.code,
-    onSelect: () => onSelect(criterion.code),
-  }));
+  return [
+    ...EB1A_CRITERIA_DEFINITIONS.map<ContextMenuEntry>((criterion) => ({
+      id: `criterion-${criterion.code}`,
+      label: criterion.name,
+      disabled: item.bucketCode === criterion.code,
+      onSelect: () => onSelect(criterion.code),
+    })),
+    {
+      id: `criterion-${OTHER_REVIEW_BUCKET_CODE}`,
+      label: "OTHER",
+      disabled: item.bucketCode === OTHER_REVIEW_BUCKET_CODE,
+      onSelect: () => onSelect(OTHER_REVIEW_BUCKET_CODE),
+    } satisfies ContextMenuEntry,
+  ];
 }
 
 function resolveExistingCriterionCode(item: ReviewBundleDecisionItem) {
@@ -270,6 +302,116 @@ function resolveExistingCriterionCode(item: ReviewBundleDecisionItem) {
 
 function documentActionButtonClass() {
   return "setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold";
+}
+
+function reviewModeButtonClass(active: boolean) {
+  return `inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[11px] font-semibold transition ${
+    active
+      ? "bg-[var(--brand-charcoal)] text-white shadow-[0_10px_18px_rgba(15,23,42,0.14)]"
+      : "text-[var(--muted)] hover:bg-[var(--paper-primary)] hover:text-[var(--foreground)]"
+  }`;
+}
+
+function getFocusStageKey(entry: ReviewFocusEntry): ReviewStageFilter {
+  if (entry.kind === "file") {
+    return "file";
+  }
+
+  if (entry.kind === "bundle") {
+    return "bundle";
+  }
+
+  return "criterion";
+}
+
+function getFocusStageLabel(entry: ReviewFocusEntry) {
+  if (entry.kind === "file") {
+    return "File decision";
+  }
+
+  if (entry.kind === "bundle") {
+    return "Bundle review";
+  }
+
+  return "Criterion review";
+}
+
+function getFocusTitle(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return entry.item.bundleName;
+  }
+
+  return entry.item.title;
+}
+
+function getFocusSummary(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return entry.item.rationale;
+  }
+
+  return entry.item.shortSummary;
+}
+
+function getFocusReasoning(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return entry.item.criterionHint ?? entry.item.rationale;
+  }
+
+  return entry.item.reasoning;
+}
+
+function getFocusWorkspaceLabel(entry: ReviewFocusEntry) {
+  return entry.item.workspaceLabel;
+}
+
+function getFocusBundleLabel(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return entry.item.bundleName;
+  }
+
+  return entry.kind === "bundle" ? entry.groupName : entry.item.currentBundleName;
+}
+
+function getFocusMetaLabel(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return `${entry.item.documentCount} file${entry.item.documentCount === 1 ? "" : "s"}`;
+  }
+
+  return entry.item.fileName;
+}
+
+function getFocusConfidence(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return null;
+  }
+
+  return Math.round(entry.item.confidence * 100);
+}
+
+function getFocusCriterionLabel(entry: ReviewFocusEntry) {
+  if (entry.kind === "criterion") {
+    return entry.item.criterionHint ?? null;
+  }
+
+  if (entry.item.currentCriterionName) {
+    return entry.item.currentCriterionRole
+      ? `${entry.item.currentCriterionName} · ${entry.item.currentCriterionRole}`
+      : entry.item.currentCriterionName;
+  }
+
+  if (entry.item.roleHint) {
+    return entry.item.roleHint;
+  }
+
+  return null;
+}
+
+function getFocusPreviewHref(entry: ReviewFocusEntry) {
+  return entry.kind === "criterion" ? null : entry.item.previewHref;
+}
+
+function getFocusSourceHref(entry: ReviewFocusEntry) {
+  return entry.kind === "criterion" ? null : entry.item.sourceHref;
 }
 
 export function ActionItemsSummary({
@@ -322,6 +464,11 @@ export function ActionItemsSummary({
   const [bundlePickerState, setBundlePickerState] = useState<BundlePickerState | null>(null);
   const [criterionPickerState, setCriterionPickerState] = useState<CriterionPickerState | null>(null);
   const [bundleActionMenuState, setBundleActionMenuState] = useState<BundleActionMenuState | null>(null);
+  const [reviewMode, setReviewMode] = useState<ReviewMode>("by-category");
+  const [tableSearch, setTableSearch] = useState("");
+  const [tableStageFilter, setTableStageFilter] = useState<ReviewStageFilter>("all");
+  const [workbenchGroupBy, setWorkbenchGroupBy] = useState<WorkbenchGroupBy>("stage");
+  const [selectedFocusKey, setSelectedFocusKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) {
@@ -349,6 +496,133 @@ export function ActionItemsSummary({
     [initialRoutineCount, viewState.readyBands],
   );
   const unresolvedCount = fileDecisionCount + bundleDecisionCount + criterionDecisionCount;
+  const heldLaterCount = referenceCount + otherBundleCount + otherCriterionCount;
+  const resolvedCount = Math.max(totalTagged - unresolvedCount, 0);
+  const progressPercent = totalTagged > 0 ? Math.min((resolvedCount / totalTagged) * 100, 100) : 0;
+
+  const focusEntries = useMemo<ReviewFocusEntry[]>(
+    () => [
+      ...viewState.fileDecisionItems.map((item) => ({
+        key: `file:${item.id}`,
+        kind: "file" as const,
+        item,
+      })),
+      ...viewState.bundleReviewGroups.flatMap((group) =>
+        group.items.map((item) => ({
+          key: `bundle:${item.id}`,
+          kind: "bundle" as const,
+          item,
+          groupName: group.bundleName,
+        })),
+      ),
+      ...viewState.criterionReviewQueue.map((item) => ({
+        key: `criterion:${item.id}`,
+        kind: "criterion" as const,
+        item,
+      })),
+    ],
+    [viewState.bundleReviewGroups, viewState.criterionReviewQueue, viewState.fileDecisionItems],
+  );
+
+  const activeBundleCount = useMemo(() => {
+    const bundleKeys = new Set<string>();
+
+    viewState.bundleReviewGroups.forEach((group) => {
+      bundleKeys.add(group.bundleId ?? group.key);
+    });
+
+    viewState.otherBundleGroups.forEach((group) => {
+      bundleKeys.add(group.bundleId ?? group.key);
+    });
+
+    viewState.criterionReviewQueue.forEach((item) => {
+      bundleKeys.add(item.id);
+    });
+
+    viewState.otherCriterionQueue.forEach((item) => {
+      bundleKeys.add(item.id);
+    });
+
+    return bundleKeys.size;
+  }, [
+    viewState.bundleReviewGroups,
+    viewState.criterionReviewQueue,
+    viewState.otherBundleGroups,
+    viewState.otherCriterionQueue,
+  ]);
+
+  const filteredTableEntries = useMemo(() => {
+    const normalizedSearch = tableSearch.trim().toLowerCase();
+
+    return focusEntries.filter((entry) => {
+      if (tableStageFilter !== "all" && getFocusStageKey(entry) !== tableStageFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = [
+        getFocusTitle(entry),
+        getFocusSummary(entry),
+        getFocusReasoning(entry),
+        getFocusWorkspaceLabel(entry),
+        getFocusBundleLabel(entry) ?? "",
+        getFocusMetaLabel(entry),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [focusEntries, tableSearch, tableStageFilter]);
+
+  const groupedWorkbenchEntries = useMemo(() => {
+    const groups = new Map<string, ReviewFocusEntry[]>();
+
+    focusEntries.forEach((entry) => {
+      let groupLabel = getFocusStageLabel(entry);
+
+      if (workbenchGroupBy === "bundle") {
+        groupLabel = getFocusBundleLabel(entry) ?? "Unassigned bundle";
+      } else if (workbenchGroupBy === "workspace") {
+        groupLabel = getFocusWorkspaceLabel(entry);
+      }
+
+      const current = groups.get(groupLabel) ?? [];
+      current.push(entry);
+      groups.set(groupLabel, current);
+    });
+
+    return [...groups.entries()].map(([label, entries]) => ({
+      label,
+      entries,
+    }));
+  }, [focusEntries, workbenchGroupBy]);
+
+  const effectiveSelectedFocusKey =
+    selectedFocusKey && focusEntries.some((entry) => entry.key === selectedFocusKey)
+      ? selectedFocusKey
+      : focusEntries[0]?.key ?? null;
+
+  const selectedFocusEntry =
+    focusEntries.find((entry) => entry.key === effectiveSelectedFocusKey) ?? focusEntries[0] ?? null;
+  const selectedFocusIndex = selectedFocusEntry
+    ? focusEntries.findIndex((entry) => entry.key === selectedFocusEntry.key)
+    : -1;
+
+  function stepFocus(offset: number) {
+    if (selectedFocusIndex < 0) {
+      return;
+    }
+
+    const nextEntry = focusEntries[selectedFocusIndex + offset];
+
+    if (nextEntry) {
+      setSelectedFocusKey(nextEntry.key);
+    }
+  }
 
   async function patchReviewStatus(id: string, status: EvidenceReviewStatus) {
     const response = await fetch(`/api/evidence/${id}/status`, {
@@ -801,6 +1075,11 @@ export function ActionItemsSummary({
   }
 
   function handleAssignCriterion(item: ReviewBundleDecisionItem, criterionCode: string, source: "criterion" | "other-criterion") {
+    if (criterionCode === OTHER_REVIEW_BUCKET_CODE) {
+      handleMarkOtherCriterion(item);
+      return;
+    }
+
     void runViewStateAction(
       item.id,
       "Assigning the bundle to a criterion",
@@ -816,16 +1095,16 @@ export function ActionItemsSummary({
   function handleMarkOtherCriterion(item: ReviewBundleDecisionItem) {
     void runViewStateAction(
       item.id,
-      "Holding bundle in Other criterion",
+      "Holding bundle in OTHER",
       (state) => addBundleToOtherCriterion(state, item),
       async () => {
-        if (item.bucketCode !== "REVIEW") {
-          await patchBundleCategory(item, "REVIEW");
+        if (item.bucketCode !== OTHER_REVIEW_BUCKET_CODE) {
+          await patchBundleCategory(item, OTHER_REVIEW_BUCKET_CODE);
         }
 
         await patchBundleCriterionDecision(item.jobId, item.id, "other", null);
       },
-      "Bundle moved to Other criterion.",
+      "Bundle moved to OTHER.",
     );
   }
 
@@ -835,6 +1114,12 @@ export function ActionItemsSummary({
       "Returning bundle to criterion review",
       (state) => addBundleToCriterionQueue(state, item),
       async () => {
+        await patchBundleCategory(
+          item,
+          item.bucketCode && item.bucketCode !== OTHER_REVIEW_BUCKET_CODE
+            ? item.bucketCode
+            : "REVIEW",
+        );
         await patchBundleCriterionDecision(item.jobId, item.id, "clear", null);
       },
     );
@@ -928,7 +1213,7 @@ export function ActionItemsSummary({
             ? [
                 {
                   id: "bundle-other",
-                  label: "Move to Other criterion",
+                  label: "Move to OTHER",
                   onSelect: () => handleMarkOtherCriterion(bundleItem),
                 } satisfies ContextMenuEntry,
               ]
@@ -1107,7 +1392,7 @@ export function ActionItemsSummary({
           },
           {
             id: "bundle-other",
-            label: "Move to Other bundle",
+            label: "Move to OTHER",
             onSelect: () => handleMarkOtherBundle(item),
           },
           {
@@ -1138,54 +1423,268 @@ export function ActionItemsSummary({
       })()
     : [];
 
+  function renderFileActionButtons(item: ReviewDecisionItem) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => handleKeepFile(item)}
+          className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+        >
+          Keep
+        </button>
+        <button
+          type="button"
+          onClick={() => handleMoveToArchive(item)}
+          className={documentActionButtonClass()}
+        >
+          Archive
+        </button>
+        <button
+          type="button"
+          onClick={() => handleQuickPeek(item)}
+          className={documentActionButtonClass()}
+        >
+          Quick peek
+        </button>
+        <button
+          type="button"
+          onClick={(event) => openDocumentMenuAtElement(item, "file", event.currentTarget)}
+          className={documentActionButtonClass()}
+        >
+          Actions
+        </button>
+      </>
+    );
+  }
+
+  function renderBundleActionButtons(item: ReviewDecisionItem, source: BundlePickerState["source"] = "bundle") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            source === "other-bundle" ? handleReturnFromOtherBundle(item) : handleAcceptBundle(item)
+          }
+          className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+        >
+          {source === "other-bundle" ? "Return to queue" : "Accept bundle"}
+        </button>
+        <button
+          type="button"
+          onClick={(event) => openBundlePicker(item, source, event.currentTarget)}
+          className={documentActionButtonClass()}
+        >
+          Move bundle
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            source === "other-bundle" ? handleQuickPeek(item) : handleMarkOtherBundle(item)
+          }
+          className={documentActionButtonClass()}
+        >
+          {source === "other-bundle" ? "Quick peek" : "OTHER"}
+        </button>
+        {source === "bundle" ? (
+          <button
+            type="button"
+            onClick={() => handleQuickPeek(item)}
+            className={documentActionButtonClass()}
+          >
+            Quick peek
+          </button>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderCriterionActionButtons(
+    item: ReviewBundleDecisionItem,
+    source: CriterionPickerState["source"] = "criterion",
+  ) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            source === "criterion" ? handleAcceptCriterion(item) : handleReturnFromOtherCriterion(item)
+          }
+          disabled={source === "criterion" ? !resolveExistingCriterionCode(item) : false}
+          className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {source === "criterion" ? "Accept criterion" : "Return to queue"}
+        </button>
+        <button
+          type="button"
+          onClick={(event) => openCriterionPicker(item, source, event.currentTarget)}
+          className={documentActionButtonClass()}
+        >
+          Assign criterion
+        </button>
+        <button
+          type="button"
+          onClick={() => (source === "criterion" ? handleMarkOtherCriterion(item) : showReasoning(item.bundleName, item.rationale))}
+          className={documentActionButtonClass()}
+        >
+          {source === "criterion" ? "OTHER" : "Reasoning"}
+        </button>
+        <Link href={item.denseReviewHref} className={documentActionButtonClass()}>
+          Dense workbench
+        </Link>
+      </>
+    );
+  }
+
+  function renderFocusActions(entry: ReviewFocusEntry) {
+    if (entry.kind === "file") {
+      return renderFileActionButtons(entry.item);
+    }
+
+    if (entry.kind === "bundle") {
+      return renderBundleActionButtons(entry.item);
+    }
+
+    return renderCriterionActionButtons(entry.item);
+  }
+
+  function renderFocusDetail(entry: ReviewFocusEntry, compact = false) {
+    const previewHref = getFocusPreviewHref(entry);
+    const sourceHref = getFocusSourceHref(entry);
+
+    return (
+      <div className={`grid gap-3 ${compact ? "lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]" : "xl:grid-cols-[minmax(0,1.35fr)_320px]"}`}>
+        <div className="overflow-hidden rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-cream)]">
+          <div className="border-b border-[var(--border-secondary)] px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              {entry.kind === "criterion" ? "Bundle brief" : "Quick preview"}
+            </p>
+            <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+              {getFocusTitle(entry)}
+            </p>
+          </div>
+          {previewHref ? (
+            <iframe
+              title={getFocusTitle(entry)}
+              src={previewHref}
+              className={`${compact ? "h-[340px]" : "h-[420px]"} w-full bg-[var(--paper-secondary)]`}
+            />
+          ) : (
+            <div className="space-y-3 px-4 py-4 text-[12px] leading-6 text-[var(--foreground)]/84">
+              <p className="font-semibold text-[var(--foreground)]">{getFocusSummary(entry)}</p>
+              <p>{getFocusReasoning(entry)}</p>
+              {entry.kind === "criterion" ? (
+                <Link
+                  href={entry.item.denseReviewHref}
+                  className="inline-flex items-center gap-2 rounded-[999px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]"
+                >
+                  Open dense workbench
+                </Link>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-[16px] border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-4 py-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--brand-deep)]">
+              Setu suggests
+            </p>
+            <p className="mt-2 text-[12px] leading-6 text-[var(--brand-deep)]">
+              {getFocusReasoning(entry)}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[var(--paper-primary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
+                {getFocusStageLabel(entry)}
+              </span>
+              {getFocusCriterionLabel(entry) ? (
+                <span className="rounded-full bg-[var(--paper-primary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
+                  {getFocusCriterionLabel(entry)}
+                </span>
+              ) : null}
+              {getFocusConfidence(entry) !== null ? (
+                <span className="ml-auto text-[10px] font-semibold text-[var(--brand-deep)]">
+                  Confidence {getFocusConfidence(entry)}%
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Current placement
+            </p>
+            <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]/84">
+              <p>
+                Workspace: <strong>{getFocusWorkspaceLabel(entry)}</strong>
+              </p>
+              <p>
+                Bundle: <strong>{getFocusBundleLabel(entry) ?? "Unassigned"}</strong>
+              </p>
+              <p>
+                Detail: <strong>{getFocusMetaLabel(entry)}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Actions
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">{renderFocusActions(entry)}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {entry.kind !== "criterion" && sourceHref ? (
+                <a
+                  href={sourceHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={documentActionButtonClass()}
+                >
+                  Open original
+                </a>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => showReasoning(getFocusTitle(entry), getFocusReasoning(entry))}
+                className={documentActionButtonClass()}
+              >
+                Show reasoning
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          Review workflow
-        </p>
-        <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-          {totalTagged} tagged document(s) for {clientName}
-        </h2>
-        <p className="mt-2 max-w-4xl text-[12px] leading-6 text-[var(--muted)]">
-          Files leave the active queue as soon as a human makes the next required decision. Setu
-          keeps held-later items visible, but the page always defaults to the work that still needs
-          a call today.
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-6">
-          <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--foreground)]">{totalTagged}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Tagged</p>
+      <div className="rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+          <div className="inline-flex w-full flex-wrap items-center gap-1 rounded-[10px] bg-[var(--paper-secondary)] p-1 xl:w-auto">
+            <button type="button" onClick={() => setReviewMode("inbox")} className={reviewModeButtonClass(reviewMode === "inbox")}>
+              Inbox
+            </button>
+            <button type="button" onClick={() => setReviewMode("table")} className={reviewModeButtonClass(reviewMode === "table")}>
+              Table
+            </button>
+            <button type="button" onClick={() => setReviewMode("workbench")} className={reviewModeButtonClass(reviewMode === "workbench")}>
+              Workbench
+            </button>
+            <button type="button" onClick={() => setReviewMode("by-category")} className={reviewModeButtonClass(reviewMode === "by-category")}>
+              By category
+            </button>
           </div>
-          <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{fileDecisionCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
-              File decisions
-            </p>
-          </div>
-          <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{bundleDecisionCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
-              Bundle review
-            </p>
-          </div>
-          <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{criterionDecisionCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
-              Criterion review
-            </p>
-          </div>
-          <div className="rounded-[14px] border border-[var(--state-warning)]/20 bg-[var(--state-warning-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--state-warning)]">
-              {referenceCount + otherBundleCount + otherCriterionCount}
-            </p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--state-warning)]">
-              Held later
-            </p>
-          </div>
-          <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--foreground)]">{readyCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Ready</p>
+          <p className="text-[11px] text-[var(--muted)] xl:flex-1">
+            <span className="font-semibold text-[var(--foreground)]">{totalTagged}</span> documents across{" "}
+            <span className="font-semibold text-[var(--foreground)]">{activeBundleCount}</span> bundles ·{" "}
+            <span className="font-semibold text-[var(--foreground)]">{unresolvedCount}</span> open next-step decisions
+          </p>
+          <div className="inline-flex items-center gap-2 rounded-[999px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            Held later
+            <span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[var(--brand-deep)]">
+              {heldLaterCount}
+            </span>
           </div>
         </div>
       </div>
@@ -1202,320 +1701,525 @@ export function ActionItemsSummary({
         </div>
       ) : null}
 
-      <div className="space-y-4">
-        <CategoryBand
-          legalCode="1"
-          title="Keep or archive files"
-          taggedCount={fileDecisionCount}
-          decisionCount={fileDecisionCount}
-          routineCount={0}
-          note="Start here. Decide whether the file stays in the active petition set before making any bundle or criterion call."
-          defaultOpen={fileDecisionCount > 0}
-          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-        >
-          {viewState.fileDecisionItems.length ? (
-            viewState.fileDecisionItems.map((item) => (
-              <WorkflowDocumentCard
-                key={item.id}
-                item={item}
-                stageLabel="File decision"
-                helperLabel="What needs a call"
-                helperBody={item.reasoning}
-                onContextMenu={(nextItem, event) => {
-                  event.preventDefault();
-                  openDocumentMenu(nextItem, "file", event.clientX, event.clientY);
-                }}
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleKeepFile(item)}
-                      className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
-                    >
-                      Keep
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveToArchive(item)}
-                      className={documentActionButtonClass()}
-                    >
-                      Archive
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickPeek(item)}
-                      className={documentActionButtonClass()}
-                    >
-                      Quick peek
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => openDocumentMenuAtElement(item, "file", event.currentTarget)}
-                      className={documentActionButtonClass()}
-                    >
-                      Actions
-                    </button>
-                  </>
-                }
-              />
-            ))
-          ) : (
-            <p className="text-[12px] leading-6 text-[var(--muted)]">
-              No file-level decisions are waiting right now.
-            </p>
-          )}
-        </CategoryBand>
-
-        <CategoryBand
-          legalCode="2"
-          title="Confirm the right bundle"
-          taggedCount={bundleDecisionCount}
-          decisionCount={bundleDecisionCount}
-          routineCount={0}
-          note="Once a file is kept, confirm whether it belongs in the current bundle or move it before criterion review begins."
-          defaultOpen={bundleDecisionCount > 0}
-          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-        >
-          {viewState.bundleReviewGroups.length ? (
-            viewState.bundleReviewGroups.map((group) => (
-              <div
-                key={group.key}
-                className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
-                    {group.bundleName}
-                  </span>
-                  <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
-                    {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
-                  </span>
-                  <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
-                    {group.workspaceLabel}
-                  </span>
+      {reviewMode === "inbox" ? (
+        focusEntries.length ? (
+          <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="space-y-3">
+              <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                  Progress
+                </p>
+                <p className="mt-2 font-mono text-[30px] font-semibold text-[var(--foreground)]">
+                  {resolvedCount}
+                </p>
+                <p className="text-[11px] text-[var(--muted)]">of {totalTagged} files moved forward</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--paper-primary)]">
+                  <div
+                    className="h-full rounded-full bg-[var(--brand)]"
+                    style={{ width: `${progressPercent}%` }}
+                  />
                 </div>
-                {group.items.map((item) => (
+                <div className="mt-4 space-y-2 text-[11px] text-[var(--muted)]">
+                  <div className="flex items-center justify-between">
+                    <span>File decisions</span>
+                    <span className="font-mono font-semibold text-[var(--foreground)]">{fileDecisionCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Bundle review</span>
+                    <span className="font-mono font-semibold text-[var(--foreground)]">{bundleDecisionCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Criterion review</span>
+                    <span className="font-mono font-semibold text-[var(--foreground)]">{criterionDecisionCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-[var(--border-secondary)] pt-2">
+                    <span>Ready</span>
+                    <span className="font-mono font-semibold text-[var(--foreground)]">{readyCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[var(--brand-charcoal)] bg-[var(--brand-charcoal)] px-4 py-4 text-white">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                  Working order
+                </p>
+                <div className="mt-3 space-y-3 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span>1. Keep or archive</span>
+                    <span className="rounded-[4px] bg-white/10 px-2 py-0.5 font-mono">Files</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>2. Confirm bundle fit</span>
+                    <span className="rounded-[4px] bg-white/10 px-2 py-0.5 font-mono">Bundles</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>3. Confirm criterion fit</span>
+                    <span className="rounded-[4px] bg-white/10 px-2 py-0.5 font-mono">Criteria</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Held later</span>
+                    <span className="rounded-[4px] bg-white/10 px-2 py-0.5 font-mono">OTHER</span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <div className="rounded-[20px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-4 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
+              {selectedFocusEntry ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border-secondary)] pb-3">
+                    <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                      {getFocusStageLabel(selectedFocusEntry)}
+                    </span>
+                    <p className="text-[14px] font-semibold text-[var(--foreground)]">
+                      {getFocusTitle(selectedFocusEntry)}
+                    </p>
+                    <span className="text-[10px] font-mono text-[var(--muted)]">
+                      {selectedFocusIndex + 1} / {focusEntries.length}
+                    </span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => stepFocus(-1)}
+                        disabled={selectedFocusIndex <= 0}
+                        className="setu-ghost-button rounded-[8px] px-2.5 py-1.5 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => stepFocus(1)}
+                        disabled={selectedFocusIndex >= focusEntries.length - 1}
+                        className="setu-ghost-button rounded-[8px] px-2.5 py-1.5 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4">{renderFocusDetail(selectedFocusEntry, true)}</div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-5 text-[12px] leading-6 text-[var(--muted)]">
+            The inbox is clear. Setu does not see any open next-step review decisions right now.
+          </div>
+        )
+      ) : null}
+
+      {reviewMode === "table" ? (
+        <div className="space-y-3">
+          <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "all", label: "All open", count: focusEntries.length },
+                  { key: "file", label: "Files", count: fileDecisionCount },
+                  { key: "bundle", label: "Bundles", count: bundleDecisionCount },
+                  { key: "criterion", label: "Criteria", count: criterionDecisionCount },
+                ].map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setTableStageFilter(filter.key as ReviewStageFilter)}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                      tableStageFilter === filter.key
+                        ? "border-[var(--brand-charcoal)] bg-[var(--brand-charcoal)] text-white"
+                        : "border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)]"
+                    }`}
+                  >
+                    {filter.label} · {filter.count}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={tableSearch}
+                onChange={(event) => setTableSearch(event.target.value)}
+                placeholder="Search titles, summaries, bundles, or workspaces"
+                className="w-full rounded-[10px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] text-[var(--foreground)] outline-none xl:ml-auto xl:max-w-[360px]"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)]">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead className="bg-[var(--paper-tertiary)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">AI summary</th>
+                    <th className="px-4 py-3">Workspace</th>
+                    <th className="px-4 py-3">Stage</th>
+                    <th className="px-4 py-3">Bundle</th>
+                    <th className="px-4 py-3">Confidence</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTableEntries.length ? (
+                    filteredTableEntries.map((entry) => (
+                      <tr key={entry.key} className="border-t border-[var(--border-secondary)] align-top">
+                        <td className="px-4 py-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFocusKey(entry.key);
+                              setReviewMode("workbench");
+                            }}
+                            className="text-left"
+                          >
+                            <p className="text-[12px] font-semibold text-[var(--foreground)]">
+                              {getFocusTitle(entry)}
+                            </p>
+                            <p className="mt-1 text-[10px] text-[var(--muted)]">
+                              {getFocusMetaLabel(entry)}
+                            </p>
+                          </button>
+                        </td>
+                        <td className="max-w-[320px] px-4 py-4 text-[11px] leading-5 text-[var(--foreground)]/82">
+                          {getFocusSummary(entry)}
+                        </td>
+                        <td className="px-4 py-4 text-[11px] text-[var(--muted)]">{getFocusWorkspaceLabel(entry)}</td>
+                        <td className="px-4 py-4">
+                          <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                            {getFocusStageLabel(entry)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-[11px] text-[var(--muted)]">
+                          {getFocusBundleLabel(entry) ?? "Unassigned"}
+                        </td>
+                        <td className="px-4 py-4 text-[11px] font-semibold text-[var(--foreground)]">
+                          {getFocusConfidence(entry) !== null ? `${getFocusConfidence(entry)}%` : "—"}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-2">{renderFocusActions(entry)}</div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-5 text-[12px] text-[var(--muted)]">
+                        No open items match the current filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reviewMode === "workbench" ? (
+        focusEntries.length ? (
+          <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+            <aside className="overflow-hidden rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-primary)]">
+              <div className="border-b border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Group by
+                  </span>
+                  {[
+                    { key: "stage", label: "Stage" },
+                    { key: "bundle", label: "Bundle" },
+                    { key: "workspace", label: "Workspace" },
+                  ].map((group) => (
+                    <button
+                      key={group.key}
+                      type="button"
+                      onClick={() => setWorkbenchGroupBy(group.key as WorkbenchGroupBy)}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                        workbenchGroupBy === group.key
+                          ? "bg-[var(--brand-charcoal)] text-white"
+                          : "bg-[var(--paper-primary)] text-[var(--muted)]"
+                      }`}
+                    >
+                      {group.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="max-h-[720px] overflow-y-auto px-3 py-3">
+                {groupedWorkbenchEntries.map((group) => (
+                  <div key={group.label} className="mb-4">
+                    <div className="mb-2 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                      <span>{group.label}</span>
+                      <span>{group.entries.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {group.entries.map((entry) => (
+                        <button
+                          key={entry.key}
+                          type="button"
+                          onClick={() => setSelectedFocusKey(entry.key)}
+                          className={`w-full rounded-[14px] border px-3 py-3 text-left transition ${
+                            selectedFocusEntry?.key === entry.key
+                              ? "border-[var(--brand-charcoal)] bg-[var(--paper-tertiary)]"
+                              : "border-[var(--border-secondary)] bg-[var(--paper-primary)] hover:bg-[var(--paper-tertiary)]"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[12px] font-semibold text-[var(--foreground)]">
+                                {getFocusTitle(entry)}
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[var(--muted)]">
+                                <span>{getFocusStageLabel(entry)}</span>
+                                <span>•</span>
+                                <span>{getFocusMetaLabel(entry)}</span>
+                              </div>
+                            </div>
+                            {getFocusConfidence(entry) !== null ? (
+                              <span className="text-[10px] font-semibold text-[var(--muted)]">
+                                {getFocusConfidence(entry)}%
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
+
+            <div className="overflow-hidden rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
+              {selectedFocusEntry ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border-secondary)] px-4 py-3">
+                    <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                      {getFocusStageLabel(selectedFocusEntry)}
+                    </span>
+                    <p className="text-[14px] font-semibold text-[var(--foreground)]">
+                      {getFocusTitle(selectedFocusEntry)}
+                    </p>
+                    <span className="text-[10px] font-mono text-[var(--muted)]">
+                      {selectedFocusIndex + 1} / {focusEntries.length}
+                    </span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => stepFocus(-1)}
+                        disabled={selectedFocusIndex <= 0}
+                        className="setu-ghost-button rounded-[8px] px-2.5 py-1.5 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => stepFocus(1)}
+                        disabled={selectedFocusIndex >= focusEntries.length - 1}
+                        className="setu-ghost-button rounded-[8px] px-2.5 py-1.5 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-4 py-4">{renderFocusDetail(selectedFocusEntry)}</div>
+                </>
+              ) : (
+                <div className="px-4 py-5 text-[12px] text-[var(--muted)]">
+                  Pick an item from the list to inspect it in detail.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-5 text-[12px] leading-6 text-[var(--muted)]">
+            The workbench is clear. Setu does not see any open next-step review decisions right now.
+          </div>
+        )
+      ) : null}
+
+      {reviewMode === "by-category" ? (
+        <>
+          <div className="rounded-[18px] border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-4 py-4">
+            <p className="text-[13px] font-semibold text-[var(--brand-deep)]">
+              {totalTagged} tagged documents for {clientName}
+            </p>
+            <p className="mt-2 text-[12px] leading-6 text-[var(--brand-deep)]">
+              {readyCount} files are fully settled. {unresolvedCount} still need a human decision.
+              {heldLaterCount > 0 ? ` ${heldLaterCount} are parked in OTHER or Reference for later cleanup.` : ""}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-4">
+              <div className="flex flex-col">
+                <span className="font-mono text-[18px] font-semibold text-[var(--brand-deep)]">{readyCount}</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">Ready</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-mono text-[18px] font-semibold text-[var(--brand-deep)]">{unresolvedCount}</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">Need decisions</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-mono text-[18px] font-semibold text-[var(--brand-deep)]">{activeBundleCount}</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">Bundles in play</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-mono text-[18px] font-semibold text-[var(--brand-deep)]">{heldLaterCount}</span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--brand-deep)]">Held later</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <CategoryBand
+              legalCode="1"
+              title="Keep or archive files"
+              taggedCount={fileDecisionCount}
+              decisionCount={fileDecisionCount}
+              routineCount={0}
+              note="Start here. Decide whether the file stays in the active petition set before making any bundle or criterion call."
+              defaultOpen={fileDecisionCount > 0}
+              headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+            >
+              {viewState.fileDecisionItems.length ? (
+                viewState.fileDecisionItems.map((item) => (
                   <WorkflowDocumentCard
                     key={item.id}
                     item={item}
-                    stageLabel="Bundle review"
-                    helperLabel="Why Setu paused"
-                    helperBody="Confirm the current bundle, move this file into a better bundle, or hold it in Other bundle until you decide later."
-                    accentTone="muted"
+                    stageLabel="File decision"
+                    helperLabel="What needs a call"
+                    helperBody={item.reasoning}
                     onContextMenu={(nextItem, event) => {
                       event.preventDefault();
-                      openDocumentMenu(nextItem, "bundle", event.clientX, event.clientY);
+                      openDocumentMenu(nextItem, "file", event.clientX, event.clientY);
                     }}
-                    actions={
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptBundle(item)}
-                          className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
-                        >
-                          Accept bundle
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => openBundlePicker(item, "bundle", event.currentTarget)}
-                          className={documentActionButtonClass()}
-                        >
-                          Move bundle
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMarkOtherBundle(item)}
-                          className={documentActionButtonClass()}
-                        >
-                          Other bundle
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickPeek(item)}
-                          className={documentActionButtonClass()}
-                        >
-                          Quick peek
-                        </button>
-                      </>
-                    }
+                    actions={renderFileActionButtons(item)}
                   />
-                ))}
-              </div>
-            ))
-          ) : (
-            <p className="text-[12px] leading-6 text-[var(--muted)]">
-              No kept files are waiting for a bundle call right now.
-            </p>
-          )}
-        </CategoryBand>
+                ))
+              ) : (
+                <p className="text-[12px] leading-6 text-[var(--muted)]">
+                  No file-level decisions are waiting right now.
+                </p>
+              )}
+            </CategoryBand>
 
-        <CategoryBand
-          legalCode="3"
-          title="Confirm the right criterion"
-          taggedCount={criterionDecisionCount}
-          decisionCount={criterionDecisionCount}
-          routineCount={0}
-          note="Only bundles whose kept files have already cleared bundle review appear here."
-          defaultOpen={criterionDecisionCount > 0}
-          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
-        >
-          {viewState.criterionReviewQueue.length ? (
-            viewState.criterionReviewQueue.map((item) => (
-              <WorkflowBundleCard
-                key={item.id}
-                item={item}
-                stageLabel="Criterion review"
-                helperText="Accept the current criterion, move the bundle into the right criterion, or park it in Other criterion for later."
-                onContextMenu={(nextItem, event) => {
-                  event.preventDefault();
-                  openBundleActionMenu(nextItem, "criterion", event.currentTarget);
-                }}
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleAcceptCriterion(item)}
-                      disabled={!resolveExistingCriterionCode(item)}
-                      className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Accept criterion
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => openCriterionPicker(item, "criterion", event.currentTarget)}
-                      className={documentActionButtonClass()}
-                    >
-                      Assign criterion
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMarkOtherCriterion(item)}
-                      className={documentActionButtonClass()}
-                    >
-                      Other criterion
-                    </button>
-                    <Link
-                      href={item.denseReviewHref}
-                      className={documentActionButtonClass()}
-                    >
-                      Dense workbench
-                    </Link>
-                  </>
-                }
-              />
-            ))
-          ) : (
-            <p className="text-[12px] leading-6 text-[var(--muted)]">
-              No bundle-level criterion calls are waiting right now.
-            </p>
-          )}
-        </CategoryBand>
-
-        <CategoryBand
-          legalCode="Hold"
-          title="Review later"
-          taggedCount={referenceCount + otherBundleCount + otherCriterionCount}
-          decisionCount={0}
-          routineCount={referenceCount + otherBundleCount + otherCriterionCount}
-          note="These items were intentionally held aside. They stay visible without adding noise to the active queue."
-          defaultOpen={
-            referenceCount + otherBundleCount + otherCriterionCount > 0
-          }
-          headerChipClassName="bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
-        >
-          {viewState.referenceItems.length ? (
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                Reference
-              </p>
-              {viewState.referenceItems.map((item) => (
-                <WorkflowDocumentCard
-                  key={item.id}
-                  item={item}
-                  stageLabel="Reference"
-                  helperLabel="Why it is held"
-                  helperBody="This file is real and retrievable, but it is not currently load-bearing for a claimed criterion."
-                  accentTone="warning"
-                  onContextMenu={(nextItem, event) => {
-                    event.preventDefault();
-                    openDocumentMenu(nextItem, "reference", event.clientX, event.clientY);
-                  }}
-                  actions={
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleReturnFromReference(item)}
-                        className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
-                      >
-                        Return to review
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveToArchive(item)}
-                        className={documentActionButtonClass()}
-                      >
-                        Archive
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickPeek(item)}
-                        className={documentActionButtonClass()}
-                      >
-                        Quick peek
-                      </button>
-                    </>
-                  }
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {viewState.otherBundleGroups.length ? (
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                Other bundle
-              </p>
-              {viewState.otherBundleGroups.map((group) => (
-                <div
-                  key={group.key}
-                  className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
-                      {group.workspaceLabel}
-                    </span>
-                    <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
-                      {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
-                    </span>
+            <CategoryBand
+              legalCode="2"
+              title="Confirm the right bundle"
+              taggedCount={bundleDecisionCount}
+              decisionCount={bundleDecisionCount}
+              routineCount={0}
+              note="Once a file is kept, confirm whether it belongs in the current bundle or move it before criterion review begins."
+              defaultOpen={bundleDecisionCount > 0}
+              headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+            >
+              {viewState.bundleReviewGroups.length ? (
+                viewState.bundleReviewGroups.map((group) => (
+                  <div
+                    key={group.key}
+                    className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
+                        {group.bundleName}
+                      </span>
+                      <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                        {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                        {group.workspaceLabel}
+                      </span>
+                    </div>
+                    {group.items.map((item) => (
+                      <WorkflowDocumentCard
+                        key={item.id}
+                        item={item}
+                        stageLabel="Bundle review"
+                        helperLabel="Why Setu paused"
+                        helperBody="Confirm the current bundle, move this file into a better bundle, or hold it in OTHER until you decide later."
+                        accentTone="muted"
+                        onContextMenu={(nextItem, event) => {
+                          event.preventDefault();
+                          openDocumentMenu(nextItem, "bundle", event.clientX, event.clientY);
+                        }}
+                        actions={renderBundleActionButtons(item)}
+                      />
+                    ))}
                   </div>
-                  {group.items.map((item) => (
+                ))
+              ) : (
+                <p className="text-[12px] leading-6 text-[var(--muted)]">
+                  No kept files are waiting for a bundle call right now.
+                </p>
+              )}
+            </CategoryBand>
+
+            <CategoryBand
+              legalCode="3"
+              title="Confirm the right criterion"
+              taggedCount={criterionDecisionCount}
+              decisionCount={criterionDecisionCount}
+              routineCount={0}
+              note="Only bundles whose kept files have already cleared bundle review appear here."
+              defaultOpen={criterionDecisionCount > 0}
+              headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+            >
+              {viewState.criterionReviewQueue.length ? (
+                viewState.criterionReviewQueue.map((item) => (
+                  <WorkflowBundleCard
+                    key={item.id}
+                    item={item}
+                    stageLabel="Criterion review"
+                    helperText="Accept the current criterion, move the bundle into the right criterion, or park it in OTHER for later."
+                    onContextMenu={(nextItem, event) => {
+                      event.preventDefault();
+                      openBundleActionMenu(nextItem, "criterion", event.currentTarget);
+                    }}
+                    actions={renderCriterionActionButtons(item)}
+                  />
+                ))
+              ) : (
+                <p className="text-[12px] leading-6 text-[var(--muted)]">
+                  No bundle-level criterion calls are waiting right now.
+                </p>
+              )}
+            </CategoryBand>
+
+            <CategoryBand
+              legalCode="OTHER"
+              title="OTHER"
+              taggedCount={heldLaterCount}
+              decisionCount={0}
+              routineCount={heldLaterCount}
+              note="This placeholder holds evidence and bundles that you want to revisit later for bundling, categorization, or classification without blocking the active queue."
+              defaultOpen={heldLaterCount > 0}
+              headerChipClassName="bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+            >
+              {viewState.referenceItems.length ? (
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Reference
+                  </p>
+                  {viewState.referenceItems.map((item) => (
                     <WorkflowDocumentCard
                       key={item.id}
                       item={item}
-                      stageLabel="Other bundle"
+                      stageLabel="Reference"
                       helperLabel="Why it is held"
-                      helperBody="Keep this file, but do not force it into a named event until you are confident about the right bundle."
+                      helperBody="This file is real and retrievable, but it is not currently load-bearing for a claimed criterion."
                       accentTone="warning"
                       onContextMenu={(nextItem, event) => {
                         event.preventDefault();
-                        openDocumentMenu(nextItem, "other-bundle", event.clientX, event.clientY);
+                        openDocumentMenu(nextItem, "reference", event.clientX, event.clientY);
                       }}
                       actions={
                         <>
                           <button
                             type="button"
-                            onClick={() => handleReturnFromOtherBundle(item)}
+                            onClick={() => handleReturnFromReference(item)}
                             className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
                           >
-                            Return to queue
+                            Return to review
                           </button>
                           <button
                             type="button"
-                            onClick={(event) =>
-                              openBundlePicker(item, "other-bundle", event.currentTarget)
-                            }
+                            onClick={() => handleMoveToArchive(item)}
                             className={documentActionButtonClass()}
                           >
-                            Move bundle
+                            Archive
                           </button>
                           <button
                             type="button"
@@ -1529,116 +2233,129 @@ export function ActionItemsSummary({
                     />
                   ))}
                 </div>
-              ))}
-            </div>
-          ) : null}
+              ) : null}
 
-          {viewState.otherCriterionQueue.length ? (
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                Other criterion
-              </p>
-              {viewState.otherCriterionQueue.map((item) => (
-                <WorkflowBundleCard
-                  key={item.id}
-                  item={item}
-                  stageLabel="Other criterion"
-                  helperText="This bundle stays out of the active criteria until you are ready to classify it."
-                  onContextMenu={(nextItem, event) => {
-                    event.preventDefault();
-                    openBundleActionMenu(nextItem, "other-criterion", event.currentTarget);
-                  }}
-                  actions={
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleReturnFromOtherCriterion(item)}
-                        className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white"
-                      >
-                        Return to queue
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) =>
-                          openCriterionPicker(item, "other-criterion", event.currentTarget)
-                        }
-                        className={documentActionButtonClass()}
-                      >
-                        Assign criterion
-                      </button>
-                      <Link
-                        href={item.denseReviewHref}
-                        className={documentActionButtonClass()}
-                      >
-                        Dense workbench
-                      </Link>
-                    </>
-                  }
-                />
-              ))}
-            </div>
-          ) : null}
+              {viewState.otherBundleGroups.length ? (
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Bundling placeholder
+                  </p>
+                  {viewState.otherBundleGroups.map((group) => (
+                    <div
+                      key={group.key}
+                      className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
+                          {group.workspaceLabel}
+                        </span>
+                        <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                          {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {group.items.map((item) => (
+                        <WorkflowDocumentCard
+                          key={item.id}
+                          item={item}
+                          stageLabel="OTHER"
+                          helperLabel="Why it is held"
+                          helperBody="Keep this file, but hold it in OTHER until you are confident about the right bundle."
+                          accentTone="warning"
+                          onContextMenu={(nextItem, event) => {
+                            event.preventDefault();
+                            openDocumentMenu(nextItem, "other-bundle", event.clientX, event.clientY);
+                          }}
+                          actions={renderBundleActionButtons(item, "other-bundle")}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
-          {referenceCount + otherBundleCount + otherCriterionCount === 0 ? (
-            <p className="text-[12px] leading-6 text-[var(--muted)]">
-              Nothing is parked for later right now.
-            </p>
-          ) : null}
-        </CategoryBand>
+              {viewState.otherCriterionQueue.length ? (
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Category placeholder
+                  </p>
+                  {viewState.otherCriterionQueue.map((item) => (
+                    <WorkflowBundleCard
+                      key={item.id}
+                      item={item}
+                      stageLabel="OTHER"
+                      helperText="This bundle stays in the OTHER placeholder until you are ready to classify it confidently."
+                      onContextMenu={(nextItem, event) => {
+                        event.preventDefault();
+                        openBundleActionMenu(nextItem, "other-criterion", event.currentTarget);
+                      }}
+                      actions={renderCriterionActionButtons(item, "other-criterion")}
+                    />
+                  ))}
+                </div>
+              ) : null}
 
-        <CategoryBand
-          legalCode="Ready"
-          title="Ready library"
-          taggedCount={readyCount}
-          decisionCount={0}
-          routineCount={readyCount}
-          note="These files already cleared keep/archive, bundle fit, and criterion fit."
-          defaultOpen={readyCount > 0}
-        >
-          {viewState.readyBands.length ? (
-            viewState.readyBands.map((band) => (
-              <CategoryBand
-                key={band.key}
-                legalCode={band.legalCode}
-                title={band.title}
-                taggedCount={band.taggedCount}
-                decisionCount={0}
-                routineCount={band.routine?.count ?? 0}
-                note={band.note}
-              >
-                {band.routine ? (
-                  <RoutineRow
-                    label={band.routine.label}
-                    count={band.routine.count}
-                    samples={band.routine.samples}
-                    href={band.routine.denseReviewHref}
-                  />
-                ) : null}
-              </CategoryBand>
-            ))
-          ) : (
-            <p className="text-[12px] leading-6 text-[var(--muted)]">
-              Files will land here once all three review steps are complete.
-            </p>
-          )}
-        </CategoryBand>
+              {heldLaterCount === 0 ? (
+                <p className="text-[12px] leading-6 text-[var(--muted)]">
+                  Nothing is parked for later right now.
+                </p>
+              ) : null}
+            </CategoryBand>
 
-        <CategoryBand
-          legalCode="Archive"
-          title="Archived out of the active petition set"
-          taggedCount={viewState.archiveCount}
-          decisionCount={0}
-          routineCount={viewState.archiveCount}
-          note="Archived files stay available in the dense workbench, but they are no longer part of the active review workflow."
-        >
-          <RoutineRow
-            label="archived file"
-            count={viewState.archiveCount}
-            samples={viewState.archiveSampleTitles}
-            href={archiveReviewHref}
-          />
-        </CategoryBand>
-      </div>
+            <CategoryBand
+              legalCode="Ready"
+              title="Ready library"
+              taggedCount={readyCount}
+              decisionCount={0}
+              routineCount={readyCount}
+              note="These files already cleared keep/archive, bundle fit, and criterion fit."
+              defaultOpen={readyCount > 0}
+            >
+              {viewState.readyBands.length ? (
+                viewState.readyBands.map((band) => (
+                  <CategoryBand
+                    key={band.key}
+                    legalCode=""
+                    title={band.title}
+                    taggedCount={band.taggedCount}
+                    decisionCount={0}
+                    routineCount={band.routine?.count ?? 0}
+                    note={band.note}
+                  >
+                    {band.routine ? (
+                      <RoutineRow
+                        label={band.routine.label}
+                        count={band.routine.count}
+                        samples={band.routine.samples}
+                        href={band.routine.denseReviewHref}
+                      />
+                    ) : null}
+                  </CategoryBand>
+                ))
+              ) : (
+                <p className="text-[12px] leading-6 text-[var(--muted)]">
+                  Files will land here once all three review steps are complete.
+                </p>
+              )}
+            </CategoryBand>
+
+            <CategoryBand
+              legalCode="Archive"
+              title="Archived out of the active petition set"
+              taggedCount={viewState.archiveCount}
+              decisionCount={0}
+              routineCount={viewState.archiveCount}
+              note="Archived files stay available in the dense workbench, but they are no longer part of the active review workflow."
+            >
+              <RoutineRow
+                label="archived file"
+                count={viewState.archiveCount}
+                samples={viewState.archiveSampleTitles}
+                href={archiveReviewHref}
+              />
+            </CategoryBand>
+          </div>
+        </>
+      ) : null}
 
       <div className="flex flex-col gap-3 rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-[12px] leading-6 text-[var(--muted)]">

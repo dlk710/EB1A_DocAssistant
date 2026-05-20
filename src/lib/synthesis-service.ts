@@ -281,7 +281,7 @@ function buildFallbackSynthesis(input: {
   approvedDrafts: ApprovedDraftContext[];
 }) {
   const allEntries = [...input.lockedStrategy.primary, ...input.lockedStrategy.supporting];
-  const criterionList = allEntries.map((entry) => `${entry.legalCode} ${entry.criterionName}`).join(", ");
+  const criterionList = allEntries.map((entry) => entry.criterionName).join(", ");
   const criterionRefs = allEntries.map((entry) => entry.legalCode);
 
   if (input.kind === "statement-of-eligibility") {
@@ -294,7 +294,7 @@ function buildFallbackSynthesis(input: {
       ),
       conservativeSynthesisParagraph(
         leadCriterion
-          ? `The petition’s lead theory centers on ${leadCriterion.legalCode} ${leadCriterion.criterionName}. The locked strategy explains that ${input.lockedStrategy.narrativeSpine}. The sections that follow provide the detailed criterion-by-criterion support for that theory.`
+          ? `The petition’s lead theory centers on ${leadCriterion.criterionName}. The locked strategy explains that ${input.lockedStrategy.narrativeSpine}. The sections that follow provide the detailed criterion-by-criterion support for that theory.`
           : `The petition’s lead theory follows the locked strategy narrative: ${input.lockedStrategy.narrativeSpine}. The sections that follow provide the detailed criterion-by-criterion support for that theory.`,
         leadCriterion ? [leadCriterion.legalCode] : criterionRefs,
         input.approvedDrafts,
@@ -306,7 +306,7 @@ function buildFallbackSynthesis(input: {
     };
   }
 
-  const primary = input.lockedStrategy.primary.map((entry) => `${entry.legalCode} ${entry.criterionName}`).join(", ");
+  const primary = input.lockedStrategy.primary.map((entry) => entry.criterionName).join(", ");
   const thresholdParagraph = conservativeSynthesisParagraph(
     `${input.candidateName} satisfies the regulatory threshold because the record establishes the following criteria under 8 CFR §204.5(h)(3): ${criterionList}. Those approved sections therefore meet Step One of the final merits analysis.`,
     criterionRefs,

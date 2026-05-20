@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getCriterionDisplayName } from "@/lib/constants";
 import {
   createChatArtifact,
   getChatSession,
@@ -34,7 +35,7 @@ function deriveArtifactRecord(
 
   if (input.kind === "strategy-memo" && artifact.schemaVersion === "strategy-memo/2.0") {
     return {
-      title: `Strategy memo · ${artifact.leadArgument.criterionCode}`,
+      title: `Strategy memo · ${getCriterionDisplayName(artifact.leadArgument.criterionCode)}`,
       workspaceIds: artifact.workspaceIds,
       strategyMemo: artifact,
     } satisfies Pick<ChatArtifactRecord, "title" | "workspaceIds" | "strategyMemo">;
@@ -45,7 +46,7 @@ function deriveArtifactRecord(
       title:
         artifact.scope === "full-petition"
           ? "Stress-test · full petition"
-          : `Stress-test · ${artifact.scope.criterionCode}`,
+          : `Stress-test · ${getCriterionDisplayName(artifact.scope.criterionCode)}`,
       workspaceIds: artifact.workspaceIds,
       stressTestReport: artifact,
     } satisfies Pick<ChatArtifactRecord, "title" | "workspaceIds" | "stressTestReport">;
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
             const memo = getLatestStrategyMemo(parsed.data.clientId);
             return memo
               ? {
-                  title: `Strategy memo · ${memo.leadArgument.criterionCode}`,
+                  title: `Strategy memo · ${getCriterionDisplayName(memo.leadArgument.criterionCode)}`,
                   workspaceIds: memo.workspaceIds,
                   strategyMemo: memo,
                 }
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
                     title:
                       report.scope === "full-petition"
                         ? "Stress-test · full petition"
-                        : `Stress-test · ${report.scope.criterionCode}`,
+                        : `Stress-test · ${getCriterionDisplayName(report.scope.criterionCode)}`,
                     workspaceIds: report.workspaceIds,
                     stressTestReport: report,
                   }

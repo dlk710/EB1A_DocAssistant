@@ -21,6 +21,8 @@ import { buildLibrarySnapshot } from "@/lib/library";
 import { ensureClientTimelineEvent } from "@/lib/timeline";
 import type { ClientDocument, ClientStatus, LibrarySnapshot } from "@/lib/types";
 
+const OTHER_REVIEW_BUCKET_CODE = "OTHER";
+
 interface ClientReviewPageProps {
   params: Promise<{
     clientId: string;
@@ -433,7 +435,10 @@ function buildReviewQueues(
         bucketCode: decision?.bucketCode ?? null,
       };
 
-      if (criterionDecision?.status === "other") {
+      if (
+        criterionDecision?.status === "other" ||
+        (!criterionDecision && decision?.bucketCode === OTHER_REVIEW_BUCKET_CODE)
+      ) {
         otherCriterionQueue.push(bundleItem);
         return;
       }
@@ -631,23 +636,13 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
               {
                 number: 2,
                 label: "Review",
-                state:
-                  derivedStatus === "locked"
-                    ? "done"
-                    :
-                  derivedStatus === "reviewing"
-                    ? "active"
-                    : getClientStageNumber(derivedStatus) > 2
-                      ? "done"
-                      : "active",
+                state: "active",
               },
               {
                 number: 3,
                 label: "Strategy",
                 state:
-                  derivedStatus === "strategizing"
-                    ? "active"
-                    : derivedStatus === "locked"
+                  derivedStatus === "strategizing" || derivedStatus === "locked"
                       ? "done"
                       : getClientStageNumber(derivedStatus) > 2
                         ? "done"
@@ -694,17 +689,17 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
           <main className="space-y-5">
             <section className="rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div>
+                <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                     Human review
                   </p>
                   <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-                    Review files in the same order a document specialist actually works
+                    Human review
                   </h1>
                   <p className="mt-2 max-w-4xl text-[12px] leading-6 text-[var(--muted)]">
-                    First decide whether a file stays active, then confirm its bundle, then confirm
-                    the bundle&apos;s criterion. Anything parked in Reference, Other bundle, or Other
-                    criterion stays visible without blocking the rest of the case.
+                    A real case can carry hundreds of files. Setu gives you four review modes so
+                    you can triage quickly, inspect in detail, and still preserve the file → bundle
+                    → criterion sequence without losing held-later work.
                   </p>
                 </div>
                 <span className="self-start rounded-full border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)] lg:ml-auto">

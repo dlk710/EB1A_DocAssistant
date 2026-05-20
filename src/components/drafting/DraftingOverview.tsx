@@ -87,7 +87,7 @@ export function DraftingOverview(props: {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                      {entry.legalCode}
+                      EB1A criterion
                     </p>
                     <p className="mt-2 text-[15px] font-semibold text-[var(--foreground)]">
                       {entry.name}

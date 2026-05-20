@@ -14,14 +14,14 @@ export function CriteriaGrid(props: { coverage: WorkspaceCoverage | null }) {
               ? "border-[var(--brand)]/35 bg-[var(--brand-soft)]"
               : "border-[var(--state-warning)]/20 bg-[var(--state-warning-soft)]"
           }`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                {criterion.legalCode}
-              </p>
-              <h3 className="mt-2 text-[15px] font-semibold text-[var(--foreground)]">
-                {criterion.name}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                  EB1A criterion
+                </p>
+                <h3 className="mt-2 text-[15px] font-semibold text-[var(--foreground)]">
+                  {criterion.name}
               </h3>
             </div>
             <span

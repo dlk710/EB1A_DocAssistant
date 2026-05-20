@@ -51,7 +51,7 @@ import type {
   WorkspaceEb1aClassificationState,
   WorkspaceEventBundleState,
 } from "@/lib/types";
-import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
+import { EB1A_CRITERIA_DEFINITIONS, getCriterionDisplayName } from "@/lib/constants";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
 import {
   DEFAULT_BUNDLING_PROMPT_TEMPLATE,
@@ -316,6 +316,11 @@ const REVIEW_BUCKET_TONES: Record<string, ReviewBucketTone> = {
     card: "border-rose-200 bg-white/96 shadow-[0_12px_28px_rgba(15,23,42,0.04)]",
     badge: "bg-[#fff1f3] text-[#be445d]",
     accentBar: "bg-[#e36b86]",
+  },
+  OTHER: {
+    card: "border-violet-200 bg-white/96 shadow-[0_12px_28px_rgba(15,23,42,0.04)]",
+    badge: "bg-[#f3efff] text-[#6c52c7]",
+    accentBar: "bg-[#9278e1]",
   },
   REVIEW: {
     card: "border-amber-200 bg-white/96 shadow-[0_12px_28px_rgba(15,23,42,0.04)]",
@@ -1140,6 +1145,10 @@ function getReviewBucketTone(bucketCode: string, bucketKind: ReviewBucketKind) {
     return REVIEW_BUCKET_TONES.REVIEW;
   }
 
+  if (bucketKind === "other") {
+    return REVIEW_BUCKET_TONES.OTHER;
+  }
+
   return REVIEW_BUCKET_TONES["04"];
 }
 
@@ -1157,7 +1166,7 @@ function decisionBucketLabel(
   return classification.reviewDisposition === "classified" &&
     classification.primaryCriterionCode &&
     classification.primaryCriterionName
-    ? `${classification.primaryCriterionCode} · ${classification.primaryCriterionName}`
+    ? classification.primaryCriterionName
     : classification.bucketName;
 }
 
@@ -3679,9 +3688,7 @@ export function EvidenceWorkbench({
               {pendingReviewQueue.map((item, index) => {
                 const isSelected = selectedDocument?.id === item.document.id;
                 const reviewLabel =
-                  item.bucketCode && item.bucketName
-                    ? `${item.bucketCode} · ${item.bucketName}`
-                    : item.bundleName;
+                  item.bucketName || item.bundleName;
                 const aiReason =
                   item.document.reviewStatusReason ||
                   "AI left this file in pending so a human can decide whether it belongs in the petition set.";
@@ -3713,6 +3720,8 @@ export function EvidenceWorkbench({
                                       ? "archive"
                                       : item.bucketCode === "UNWANTED"
                                         ? "unwanted"
+                                        : item.bucketCode === "OTHER"
+                                          ? "other"
                                         : item.bucketCode === "REVIEW"
                                           ? "human_review"
                                           : "criterion",
@@ -3761,12 +3770,12 @@ export function EvidenceWorkbench({
                                 event.stopPropagation();
                                 void cycleCriterionForDocument(item.document, criterion.code);
                               }}
-                              className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
+                            className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
                                 criterion.role,
                                 criterion.source,
                               )}`}
                             >
-                              {criterion.legalCode} {criterion.role}
+                              {getCriterionDisplayName(criterion.code, criterion.name)} {criterion.role}
                             </button>
                           ))}
                         </div>
@@ -4370,9 +4379,6 @@ export function EvidenceWorkbench({
                                   : "bg-[var(--border-primary)]"
                             }`}
                           />
-                          <span className="font-mono text-[11px] text-[var(--muted)]">
-                            {criterion.legalCode}
-                          </span>
                           <span className="flex-1 truncate">{criterion.name}</span>
                           <span className="font-mono text-[11px] text-[var(--muted)]">
                             {criterion.keptCount}
@@ -4782,7 +4788,7 @@ export function EvidenceWorkbench({
                               <div className="flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
-                                    {bucket.bucketCode} · {bucket.bucketName}
+                                    {bucket.bucketName}
                                   </span>
                                   <span className="rounded-full border border-[#ebe9e2] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                                     {bucket.bundles.length} bundle(s)
@@ -4963,13 +4969,13 @@ export function EvidenceWorkbench({
                                                                   event.stopPropagation();
                                                                   void cycleCriterionForDocument(document, criterion.code);
                                                                 }}
-                                                                className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
-                                                                  criterion.role,
-                                                                  criterion.source,
-                                                                )}`}
-                                                              >
-                                                                {criterion.legalCode} {criterion.role}
-                                                              </button>
+                                                  className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
+                                                      criterion.role,
+                                                      criterion.source,
+                                                    )}`}
+                                                  >
+                                                    {getCriterionDisplayName(criterion.code, criterion.name)} {criterion.role}
+                                                  </button>
                                                             ))}
                                                           </div>
                                                         </button>
@@ -5198,12 +5204,12 @@ export function EvidenceWorkbench({
                                                       event.stopPropagation();
                                                       void cycleCriterionForDocument(document, criterion.code);
                                                     }}
-                                                    className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
+                                                  className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
                                                       criterion.role,
                                                       criterion.source,
                                                     )}`}
                                                   >
-                                                    {criterion.legalCode} {criterion.role}
+                                                    {getCriterionDisplayName(criterion.code, criterion.name)} {criterion.role}
                                                   </button>
                                                 ))}
                                               </div>
@@ -5360,9 +5366,6 @@ export function EvidenceWorkbench({
                                   : "bg-[var(--border-primary)]"
                             }`}
                           />
-                          <span className="font-mono text-[10px] text-[var(--muted)]">
-                            {criterion.legalCode}
-                          </span>
                           <span className="flex-1 truncate">{criterion.name}</span>
                           <span className="font-mono text-[10px] text-[var(--muted)]">
                             {criterion.keptCount}
@@ -5532,9 +5535,8 @@ export function EvidenceWorkbench({
                       className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[12px] text-[var(--foreground)] hover:bg-[var(--brand-soft)]"
                     >
                       <span className="font-mono text-[10px] text-[var(--muted)]">
-                        {criterion.legalCode}
+                        {criterion.name}
                       </span>
-                      <span>{criterion.name}</span>
                     </button>
                   ))}
                 </div>
@@ -5751,12 +5753,12 @@ export function EvidenceWorkbench({
                               onClick={() =>
                                 void cycleCriterionForDocument(selectedDocument, criterion.code)
                               }
-                              className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
+                            className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${criterionChipTone(
                                 criterion.role,
                                 criterion.source,
                               )}`}
                             >
-                              {criterion.legalCode} {criterion.name} · {criterion.role}
+                              {getCriterionDisplayName(criterion.code, criterion.name)} · {criterion.role}
                             </button>
                           ))}
                           {EB1A_CRITERIA_DEFINITIONS.filter(
@@ -5779,7 +5781,7 @@ export function EvidenceWorkbench({
                                 }
                                 className="rounded-full border border-dashed border-[#d8d3c6] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]"
                               >
-                                + {criterion.legalCode}
+                                + {criterion.name}
                               </button>
                             ))}
                         </div>
@@ -5791,7 +5793,7 @@ export function EvidenceWorkbench({
                                 className="rounded-[14px] border border-[#ece8dd] bg-[#faf9f5] p-3"
                               >
                                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#2b62b5]">
-                                  {criterion.legalCode} {criterion.role} · {confidenceBand(criterion.confidence)}
+                                  {getCriterionDisplayName(criterion.code, criterion.name)} {criterion.role} · {confidenceBand(criterion.confidence)}
                                 </p>
                                 <p className="mt-2 text-[12px] leading-6 text-[var(--foreground)]">
                                   {criterion.source === "manual" ? "[manual override] " : ""}
@@ -7072,12 +7074,12 @@ export function EvidenceWorkbench({
                                 {criterionSummary.map((criterion) => (
                                   <span
                                     key={criterion.code}
-                                    className={`rounded-full px-2.5 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] ${decisionBadgeClassName(
+                                  className={`rounded-full px-2.5 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] ${decisionBadgeClassName(
                                       criterion.code,
                                       "criterion",
                                     )}`}
                                   >
-                                    {criterion.code} {criterion.name} · {criterion.count}
+                                    {criterion.name} · {criterion.count}
                                   </span>
                                 ))}
                                 {archiveBundleCount ? (
@@ -7279,9 +7281,7 @@ export function EvidenceWorkbench({
                                           bucket.bucketKind,
                                         )}`}
                                       >
-                                        {bucket.bucketKind === "criterion"
-                                          ? `${bucket.bucketCode} · ${bucket.bucketName}`
-                                          : bucket.bucketName}
+                                        {bucket.bucketName}
                                       </span>
                                       <span className="rounded-full border border-white/80 bg-white/76 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                                         {bucket.bundles.length} bundle(s)

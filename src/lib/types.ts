@@ -43,6 +43,7 @@ export type ReviewBucketKind =
   | "criterion"
   | "archive"
   | "unwanted"
+  | "other"
   | "human_review";
 export type EvidenceReviewStatus = "kept" | "pending" | "reference" | "archived";
 export type CriterionTagRole = "primary" | "supporting";

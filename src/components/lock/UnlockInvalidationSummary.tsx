@@ -1,4 +1,5 @@
 import type { CriterionDraft, LockedCaseStrategy } from "@/lib/types";
+import { getCriterionDisplayName } from "@/lib/constants";
 
 export function UnlockInvalidationSummary(props: {
   lockedStrategy: LockedCaseStrategy | null;
@@ -34,7 +35,7 @@ export function UnlockInvalidationSummary(props: {
           <ul className="mt-3 space-y-2 text-[12px] leading-6 text-[var(--foreground)]">
             {[...props.lockedStrategy.primary, ...props.lockedStrategy.supporting].map((entry) => (
               <li key={`${entry.role}-${entry.criterionCode}`}>
-                {entry.legalCode} {entry.criterionName}
+                {entry.criterionName}
               </li>
             ))}
           </ul>
@@ -47,7 +48,7 @@ export function UnlockInvalidationSummary(props: {
             {props.drafts.length ? (
               props.drafts.map((draft) => (
                 <li key={draft.criterionCode}>
-                  {draft.criterionCode} · {draft.status}
+                  {getCriterionDisplayName(draft.criterionCode)} · {draft.status}
                   {draft.outOfDate ? " · out-of-date" : ""}
                 </li>
               ))

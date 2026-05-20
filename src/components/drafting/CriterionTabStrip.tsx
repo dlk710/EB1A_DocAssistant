@@ -44,9 +44,8 @@ export function CriterionTabStrip(props: {
             }`}
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em]">
-              {tab.legalCode}
+              {tab.name}
             </p>
-            <p className="mt-1 text-[12px] font-semibold">{tab.name}</p>
             <p className={`mt-1 text-[10px] ${tab.active ? "text-white/72" : "text-current/72"}`}>
               {statusLabel(tab)}
             </p>

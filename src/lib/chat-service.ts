@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
+import { EB1A_CRITERIA_DEFINITIONS, getCriterionDisplayName } from "@/lib/constants";
 import { buildQueryVector } from "@/lib/ai";
 import {
   applyCitationContractToDraft,
@@ -109,6 +109,10 @@ function criterionMeta(code: string) {
       folderName: code,
     }
   );
+}
+
+function formatCriterionList(codes: string[]) {
+  return codes.length ? codes.map((code) => getCriterionDisplayName(code)).join(", ") : "none";
 }
 
 function stripExhibitPrefix(label: string) {
@@ -242,7 +246,7 @@ function buildConservativeCriterionDraft(input: {
     createdAt: new Date().toISOString(),
     section: "criterion-argument" as const,
     targetCriterionCode: input.criterionCode,
-    title: `${input.lockedEntry.legalCode} ${input.criterionName}`,
+    title: input.criterionName,
     paragraphs,
     wordCount: paragraphs.reduce(
       (sum, paragraph) => sum + paragraph.text.trim().split(/\s+/).filter(Boolean).length,
@@ -416,7 +420,7 @@ export async function generateClientBriefDraft(input: {
     (entry) => entry.criterionCode === input.criterionCode,
   );
   if (!lockedEntry) {
-    throw new Error(`Criterion ${input.criterionCode} is not part of the locked case theory.`);
+    throw new Error(`${getCriterionDisplayName(input.criterionCode)} is not part of the locked case theory.`);
   }
 
   const strategyMemo = getLatestStrategyMemo(input.clientId);
@@ -434,7 +438,7 @@ export async function generateClientBriefDraft(input: {
 
   if (!retrieval.documents.length) {
     throw new Error(
-      `Criterion ${criterion.legalCode} has no kept or pending documents tagged. Draft is not possible until evidence is tagged for this criterion.`,
+      `${criterion.name} has no kept or pending documents tagged. Draft is not possible until evidence is tagged for this criterion.`,
     );
   }
 
@@ -456,8 +460,8 @@ export async function generateClientBriefDraft(input: {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const attemptMessage =
       attempt === 1
-        ? input.message || `Draft the ${criterion.legalCode} ${criterion.name} argument for this client.`
-        : `${input.message || `Redraft the ${criterion.legalCode} ${criterion.name} argument for this client.`}\n\nRevision instruction: stay closer to the cited source language, avoid exclusivity or superlatives unless they appear in evidence, and keep each paragraph tightly grounded in a specific exhibit.`;
+        ? input.message || `Draft the ${criterion.name} argument for this client.`
+        : `${input.message || `Redraft the ${criterion.name} argument for this client.`}\n\nRevision instruction: stay closer to the cited source language, avoid exclusivity or superlatives unless they appear in evidence, and keep each paragraph tightly grounded in a specific exhibit.`;
 
     try {
       const response = await client.responses.create({
@@ -536,7 +540,7 @@ export async function generateClientBriefDraft(input: {
         citations: citationChecked.citations,
         droppedClaims: citationChecked.droppedClaims,
         costUsd: totalCostUsd,
-        reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.legalCode} ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile${attempt > 1 ? ` after ${attempt} drafting attempts` : ""}.`,
+        reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile${attempt > 1 ? ` after ${attempt} drafting attempts` : ""}.`,
         pendingDisclosure:
           retrieval.documents.some((document) => document.reviewStatus === "pending")
             ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
@@ -585,7 +589,7 @@ export async function generateClientBriefDraft(input: {
     citations: citationCheckedFallback.citations,
     droppedClaims: citationCheckedFallback.droppedClaims,
     costUsd: totalCostUsd,
-    reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.legalCode} ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile. Setu fell back to a conservative evidence-led draft after stricter attempts triggered fact-check drift warnings${lastDraftError ? ` (${lastDraftError.message})` : ""}.`,
+    reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile. Setu fell back to a conservative evidence-led draft after stricter attempts triggered fact-check drift warnings${lastDraftError ? ` (${lastDraftError.message})` : ""}.`,
     pendingDisclosure:
       retrieval.documents.some((document) => document.reviewStatus === "pending")
         ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
@@ -962,7 +966,7 @@ export async function runClientChatTurn(input: {
         scope: "client",
       },
       response: {
-        text: `Strategy memo prepared for EB-1A. Primary criteria: ${strategy.memo.recommendedMix.primary.map((entry) => entry.criterionCode).join(", ") || "none"}. Supporting criteria: ${strategy.memo.recommendedMix.supporting.map((entry) => entry.criterionCode).join(", ") || "none"}.`,
+        text: `Strategy memo prepared for EB-1A. Primary criteria: ${formatCriterionList(strategy.memo.recommendedMix.primary.map((entry) => entry.criterionCode))}. Supporting criteria: ${formatCriterionList(strategy.memo.recommendedMix.supporting.map((entry) => entry.criterionCode))}.`,
         artifact: strategy.memo,
         citations: strategy.citations,
         reasoning: strategy.reasoning,
@@ -1092,7 +1096,7 @@ export async function runClientChatTurn(input: {
       scope: "criterion",
     },
     response: {
-      text: `Draft prepared for ${criterion.legalCode} ${criterion.name}. Review the paragraphs, fact-check flags, and exhibit references before approving.`,
+      text: `Draft prepared for ${criterion.name}. Review the paragraphs, fact-check flags, and exhibit references before approving.`,
       artifact: draft.draft,
       citations: draft.citations,
       reasoning: draft.reasoning,

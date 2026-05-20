@@ -142,9 +142,19 @@ The client home is the operational summary for one client. It shows:
 The client review page is action-oriented. It emphasizes:
 
 - items that still require human judgment
+- four review modes:
+  - `Inbox`
+  - `Table`
+  - `Workbench`
+  - `By category`
 - category bands and archive bands
 - human-review queue behavior
 - quick actions and quick peek
+- the staged sequence:
+  - keep or archive the file
+  - confirm the right bundle
+  - confirm the right criterion
+- an `OTHER` placeholder bucket for evidence or bundles that should stay visible but be revisited later
 
 ### Strategy stage
 

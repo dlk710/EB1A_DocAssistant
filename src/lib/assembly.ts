@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { applyBatesRanges, totalPagesFromSections } from "@/lib/bates";
 import { buildAuditFindings } from "@/lib/audit";
+import { getCriterionDisplayName } from "@/lib/constants";
 import { normalizeExhibitReferences, extractCriterionRefs } from "@/lib/cross-reference";
 import { listClientJobs, getClient } from "@/lib/clients";
 import { listCriterionDrafts } from "@/lib/drafts";
@@ -206,7 +207,7 @@ function buildTocEntryTitle(section: PetitionSection) {
     case "final-merits-determination":
       return "Final Merits Determination";
     case "criterion-argument":
-      return `Criterion ${section.criterionCode}`;
+      return getCriterionDisplayName(section.criterionCode, "Criterion");
     case "exhibit-index":
       return "Exhibit index";
     case "exhibit":
@@ -286,7 +287,7 @@ export async function buildPacketAssembly(clientId: string): Promise<PacketBuild
   const criterionRendered = await Promise.all(
     criterionSectionsSource.map((source) =>
       renderTextSection("criterion-argument", {
-        title: `${source.entry.legalCode} ${source.entry.criterionName}`,
+        title: source.entry.criterionName,
         subtitle: source.entry.role === "primary" ? "Primary criterion" : "Supporting criterion",
         paragraphs: source.normalizedText.split(/\n{2,}/).filter(Boolean),
         sourceVersion: source.draft.latestApprovedVersion ?? 1,

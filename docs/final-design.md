@@ -300,10 +300,22 @@ Setu has two review-oriented layers.
 The client review page is action-oriented and groups work by:
 
 - actionable items still requiring human review
+- four working modes:
+  - `Inbox` for one-item-at-a-time triage
+  - `Table` for scanning and acting across the open queue
+  - `Workbench` for master-detail inspection
+  - `By category` for criterion- and queue-oriented cleanup
 - category bands
 - a dedicated Reference band for documents held aside without counting toward coverage
+- a dedicated `OTHER` placeholder band for bundles or files that should stay in scope but be revisited later
 - archive and cleanup bands
 - routine evidence that is already stabilized
+
+The workflow order stays explicit:
+
+- file decision first
+- bundle fit second
+- criterion fit third
 
 Each decision row on `/clients/<clientId>/review` supports visible `Assign criterion` and `Actions` triggers, plus a right-click context menu, for:
 

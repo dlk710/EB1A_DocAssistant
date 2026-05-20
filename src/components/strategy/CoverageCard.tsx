@@ -38,7 +38,7 @@ export function CoverageCard(props: { coverage: WorkspaceCoverage | null }) {
                   ? "bg-[var(--brand-amber-mid)]"
                   : "bg-white/15"
             }`}
-            title={`${criterion.legalCode} ${criterion.name}`}
+            title={criterion.name}
           />
         ))}
       </div>

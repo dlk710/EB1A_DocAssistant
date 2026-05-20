@@ -8,6 +8,7 @@ import { LockConfirmation } from "@/components/lock/LockConfirmation";
 import { LockHero } from "@/components/lock/LockHero";
 import { LockedCriterionRow } from "@/components/lock/LockedCriterionRow";
 import { NarrativeSpineCard } from "@/components/lock/NarrativeSpineCard";
+import { getCriterionDefinition, getCriterionDisplayName } from "@/lib/constants";
 import type { ChatArtifactRecord, StrategyMemo } from "@/lib/types";
 
 export function LockWorkspace(props: {
@@ -126,8 +127,8 @@ export function LockWorkspace(props: {
                         key={`primary-${entry.criterionCode}`}
                         entry={{
                           criterionCode: entry.criterionCode,
-                          legalCode: entry.criterionCode,
-                          criterionName: entry.criterionCode,
+                          legalCode: getCriterionDefinition(entry.criterionCode)?.legalCode ?? entry.criterionCode,
+                          criterionName: getCriterionDisplayName(entry.criterionCode),
                           role: "primary",
                           rationale: entry.rationale,
                           anchorDocIds: entry.anchorDocIds,
@@ -149,8 +150,8 @@ export function LockWorkspace(props: {
                         key={`supporting-${entry.criterionCode}`}
                         entry={{
                           criterionCode: entry.criterionCode,
-                          legalCode: entry.criterionCode,
-                          criterionName: entry.criterionCode,
+                          legalCode: getCriterionDefinition(entry.criterionCode)?.legalCode ?? entry.criterionCode,
+                          criterionName: getCriterionDisplayName(entry.criterionCode),
                           role: "supporting",
                           rationale: entry.rationale,
                           anchorDocIds: entry.anchorDocIds,
@@ -182,7 +183,7 @@ export function LockWorkspace(props: {
                           className="rounded-[14px] bg-[var(--paper-secondary)] px-4 py-3"
                         >
                           <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                            {entry.criterionCode}
+                            {getCriterionDisplayName(entry.criterionCode)}
                           </p>
                           <p className="mt-1 text-[12px] leading-6 text-[var(--muted)]">
                             {entry.rationale}

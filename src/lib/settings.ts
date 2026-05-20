@@ -10,8 +10,10 @@ import {
   DEFAULT_STRATEGY_PROMPT_TEMPLATE,
   DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
   DEFAULT_TRIAGE_PROMPT_TEMPLATE,
+  LEGACY_BUNDLING_PROMPT_TEMPLATE,
   LEGACY_CLASSIFICATION_PROMPT_TEMPLATE,
   LEGACY_SUMMARY_PROMPT_TEMPLATE,
+  PHASED_CLASSIFICATION_PROMPT_TEMPLATE,
 } from "@/lib/prompt-library";
 import { debugQdrantStoragePath } from "@/lib/qdrant";
 import { readStateFile, writeStateFile } from "@/lib/state-store";
@@ -83,8 +85,13 @@ export function getRuntimeSettings(): RuntimeSettings {
     persisted.summaryPrompt?.trim() === LEGACY_SUMMARY_PROMPT_TEMPLATE
       ? DEFAULT_SUMMARY_PROMPT_TEMPLATE
       : persisted.summaryPrompt?.trim();
+  const normalizedBundlingPrompt =
+    persisted.bundlingPrompt?.trim() === LEGACY_BUNDLING_PROMPT_TEMPLATE
+      ? DEFAULT_BUNDLING_PROMPT_TEMPLATE
+      : persisted.bundlingPrompt?.trim();
   const normalizedClassificationPrompt =
-    persisted.classificationPrompt?.trim() === LEGACY_CLASSIFICATION_PROMPT_TEMPLATE
+    persisted.classificationPrompt?.trim() === LEGACY_CLASSIFICATION_PROMPT_TEMPLATE ||
+    persisted.classificationPrompt?.trim() === PHASED_CLASSIFICATION_PROMPT_TEMPLATE
       ? DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
       : persisted.classificationPrompt?.trim();
 
@@ -96,7 +103,7 @@ export function getRuntimeSettings(): RuntimeSettings {
       process.env.EB1A_SUMMARY_PROMPT ||
       DEFAULT_SUMMARY_PROMPT_TEMPLATE,
     bundlingPrompt:
-      persisted.bundlingPrompt?.trim() ||
+      normalizedBundlingPrompt ||
       process.env.EB1A_BUNDLING_PROMPT ||
       DEFAULT_BUNDLING_PROMPT_TEMPLATE,
     classificationPrompt:

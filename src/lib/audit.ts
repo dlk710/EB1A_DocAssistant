@@ -1,4 +1,4 @@
-import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
+import { EB1A_CRITERIA_DEFINITIONS, getCriterionDisplayName } from "@/lib/constants";
 import type { AuditFinding, CriterionDraft, PetitionSection, SynthesisDraft } from "@/lib/types";
 
 function unique<T>(values: T[]) {
@@ -31,7 +31,7 @@ export function buildAuditFindings(input: {
         id: `pinned-uncited:${entry.criterionCode}:${entry.exhibitLabel}`,
         severity: "warning",
         kind: "pinned-exhibit-uncited",
-        description: `${entry.exhibitLabel} is pinned for criterion ${entry.criterionCode} but is not cited in the approved petition text.`,
+        description: `${entry.exhibitLabel} is pinned for ${getCriterionDisplayName(entry.criterionCode)} but is not cited in the approved petition text.`,
         affectedExhibit: entry.exhibitLabel,
         suggestedActions: [
           { label: "Include in packet anyway", action: "accept-warning" },
@@ -101,7 +101,7 @@ export function buildAuditFindings(input: {
         id: `draft-out-of-date:${draft.criterionCode}`,
         severity: "warning",
         kind: "draft-source-out-of-date",
-        description: `${draft.criterionCode} has edits newer than the approved version.`,
+        description: `${getCriterionDisplayName(draft.criterionCode)} has edits newer than the approved version.`,
         affectedSection: draft.criterionCode,
         suggestedActions: [
           { label: "Re-approve latest version", action: "open-drafting" },

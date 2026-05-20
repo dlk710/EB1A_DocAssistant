@@ -55,7 +55,7 @@ export function CoverageCard({ coverage }: CoverageCardProps) {
           <span
             key={criterion.code}
             className={`h-3 rounded-full ${barClassName(criterion.state)}`}
-            title={`${criterion.legalCode} ${criterion.name}`}
+            title={criterion.name}
           />
         ))}
       </div>
@@ -63,13 +63,13 @@ export function CoverageCard({ coverage }: CoverageCardProps) {
         <p>
           Strong:{" "}
           {strongCriteria.length
-            ? strongCriteria.map((criterion) => criterion.legalCode).join(", ")
+            ? strongCriteria.map((criterion) => criterion.name).join(", ")
             : "none yet"}
         </p>
         <p>
           Partial:{" "}
           {partialCriteria.length
-            ? partialCriteria.map((criterion) => criterion.legalCode).join(", ")
+            ? partialCriteria.map((criterion) => criterion.name).join(", ")
             : "none"}
         </p>
       </div>

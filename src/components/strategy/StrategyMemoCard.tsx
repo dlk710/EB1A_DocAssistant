@@ -2,6 +2,7 @@
 
 import { CitationChip } from "@/components/chat/CitationChip";
 import { ReasoningExpansion } from "@/components/chat/ReasoningExpansion";
+import { getCriterionDisplayName } from "@/lib/constants";
 import type { ChatMessageCitation, StrategyMemo } from "@/lib/types";
 
 export function StrategyMemoCard(props: {
@@ -37,7 +38,7 @@ export function StrategyMemoCard(props: {
             Strategy memo
           </p>
           <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-            Lead argument {props.memo.leadArgument.criterionCode}
+            Lead argument {getCriterionDisplayName(props.memo.leadArgument.criterionCode)}
           </h3>
         </div>
         <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -65,7 +66,7 @@ export function StrategyMemoCard(props: {
                 {props.memo.recommendedMix.primary.map((entry) => (
                   <div key={`primary-${entry.criterionCode}`}>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--brand-deep)]">
-                      Primary · {entry.criterionCode}
+                      {getCriterionDisplayName(entry.criterionCode)}
                     </p>
                     <p className="mt-1 text-[12px] leading-6 text-[var(--foreground)]">
                       {entry.rationale}
@@ -75,7 +76,7 @@ export function StrategyMemoCard(props: {
                 {props.memo.recommendedMix.supporting.map((entry) => (
                   <div key={`supporting-${entry.criterionCode}`}>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
-                      Supporting · {entry.criterionCode}
+                      {getCriterionDisplayName(entry.criterionCode)}
                     </p>
                     <p className="mt-1 text-[12px] leading-6 text-[var(--foreground)]">
                       {entry.rationale}
@@ -95,7 +96,7 @@ export function StrategyMemoCard(props: {
                     props.memo.gaps.map((gap) => (
                       <div key={`${gap.criterionCode}-${gap.type}`}>
                         <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                          {gap.criterionCode} · {gap.type}
+                          {getCriterionDisplayName(gap.criterionCode)} · {gap.type}
                         </p>
                         <p className="mt-1 text-[12px] leading-6 text-[var(--muted)]">
                           {gap.description}

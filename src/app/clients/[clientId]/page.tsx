@@ -154,10 +154,10 @@ function summarizeCoverage(coverage: WorkspaceCoverage | null) {
 
   return {
     strongText: strong.length
-      ? strong.map((criterion) => criterion.legalCode).join(", ")
+      ? strong.map((criterion) => criterion.name).join(", ")
       : "No strong criteria yet",
     partialText: partial.length
-      ? partial.map((criterion) => criterion.legalCode).join(", ")
+      ? partial.map((criterion) => criterion.name).join(", ")
       : "No partial criteria",
   };
 }

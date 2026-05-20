@@ -1,5 +1,6 @@
 import { CitationChip } from "@/components/chat/CitationChip";
 import { ReasoningExpansion } from "@/components/chat/ReasoningExpansion";
+import { getCriterionDisplayName } from "@/lib/constants";
 import type { ChatMessageCitation, StressTestReport } from "@/lib/types";
 
 export function StressTestReportCard(props: {
@@ -29,7 +30,7 @@ export function StressTestReportCard(props: {
         <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
           {props.report.scope === "full-petition"
             ? "full petition"
-            : props.report.scope.criterionCode}
+            : getCriterionDisplayName(props.report.scope.criterionCode)}
         </span>
       </div>
 
@@ -41,7 +42,7 @@ export function StressTestReportCard(props: {
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
-                {challenge.criterionCode}
+                {getCriterionDisplayName(challenge.criterionCode)}
               </span>
               <span
                 className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${

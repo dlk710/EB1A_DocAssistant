@@ -67,6 +67,16 @@ The client review page emphasizes:
 - routine items
 - category bands
 - archive and cleanup bands
+- four working modes:
+  - `Inbox`
+  - `Table`
+  - `Workbench`
+  - `By category`
+- the staged review order:
+  - file decision
+  - bundle review
+  - criterion review
+- an `OTHER` placeholder for evidence or bundles that should stay visible for later correction
 
 The most important behavioral rule is:
 

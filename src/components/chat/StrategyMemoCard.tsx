@@ -1,6 +1,7 @@
 "use client";
 
 import { Pin } from "lucide-react";
+import { getCriterionDisplayName } from "@/lib/constants";
 import type { ChatMessageCitation, StrategyMemo } from "@/lib/types";
 
 export function StrategyMemoCard(props: {
@@ -18,7 +19,7 @@ export function StrategyMemoCard(props: {
             Strategy memo
           </p>
           <p className="mt-1 text-[12px] font-semibold text-[var(--foreground)]">
-            Lead criterion {props.memo.leadArgument.criterionCode}
+            Lead criterion {getCriterionDisplayName(props.memo.leadArgument.criterionCode)}
           </p>
         </div>
         {props.onPin ? (
@@ -54,7 +55,7 @@ export function StrategyMemoCard(props: {
                 props.memo.recommendedMix.primary.map((item) => (
                   <div key={`${item.criterionCode}-${item.rationale.slice(0, 24)}`}>
                     <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                      {item.criterionCode}
+                      {getCriterionDisplayName(item.criterionCode)}
                     </p>
                     <p className="text-[11px] leading-5 text-[var(--muted)]">{item.rationale}</p>
                   </div>
@@ -74,7 +75,7 @@ export function StrategyMemoCard(props: {
                 props.memo.recommendedMix.supporting.map((item) => (
                   <div key={`${item.criterionCode}-${item.rationale.slice(0, 24)}`}>
                     <p className="text-[11px] font-semibold text-[var(--foreground)]">
-                      {item.criterionCode}
+                      {getCriterionDisplayName(item.criterionCode)}
                     </p>
                     <p className="text-[11px] leading-5 text-[var(--muted)]">{item.rationale}</p>
                   </div>
@@ -96,7 +97,7 @@ export function StrategyMemoCard(props: {
                 props.memo.gaps.map((gap) => (
                   <div key={`${gap.criterionCode}-${gap.type}`}>
                     <p className="text-[11px] font-semibold text-amber-900">
-                      {gap.criterionCode} · {gap.type}
+                      {getCriterionDisplayName(gap.criterionCode)} · {gap.type}
                     </p>
                     <p className="text-[11px] leading-5 text-amber-900/80">{gap.description}</p>
                   </div>

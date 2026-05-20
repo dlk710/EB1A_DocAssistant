@@ -33,8 +33,9 @@ interface MenuPosition {
 }
 
 const ROOT_MENU_WIDTH = 272;
-const SUBMENU_WIDTH = 260;
+const SUBMENU_WIDTH = 336;
 const VIEWPORT_PADDING = 12;
+const MAX_MENU_HEIGHT = 560;
 
 function estimateMenuHeight(items: ContextMenuEntry[]) {
   return items.reduce((height, item) => {
@@ -44,6 +45,14 @@ function estimateMenuHeight(items: ContextMenuEntry[]) {
 
     return height + 38;
   }, 12);
+}
+
+function resolveMenuHeight(items: ContextMenuEntry[]) {
+  return Math.min(
+    estimateMenuHeight(items),
+    Math.max(180, window.innerHeight - VIEWPORT_PADDING * 2),
+    MAX_MENU_HEIGHT,
+  );
 }
 
 function clampMenuPosition(x: number, y: number, width: number, height: number): MenuPosition {
@@ -66,10 +75,10 @@ function clampMenuPosition(x: number, y: number, width: number, height: number):
 
 function buildSubmenuPosition(
   anchorRect: DOMRect,
-  itemCount: number,
+  items: ContextMenuEntry[],
   rootPosition: MenuPosition,
 ): MenuPosition {
-  const height = estimateMenuHeight(new Array(itemCount).fill(null).map((_, index) => ({ id: `${index}`, label: "" })));
+  const height = resolveMenuHeight(items);
   const openLeft =
     anchorRect.right + SUBMENU_WIDTH > window.innerWidth - VIEWPORT_PADDING;
   const left = openLeft
@@ -149,7 +158,7 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
       return { left: x, top: y };
     }
 
-    return clampMenuPosition(x, y, ROOT_MENU_WIDTH, estimateMenuHeight(items));
+    return clampMenuPosition(x, y, ROOT_MENU_WIDTH, resolveMenuHeight(items));
   }, [items, open, x, y]);
 
   const submenuPosition = useMemo(() => {
@@ -157,8 +166,17 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
       return null;
     }
 
-    return buildSubmenuPosition(submenu.anchorRect, submenu.items.length, rootPosition);
+    return buildSubmenuPosition(submenu.anchorRect, submenu.items, rootPosition);
   }, [rootPosition, submenu]);
+
+  const rootMenuHeight =
+    open && typeof window !== "undefined" ? resolveMenuHeight(items) : estimateMenuHeight(items);
+  const submenuHeight =
+    submenu && typeof window !== "undefined"
+      ? resolveMenuHeight(submenu.items)
+      : submenu
+        ? estimateMenuHeight(submenu.items)
+        : 0;
 
   if (!open || typeof document === "undefined") {
     return null;
@@ -236,7 +254,9 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
                 : "hover:bg-[var(--paper-secondary)]"
           }`}
         >
-          <span className={textColor}>{entry.label}</span>
+          <span className={`min-w-0 flex-1 whitespace-normal leading-5 ${textColor}`}>
+            {entry.label}
+          </span>
           {hasChildren ? (
             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--ink-tertiary)]" />
           ) : null}
@@ -253,9 +273,17 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
           left: rootPosition.left,
           top: rootPosition.top,
           width: ROOT_MENU_WIDTH,
+          maxHeight: rootMenuHeight,
         }}
       >
-        <div className="max-h-[min(68vh,420px)] overflow-y-auto">{renderItems(items, "root")}</div>
+        <div
+          style={{
+            maxHeight: rootMenuHeight - 16,
+            overflowY: estimateMenuHeight(items) > rootMenuHeight ? "auto" : "visible",
+          }}
+        >
+          {renderItems(items, "root")}
+        </div>
       </div>
 
       {submenu && submenuPosition ? (
@@ -265,10 +293,17 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
             left: submenuPosition.left,
             top: submenuPosition.top,
             width: SUBMENU_WIDTH,
+            maxHeight: submenuHeight,
           }}
           onMouseEnter={clearHoverTimeout}
         >
-          <div className="max-h-[min(68vh,420px)] overflow-y-auto">
+          <div
+            style={{
+              maxHeight: submenuHeight - 16,
+              overflowY:
+                estimateMenuHeight(submenu.items) > submenuHeight ? "auto" : "visible",
+            }}
+          >
             {renderItems(submenu.items, "submenu")}
           </div>
         </div>

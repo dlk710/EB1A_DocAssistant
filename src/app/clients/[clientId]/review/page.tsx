@@ -399,6 +399,7 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
       )
       .map((decision) => ({
         id: decision.bundleId,
+        jobId: snapshot.activeJobId ?? snapshot.activeJob?.id ?? "",
         bundleName:
           bundleLookup.get(decision.bundleId)?.name ?? decision.suggestedExhibitTitle,
         workspaceLabel: snapshot.activeJob?.folderLabel ?? "Workspace",

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ContextMenu, type ContextMenuEntry } from "@/components/common/ContextMenu";
 import { CategoryBand } from "@/components/review/CategoryBand";
 import { DecisionRow, type ReviewDecisionItem } from "@/components/review/DecisionRow";
 import { ReferenceCategoryBand } from "@/components/review/ReferenceCategoryBand";
@@ -34,6 +35,7 @@ export interface ReviewCategoryBandData {
 
 export interface ReviewBundleDecisionItem {
   id: string;
+  jobId: string;
   bundleName: string;
   workspaceLabel: string;
   rationale: string;
@@ -75,6 +77,18 @@ interface MenuState {
   y: number;
 }
 
+interface BundleMenuState {
+  item: ReviewBundleDecisionItem;
+  x: number;
+  y: number;
+}
+
+interface CriterionMenuState {
+  item: ReviewDecisionItem;
+  x: number;
+  y: number;
+}
+
 interface ToastState {
   tone: "error" | "info";
   message: string;
@@ -87,6 +101,7 @@ interface ReviewViewState {
   archiveSampleTitles: string[];
   referenceItems: ReviewDecisionItem[];
   criterionCounts: Record<string, number>;
+  humanReviewQueue: ReviewBundleDecisionItem[];
 }
 
 const CRITERION_LOOKUP = Object.fromEntries(
@@ -124,7 +139,7 @@ function cloneViewState(state: ReviewViewState): ReviewViewState {
 }
 
 function buildNextState(
-  input: Omit<ActionItemsSummaryProps, "clientId" | "clientName" | "humanReviewQueue" | "strategyHref" | "denseWorkbenchHref" | "archiveReviewHref"> & {
+  input: Omit<ActionItemsSummaryProps, "clientId" | "clientName" | "strategyHref" | "denseWorkbenchHref" | "archiveReviewHref"> & {
     archiveSamples: string[];
   },
 ): ReviewViewState {
@@ -135,6 +150,7 @@ function buildNextState(
     archiveSampleTitles: input.archiveSamples,
     referenceItems: input.initialReferenceItems,
     criterionCounts: input.initialCriterionCounts,
+    humanReviewQueue: input.humanReviewQueue,
   };
 }
 
@@ -340,6 +356,13 @@ function moveReferenceToReferenceBundle(
   };
 }
 
+function removeHumanReviewBundle(state: ReviewViewState, itemId: string) {
+  return {
+    ...state,
+    humanReviewQueue: state.humanReviewQueue.filter((entry) => entry.id !== itemId),
+  };
+}
+
 function resolveCriterionBandCode(
   item: ReviewDecisionItem,
   criterionCode: string,
@@ -378,6 +401,7 @@ export function ActionItemsSummary({
       initialCriterionCounts,
       workspaceContexts,
       bands: initialBands,
+      humanReviewQueue,
       archiveSamples,
     }),
   );
@@ -386,6 +410,8 @@ export function ActionItemsSummary({
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
   const [busyLabel, setBusyLabel] = useState("Saving review action");
   const [menuState, setMenuState] = useState<MenuState | null>(null);
+  const [bundleMenuState, setBundleMenuState] = useState<BundleMenuState | null>(null);
+  const [criterionMenuState, setCriterionMenuState] = useState<CriterionMenuState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
@@ -401,7 +427,7 @@ export function ActionItemsSummary({
     () => viewState.bands.reduce((sum, band) => sum + band.decisions.length, 0),
     [viewState.bands],
   );
-  const bundleDecisionCount = humanReviewQueue.length;
+  const bundleDecisionCount = viewState.humanReviewQueue.length;
   const unresolvedCount = needsDecisionCount + bundleDecisionCount;
   const referenceCount = viewState.referenceItems.length;
 
@@ -531,6 +557,25 @@ export function ActionItemsSummary({
     };
   }
 
+  async function patchBundleCategory(item: ReviewBundleDecisionItem, bucketCode: string) {
+    const response = await fetch("/api/overrides", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jobId: item.jobId,
+        type: "bundle-category",
+        bundleId: item.id,
+        bucketCode,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to move the bundle into the selected criterion.");
+    }
+  }
+
   async function runOptimisticAction(
     item: ReviewDecisionItem,
     label: string,
@@ -545,6 +590,8 @@ export function ActionItemsSummary({
     setBusyDocumentId(item.id);
     setBusyLabel(label);
     setMenuState(null);
+    setBundleMenuState(null);
+    setCriterionMenuState(null);
     setViewState((current) => mutator(cloneViewState(current)));
 
     try {
@@ -563,6 +610,95 @@ export function ActionItemsSummary({
       setBusyDocumentId(null);
       setBusyLabel("Saving review action");
     }
+  }
+
+  async function runOptimisticBundleAction(
+    item: ReviewBundleDecisionItem,
+    label: string,
+    mutator: (state: ReviewViewState) => ReviewViewState,
+    runner: () => Promise<void>,
+  ) {
+    if (busyDocumentId) {
+      return;
+    }
+
+    const snapshot = cloneViewState(viewState);
+    setBusyDocumentId(item.id);
+    setBusyLabel(label);
+    setMenuState(null);
+    setBundleMenuState(null);
+    setCriterionMenuState(null);
+    setViewState((current) => mutator(cloneViewState(current)));
+
+    try {
+      await runner();
+      router.refresh();
+      setToast({
+        tone: "info",
+        message: "Bundle category updated.",
+      });
+    } catch (error) {
+      setViewState(snapshot);
+      setToast({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Setu could not save that bundle action.",
+      });
+    } finally {
+      setBusyDocumentId(null);
+      setBusyLabel("Saving review action");
+    }
+  }
+
+  function openItemMenu(
+    item: ReviewDecisionItem,
+    x: number,
+    y: number,
+  ) {
+    setBundleMenuState(null);
+    setMenuState({
+      item,
+      x,
+      y,
+    });
+  }
+
+  function openItemMenuAtElement(
+    item: ReviewDecisionItem,
+    element: HTMLElement,
+  ) {
+    const rect = element.getBoundingClientRect();
+    setCriterionMenuState(null);
+    openItemMenu(item, rect.left, rect.bottom + 6);
+  }
+
+  function openCriterionMenuAtElement(
+    item: ReviewDecisionItem,
+    element: HTMLElement,
+  ) {
+    const rect = element.getBoundingClientRect();
+    setMenuState(null);
+    setBundleMenuState(null);
+    setCriterionMenuState({
+      item,
+      x: rect.left,
+      y: rect.bottom + 6,
+    });
+  }
+
+  function openBundleMenuAtElement(
+    item: ReviewBundleDecisionItem,
+    element: HTMLElement,
+  ) {
+    const rect = element.getBoundingClientRect();
+    setMenuState(null);
+    setBundleMenuState({
+      item,
+      x: rect.left,
+      y: rect.bottom + 6,
+    });
   }
 
   function handleQuickPeek(item: ReviewDecisionItem) {
@@ -737,6 +873,47 @@ export function ActionItemsSummary({
     });
   }
 
+  function handleAssignBundleCriterion(item: ReviewBundleDecisionItem, criterionCode: string) {
+    void runOptimisticBundleAction(
+      item,
+      "Assigning bundle to the selected criterion",
+      (state) => removeHumanReviewBundle(state, item.id),
+      async () => {
+        await patchBundleCategory(item, criterionCode);
+      },
+    );
+  }
+
+  const bundleMenuItems: ContextMenuEntry[] = bundleMenuState
+    ? EB1A_CRITERIA_DEFINITIONS.map((criterion) => ({
+        id: `bundle-criterion-${criterion.code}`,
+        label: `${criterion.legalCode} ${criterion.name}`,
+        onSelect: () => handleAssignBundleCriterion(bundleMenuState.item, criterion.code),
+      }))
+    : [];
+
+  function handleQuickAssignCriterion(item: ReviewDecisionItem, criterionCode: string) {
+    const nextRole = item.currentCriterionRole ?? item.roleHint ?? "primary";
+
+    setCriterionMenuState(null);
+
+    if (!item.currentCriterionCode || item.currentCriterionCode === criterionCode) {
+      handleKeepForCriterion(item, criterionCode, nextRole);
+      return;
+    }
+
+    handleReassignCriterion(item, criterionCode);
+  }
+
+  const criterionMenuItems: ContextMenuEntry[] = criterionMenuState
+    ? EB1A_CRITERIA_DEFINITIONS.map((criterion) => ({
+        id: `criterion-direct-${criterion.code}`,
+        label: `${criterion.legalCode} ${criterion.name}`,
+        disabled: criterionMenuState.item.currentCriterionCode === criterion.code,
+        onSelect: () => handleQuickAssignCriterion(criterionMenuState.item, criterion.code),
+      }))
+    : [];
+
   return (
     <div className="space-y-5">
       <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
@@ -810,11 +987,13 @@ export function ActionItemsSummary({
                 item={item}
                 onContextMenu={(nextItem, event) => {
                   event.preventDefault();
-                  setMenuState({
-                    item: nextItem,
-                    x: event.clientX,
-                    y: event.clientY,
-                  });
+                  openItemMenu(nextItem, event.clientX, event.clientY);
+                }}
+                onOpenCriterionPicker={(nextItem, event) => {
+                  openCriterionMenuAtElement(nextItem, event.currentTarget);
+                }}
+                onOpenActions={(nextItem, event) => {
+                  openItemMenuAtElement(nextItem, event.currentTarget);
                 }}
               />
             ))}
@@ -849,11 +1028,13 @@ export function ActionItemsSummary({
           items={viewState.referenceItems}
           onContextMenu={(item, event) => {
             event.preventDefault();
-            setMenuState({
-              item,
-              x: event.clientX,
-              y: event.clientY,
-            });
+            openItemMenu(item, event.clientX, event.clientY);
+          }}
+          onOpenCriterionPicker={(item, event) => {
+            openCriterionMenuAtElement(item, event.currentTarget);
+          }}
+          onOpenActions={(item, event) => {
+            openItemMenuAtElement(item, event.currentTarget);
           }}
         />
 
@@ -866,8 +1047,8 @@ export function ActionItemsSummary({
           note="These bundles need a criterion assignment before strategy work can lean on them."
           defaultOpen={bundleDecisionCount > 0}
         >
-          {humanReviewQueue.length ? (
-            humanReviewQueue.map((item) => (
+          {viewState.humanReviewQueue.length ? (
+            viewState.humanReviewQueue.map((item) => (
               <div
                 key={item.id}
                 className="rounded-[16px] border border-[var(--brand)]/25 bg-[var(--paper-primary)] px-4 py-4"
@@ -894,12 +1075,21 @@ export function ActionItemsSummary({
                       </p>
                     ) : null}
                   </div>
-                  <Link
-                    href={item.denseReviewHref}
-                    className="inline-flex items-center rounded-full border border-[var(--border-primary)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]"
-                  >
-                    Open in dense workbench
-                  </Link>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(event) => openBundleMenuAtElement(item, event.currentTarget)}
+                      className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold"
+                    >
+                      Assign criterion
+                    </button>
+                    <Link
+                      href={item.denseReviewHref}
+                      className="inline-flex items-center rounded-full border border-[var(--border-primary)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]"
+                    >
+                      Open in dense workbench
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))
@@ -979,6 +1169,22 @@ export function ActionItemsSummary({
             reasoning: item.reasoning,
           })
         }
+      />
+
+      <ContextMenu
+        open={Boolean(bundleMenuState)}
+        x={bundleMenuState?.x ?? 0}
+        y={bundleMenuState?.y ?? 0}
+        items={bundleMenuItems}
+        onClose={() => setBundleMenuState(null)}
+      />
+
+      <ContextMenu
+        open={Boolean(criterionMenuState)}
+        x={criterionMenuState?.x ?? 0}
+        y={criterionMenuState?.y ?? 0}
+        items={criterionMenuItems}
+        onClose={() => setCriterionMenuState(null)}
       />
 
       {preview ? (

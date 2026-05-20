@@ -305,7 +305,7 @@ The client review page is action-oriented and groups work by:
 - archive and cleanup bands
 - routine evidence that is already stabilized
 
-Each decision row on `/clients/<clientId>/review` supports a right-click context menu for:
+Each decision row on `/clients/<clientId>/review` supports visible `Assign criterion` and `Actions` triggers, plus a right-click context menu, for:
 
 - keep as primary
 - keep as supporting
@@ -315,6 +315,8 @@ Each decision row on `/clients/<clientId>/review` supports a right-click context
 - move to bundle
 - Quick peek
 - AI reasoning
+
+Bundles in the human-review queue also expose a direct `Assign criterion` action so whole bundles can be routed into the correct criterion without reclassifying every evidence file one by one.
 
 This page is designed for incremental work across multiple sessions.
 

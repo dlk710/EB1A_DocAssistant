@@ -29,9 +29,19 @@ export interface ReviewDecisionItem {
 interface DecisionRowProps {
   item: ReviewDecisionItem;
   onContextMenu: (item: ReviewDecisionItem, event: MouseEvent<HTMLDivElement>) => void;
+  onOpenCriterionPicker: (
+    item: ReviewDecisionItem,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+  onOpenActions: (item: ReviewDecisionItem, event: MouseEvent<HTMLButtonElement>) => void;
 }
 
-export function DecisionRow({ item, onContextMenu }: DecisionRowProps) {
+export function DecisionRow({
+  item,
+  onContextMenu,
+  onOpenCriterionPicker,
+  onOpenActions,
+}: DecisionRowProps) {
   return (
     <div
       onContextMenu={(event) => onContextMenu(item, event)}
@@ -72,8 +82,24 @@ export function DecisionRow({ item, onContextMenu }: DecisionRowProps) {
           </p>
         </div>
         <p className="mt-3 text-[11px] text-[var(--muted)]">
-          Right-click to keep, reassign, move, or open Quick peek.
+          Use Actions or right-click to keep, reassign, move, or open Quick peek.
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={(event) => onOpenCriterionPicker(item, event)}
+            className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold"
+          >
+            Assign criterion
+          </button>
+          <button
+            type="button"
+            onClick={(event) => onOpenActions(item, event)}
+            className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold"
+          >
+            Actions
+          </button>
+        </div>
       </div>
     </div>
   );

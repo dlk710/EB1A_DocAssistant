@@ -43,7 +43,7 @@ The live app at `http://localhost:3001` currently supports:
 - AI document-level criteria tagging
 - human review states: `kept`, `pending`, `reference`, `archived`
 - manual overrides for evidence, event bundles, and criteria placement
-- human-review action bands with right-click keep/reference/archive/reassign actions
+- human-review action bands with visible `Assign criterion` / `Actions` controls plus right-click shortcuts
 - client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders

@@ -28,6 +28,9 @@ export function WorkflowBundleCard({
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[var(--brand-charcoal)]/20 bg-[var(--brand-charcoal)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-white">
+              BUNDLE
+            </span>
             <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--brand-deep)]">
               {stageLabel}
             </span>
@@ -44,6 +47,9 @@ export function WorkflowBundleCard({
             ) : null}
           </div>
           <p className="mt-3 text-[14px] font-semibold text-[var(--foreground)]">{item.bundleName}</p>
+          <p className="mt-1 text-[11px] text-[var(--muted)]">
+            Bundle review unit · {item.documentCount} file{item.documentCount === 1 ? "" : "s"}
+          </p>
           <p className="mt-2 text-[12px] leading-6 text-[var(--foreground)]/88">{item.rationale}</p>
           <div className="mt-3 rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">

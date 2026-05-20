@@ -54,6 +54,9 @@ export function WorkflowDocumentCard({
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[var(--brand)]/25 bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--brand-deep)]">
+            FILE
+          </span>
           <span
             className={`rounded-full px-2 py-1 text-[9px] font-semibold tracking-[0.14em] ${tone.chip}`}
           >
@@ -72,7 +75,7 @@ export function WorkflowDocumentCard({
           </span>
         </div>
         <p className="mt-3 text-[14px] font-semibold text-[var(--foreground)]">{item.title}</p>
-        <p className="mt-1 text-[11px] text-[var(--muted)]">{item.fileName}</p>
+        <p className="mt-1 text-[11px] text-[var(--muted)]">Evidence file · {item.fileName}</p>
         <p className="mt-3 text-[12px] leading-6 text-[var(--foreground)]/88">
           {item.shortSummary}
         </p>

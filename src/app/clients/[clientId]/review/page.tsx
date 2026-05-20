@@ -432,6 +432,8 @@ function buildReviewQueues(
         criterionHint: decision?.primaryCriterionName ?? null,
         criterionCode: decision?.primaryCriterionCode ?? null,
         documentCount: membership.acceptedItems.length,
+        documentIds: membership.acceptedItems.map((item) => item.id),
+        documentTitles: membership.acceptedItems.map((item) => item.title),
         bucketCode: decision?.bucketCode ?? null,
       };
 

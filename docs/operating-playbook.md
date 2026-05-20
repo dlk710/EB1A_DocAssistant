@@ -134,6 +134,7 @@ Verify:
 - `OTHER` items render in their own placeholder band and do not count toward coverage
 - evidence rows expose visible `Assign criterion` and `Actions` controls in addition to right-click
 - bundle cards in the human-review queue can be reassigned directly into a criterion
+- review cards, table rows, and workbench entries expose permanent `FILE` and `BUNDLE` badges with explicit action wording
 - the review page supports `Inbox`, `Table`, `Workbench`, and `By category` without breaking existing actions
 - the review flow still honors the sequence `file -> bundle -> criterion`
 

@@ -308,6 +308,7 @@ The client review page is action-oriented and groups work by:
 - category bands
 - a dedicated Reference band for documents held aside without counting toward coverage
 - a dedicated `OTHER` placeholder band for bundles or files that should stay in scope but be revisited later
+- permanent `FILE` and `BUNDLE` badges plus explicit action labels so the scope of every review action is visible in the UI
 - archive and cleanup bands
 - routine evidence that is already stabilized
 

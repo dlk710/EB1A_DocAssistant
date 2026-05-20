@@ -27,6 +27,8 @@ export interface ReviewBundleDecisionItem {
   criterionHint: string | null;
   criterionCode: string | null;
   documentCount: number;
+  documentIds: string[];
+  documentTitles: string[];
   bucketCode: string | null;
 }
 

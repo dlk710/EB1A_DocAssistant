@@ -150,6 +150,8 @@ The client review page is action-oriented. It emphasizes:
 - category bands and archive bands
 - human-review queue behavior
 - quick actions and quick peek
+- permanent `FILE` and `BUNDLE` badges on review cards, table rows, and workbench entries so reviewers can immediately tell whether an action affects one evidence file or a grouped bundle
+- explicit action copy that names the target unit, for example `Keep file`, `Move file to bundle`, `Assign bundle to criterion`, and `Archive bundle`
 - the staged sequence:
   - keep or archive the file
   - confirm the right bundle

@@ -242,6 +242,18 @@ function moveItemToArchive(state: ViewState, item: ReviewDecisionItem) {
   };
 }
 
+function moveBundleItemToArchive(
+  state: ViewState,
+  item: ReviewBundleDecisionItem,
+  source: "criterion" | "other-criterion",
+) {
+  return {
+    ...removeBundleItem(state, item.id, source),
+    archiveCount: state.archiveCount + item.documentCount,
+    archiveSampleTitles: [...item.documentTitles, ...state.archiveSampleTitles].slice(0, 4),
+  };
+}
+
 function removeBundleItem(state: ViewState, bundleId: string, source: "criterion" | "other-criterion") {
   if (source === "criterion") {
     return {
@@ -304,6 +316,14 @@ function documentActionButtonClass() {
   return "setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold";
 }
 
+function reviewTypeBadgeClass(type: "file" | "bundle") {
+  if (type === "bundle") {
+    return "rounded-full border border-[var(--brand-charcoal)]/20 bg-[var(--brand-charcoal)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-white";
+  }
+
+  return "rounded-full border border-[var(--brand)]/25 bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--brand-deep)]";
+}
+
 function reviewModeButtonClass(active: boolean) {
   return `inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[11px] font-semibold transition ${
     active
@@ -334,6 +354,18 @@ function getFocusStageLabel(entry: ReviewFocusEntry) {
   }
 
   return "Criterion review";
+}
+
+function getFocusType(entry: ReviewFocusEntry) {
+  return entry.kind === "criterion" ? "bundle" : "file";
+}
+
+function getFocusTypeBadgeLabel(entry: ReviewFocusEntry) {
+  return getFocusType(entry) === "bundle" ? "BUNDLE" : "FILE";
+}
+
+function getFocusTypeDisplayLabel(entry: ReviewFocusEntry) {
+  return getFocusType(entry) === "bundle" ? "Bundle" : "Evidence file";
 }
 
 function getFocusTitle(entry: ReviewFocusEntry) {
@@ -635,6 +667,20 @@ export function ActionItemsSummary({
 
     if (!response.ok) {
       throw new Error("Unable to save the file decision.");
+    }
+  }
+
+  async function patchBulkReviewStatus(ids: string[], status: EvidenceReviewStatus) {
+    const response = await fetch("/api/evidence/bulk-status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids, status }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to save the bundle archive action.");
     }
   }
 
@@ -1125,6 +1171,22 @@ export function ActionItemsSummary({
     );
   }
 
+  function handleArchiveCriterionBundle(
+    item: ReviewBundleDecisionItem,
+    source: "criterion" | "other-criterion",
+  ) {
+    void runViewStateAction(
+      item.id,
+      "Archiving the bundle from criterion review",
+      (state) => moveBundleItemToArchive(state, item, source),
+      async () => {
+        await patchBulkReviewStatus(item.documentIds, "archived");
+        await patchBundleCriterionDecision(item.jobId, item.id, "clear", null);
+      },
+      "Bundle archived from review.",
+    );
+  }
+
   const bundlePickerItems: ContextMenuEntry[] = bundlePickerState
     ? (() => {
         const workspace =
@@ -1195,8 +1257,8 @@ export function ActionItemsSummary({
             id: "bundle-accept",
             label:
               bundleActionMenuState.kind === "criterion"
-                ? "Accept current criterion"
-                : "Return to criterion queue",
+                ? "Accept bundle criterion"
+                : "Return bundle to criterion queue",
             disabled:
               bundleActionMenuState.kind === "criterion" ? !currentCriterionCode : false,
             onSelect: () =>
@@ -1206,18 +1268,24 @@ export function ActionItemsSummary({
           },
           {
             id: "bundle-assign",
-            label: "Assign criterion",
+            label: "Assign bundle to criterion",
             children: criterionChildren,
           },
           ...(bundleActionMenuState.kind === "criterion"
             ? [
                 {
                   id: "bundle-other",
-                  label: "Move to OTHER",
+                  label: "Move bundle to OTHER",
                   onSelect: () => handleMarkOtherCriterion(bundleItem),
                 } satisfies ContextMenuEntry,
               ]
             : []),
+          {
+            id: "bundle-archive",
+            label: "Move bundle to Archive",
+            onSelect: () =>
+              handleArchiveCriterionBundle(bundleItem, bundleActionMenuState.kind),
+          },
           {
             id: "bundle-divider",
             type: "separator" as const,
@@ -1251,12 +1319,12 @@ export function ActionItemsSummary({
             },
             {
               id: "file-reference",
-              label: "Move to Reference",
+              label: "Move file to Reference",
               onSelect: () => handleMoveToReference(item),
             },
             {
               id: "file-archive",
-              label: "Move to Archive",
+              label: "Move file to Archive",
               onSelect: () => handleMoveToArchive(item),
             },
             {
@@ -1280,12 +1348,12 @@ export function ActionItemsSummary({
           return [
             {
               id: "reference-return",
-              label: "Return to active review",
+              label: "Return file to active review",
               onSelect: () => handleReturnFromReference(item),
             },
             {
               id: "reference-archive",
-              label: "Move to Archive",
+              label: "Move file to Archive",
               onSelect: () => handleMoveToArchive(item),
             },
             {
@@ -1329,17 +1397,17 @@ export function ActionItemsSummary({
           return [
             {
               id: "other-bundle-return",
-              label: "Return to bundle review",
+              label: "Return file to bundle review",
               onSelect: () => handleReturnFromOtherBundle(item),
             },
             {
               id: "other-bundle-move",
-              label: "Move to bundle",
+              label: "Move file to bundle",
               children: bundleChildren,
             },
             {
               id: "other-bundle-archive",
-              label: "Move to Archive",
+              label: "Move file to Archive",
               onSelect: () => handleMoveToArchive(item),
             },
             {
@@ -1382,27 +1450,27 @@ export function ActionItemsSummary({
         return [
           {
             id: "bundle-accept",
-            label: "Accept bundle",
+            label: "Accept file in bundle",
             onSelect: () => handleAcceptBundle(item),
           },
           {
             id: "bundle-move",
-            label: "Move to bundle",
+            label: "Move file to bundle",
             children: bundleChildren,
           },
           {
             id: "bundle-other",
-            label: "Move to OTHER",
+            label: "Move file to OTHER",
             onSelect: () => handleMarkOtherBundle(item),
           },
           {
             id: "bundle-reference",
-            label: "Move to Reference",
+            label: "Move file to Reference",
             onSelect: () => handleMoveToReference(item),
           },
           {
             id: "bundle-archive",
-            label: "Move to Archive",
+            label: "Move file to Archive",
             onSelect: () => handleMoveToArchive(item),
           },
           {
@@ -1431,14 +1499,14 @@ export function ActionItemsSummary({
           onClick={() => handleKeepFile(item)}
           className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
         >
-          Keep
+          Keep file
         </button>
         <button
           type="button"
           onClick={() => handleMoveToArchive(item)}
           className={documentActionButtonClass()}
         >
-          Archive
+          Archive file
         </button>
         <button
           type="button"
@@ -1468,14 +1536,14 @@ export function ActionItemsSummary({
           }
           className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
         >
-          {source === "other-bundle" ? "Return to queue" : "Accept bundle"}
+          {source === "other-bundle" ? "Return file to queue" : "Accept bundle fit"}
         </button>
         <button
           type="button"
           onClick={(event) => openBundlePicker(item, source, event.currentTarget)}
           className={documentActionButtonClass()}
         >
-          Move bundle
+          Move file to bundle
         </button>
         <button
           type="button"
@@ -1484,7 +1552,14 @@ export function ActionItemsSummary({
           }
           className={documentActionButtonClass()}
         >
-          {source === "other-bundle" ? "Quick peek" : "OTHER"}
+          {source === "other-bundle" ? "Quick peek" : "Move file to OTHER"}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleMoveToArchive(item)}
+          className={documentActionButtonClass()}
+        >
+          Archive file
         </button>
         {source === "bundle" ? (
           <button
@@ -1513,14 +1588,14 @@ export function ActionItemsSummary({
           disabled={source === "criterion" ? !resolveExistingCriterionCode(item) : false}
           className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {source === "criterion" ? "Accept criterion" : "Return to queue"}
+          {source === "criterion" ? "Accept bundle criterion" : "Return bundle to queue"}
         </button>
         <button
           type="button"
           onClick={(event) => openCriterionPicker(item, source, event.currentTarget)}
           className={documentActionButtonClass()}
         >
-          Assign criterion
+          Assign bundle to criterion
         </button>
         <button
           type="button"
@@ -1528,6 +1603,13 @@ export function ActionItemsSummary({
           className={documentActionButtonClass()}
         >
           {source === "criterion" ? "OTHER" : "Reasoning"}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleArchiveCriterionBundle(item, source)}
+          className={documentActionButtonClass()}
+        >
+          Archive bundle
         </button>
         <Link href={item.denseReviewHref} className={documentActionButtonClass()}>
           Dense workbench
@@ -1559,9 +1641,14 @@ export function ActionItemsSummary({
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
               {entry.kind === "criterion" ? "Bundle brief" : "Quick preview"}
             </p>
-            <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
-              {getFocusTitle(entry)}
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className={reviewTypeBadgeClass(getFocusType(entry))}>
+                {getFocusTypeBadgeLabel(entry)}
+              </span>
+              <p className="text-[13px] font-semibold text-[var(--foreground)]">
+                {getFocusTitle(entry)}
+              </p>
+            </div>
           </div>
           {previewHref ? (
             <iframe
@@ -1594,6 +1681,9 @@ export function ActionItemsSummary({
               {getFocusReasoning(entry)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className={reviewTypeBadgeClass(getFocusType(entry))}>
+                {getFocusTypeBadgeLabel(entry)}
+              </span>
               <span className="rounded-full bg-[var(--paper-primary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
                 {getFocusStageLabel(entry)}
               </span>
@@ -1615,6 +1705,9 @@ export function ActionItemsSummary({
               Current placement
             </p>
             <div className="mt-3 space-y-2 text-[11px] leading-5 text-[var(--foreground)]/84">
+              <p>
+                Type: <strong>{getFocusTypeDisplayLabel(entry)}</strong>
+              </p>
               <p>
                 Workspace: <strong>{getFocusWorkspaceLabel(entry)}</strong>
               </p>
@@ -1848,6 +1941,7 @@ export function ActionItemsSummary({
                 <thead className="bg-[var(--paper-tertiary)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                   <tr>
                     <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">AI summary</th>
                     <th className="px-4 py-3">Workspace</th>
                     <th className="px-4 py-3">Stage</th>
@@ -1869,6 +1963,9 @@ export function ActionItemsSummary({
                             }}
                             className="text-left"
                           >
+                            <span className={reviewTypeBadgeClass(getFocusType(entry))}>
+                              {getFocusTypeBadgeLabel(entry)}
+                            </span>
                             <p className="text-[12px] font-semibold text-[var(--foreground)]">
                               {getFocusTitle(entry)}
                             </p>
@@ -1876,6 +1973,9 @@ export function ActionItemsSummary({
                               {getFocusMetaLabel(entry)}
                             </p>
                           </button>
+                        </td>
+                        <td className="px-4 py-4 text-[11px] text-[var(--muted)]">
+                          {getFocusTypeDisplayLabel(entry)}
                         </td>
                         <td className="max-w-[320px] px-4 py-4 text-[11px] leading-5 text-[var(--foreground)]/82">
                           {getFocusSummary(entry)}
@@ -1899,7 +1999,7 @@ export function ActionItemsSummary({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="px-4 py-5 text-[12px] text-[var(--muted)]">
+                      <td colSpan={8} className="px-4 py-5 text-[12px] text-[var(--muted)]">
                         No open items match the current filters.
                       </td>
                     </tr>
@@ -1962,11 +2062,18 @@ export function ActionItemsSummary({
                           <div className="flex items-start gap-3">
                             <div className="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-[12px] font-semibold text-[var(--foreground)]">
-                                {getFocusTitle(entry)}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={reviewTypeBadgeClass(getFocusType(entry))}>
+                                  {getFocusTypeBadgeLabel(entry)}
+                                </span>
+                                <p className="truncate text-[12px] font-semibold text-[var(--foreground)]">
+                                  {getFocusTitle(entry)}
+                                </p>
+                              </div>
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[var(--muted)]">
                                 <span>{getFocusStageLabel(entry)}</span>
+                                <span>•</span>
+                                <span>{getFocusTypeDisplayLabel(entry)}</span>
                                 <span>•</span>
                                 <span>{getFocusMetaLabel(entry)}</span>
                               </div>
@@ -1989,6 +2096,9 @@ export function ActionItemsSummary({
               {selectedFocusEntry ? (
                 <>
                   <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border-secondary)] px-4 py-3">
+                    <span className={reviewTypeBadgeClass(getFocusType(selectedFocusEntry))}>
+                      {getFocusTypeBadgeLabel(selectedFocusEntry)}
+                    </span>
                     <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                       {getFocusStageLabel(selectedFocusEntry)}
                     </span>

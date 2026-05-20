@@ -181,6 +181,7 @@ The current review UX supports four complementary working modes:
 - `Table` for scanning and acting across open items
 - `Workbench` for detailed master-detail inspection
 - `By category` for structured category and queue cleanup
+- permanent `FILE` and `BUNDLE` badges plus explicit action labels so the reviewer always knows whether a decision applies to one evidence file or a grouped bundle
 
 The human-review sequence is intentionally staged:
 

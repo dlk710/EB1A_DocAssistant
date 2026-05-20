@@ -72,6 +72,7 @@ The client review page emphasizes:
   - `Table`
   - `Workbench`
   - `By category`
+- permanent `FILE` and `BUNDLE` badges plus explicit button labels so a reviewer can immediately tell whether an action affects one evidence file or a whole bundle
 - the staged review order:
   - file decision
   - bundle review

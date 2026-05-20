@@ -240,6 +240,7 @@ export interface JobRecord {
 export interface SettingsSnapshot {
   candidateName: string;
   summaryPrompt: string;
+  bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
   triagePrompt: string;
@@ -413,6 +414,21 @@ export interface WorkspaceReviewState {
   updatedAt: string;
   bannerDismissedAt: string | null;
   subBundles: SubBundle[];
+  documentBundleDecisions: Record<
+    string,
+    {
+      status: "accepted" | "other";
+      updatedAt: string;
+    }
+  >;
+  bundleCriterionDecisions: Record<
+    string,
+    {
+      status: "accepted" | "other";
+      criterionCode: string | null;
+      updatedAt: string;
+    }
+  >;
 }
 
 export interface LibrarySnapshot {

@@ -4,44 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ContextMenu, type ContextMenuEntry } from "@/components/common/ContextMenu";
+import type { ReviewDecisionItem } from "@/components/review/DecisionRow";
 import { CategoryBand } from "@/components/review/CategoryBand";
-import { DecisionRow, type ReviewDecisionItem } from "@/components/review/DecisionRow";
-import { ReferenceCategoryBand } from "@/components/review/ReferenceCategoryBand";
-import {
-  RowContextMenu,
-  type ReviewWorkspaceBundleOption,
-  type ReviewWorkspaceContext,
-} from "@/components/review/RowContextMenu";
 import { RoutineRow } from "@/components/review/RoutineRow";
+import { WorkflowBundleCard } from "@/components/review/WorkflowBundleCard";
+import { WorkflowDocumentCard } from "@/components/review/WorkflowDocumentCard";
+import type { ReviewWorkspaceBundleOption, ReviewWorkspaceContext } from "@/components/review/RowContextMenu";
+import type {
+  ReviewBundleDecisionItem,
+  ReviewBundleFitGroup,
+  ReviewCategoryBandData,
+} from "@/components/review/workflow-types";
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
-import type { CriterionTagRole, EvidenceReviewStatus } from "@/lib/types";
-
-export interface ReviewRoutineBlock {
-  count: number;
-  samples: string[];
-  denseReviewHref: string | null;
-  label: string;
-}
-
-export interface ReviewCategoryBandData {
-  key: string;
-  legalCode: string;
-  title: string;
-  taggedCount: number;
-  note?: string | null;
-  decisions: ReviewDecisionItem[];
-  routine: ReviewRoutineBlock | null;
-}
-
-export interface ReviewBundleDecisionItem {
-  id: string;
-  jobId: string;
-  bundleName: string;
-  workspaceLabel: string;
-  rationale: string;
-  denseReviewHref: string;
-  criterionHint: string | null;
-}
+import type { EvidenceReviewStatus } from "@/lib/types";
 
 interface ActionItemsSummaryProps {
   clientId: string;
@@ -50,10 +25,13 @@ interface ActionItemsSummaryProps {
   initialRoutineCount: number;
   initialArchiveCount: number;
   initialReferenceItems: ReviewDecisionItem[];
-  initialCriterionCounts: Record<string, number>;
   workspaceContexts: ReviewWorkspaceContext[];
-  bands: ReviewCategoryBandData[];
-  humanReviewQueue: ReviewBundleDecisionItem[];
+  readyBands: ReviewCategoryBandData[];
+  fileDecisionItems: ReviewDecisionItem[];
+  bundleReviewGroups: ReviewBundleFitGroup[];
+  otherBundleGroups: ReviewBundleFitGroup[];
+  criterionReviewQueue: ReviewBundleDecisionItem[];
+  otherCriterionQueue: ReviewBundleDecisionItem[];
   archiveSamples: string[];
   archiveReviewHref: string | null;
   strategyHref: string;
@@ -71,308 +49,227 @@ interface ReasoningState {
   reasoning: string;
 }
 
-interface MenuState {
-  item: ReviewDecisionItem;
-  x: number;
-  y: number;
-}
-
-interface BundleMenuState {
-  item: ReviewBundleDecisionItem;
-  x: number;
-  y: number;
-}
-
-interface CriterionMenuState {
-  item: ReviewDecisionItem;
-  x: number;
-  y: number;
-}
-
 interface ToastState {
   tone: "error" | "info";
   message: string;
 }
 
-interface ReviewViewState {
-  bands: ReviewCategoryBandData[];
-  routineCount: number;
+interface ViewState {
+  readyBands: ReviewCategoryBandData[];
+  fileDecisionItems: ReviewDecisionItem[];
+  bundleReviewGroups: ReviewBundleFitGroup[];
+  otherBundleGroups: ReviewBundleFitGroup[];
+  criterionReviewQueue: ReviewBundleDecisionItem[];
+  otherCriterionQueue: ReviewBundleDecisionItem[];
+  referenceItems: ReviewDecisionItem[];
   archiveCount: number;
   archiveSampleTitles: string[];
-  referenceItems: ReviewDecisionItem[];
-  criterionCounts: Record<string, number>;
-  humanReviewQueue: ReviewBundleDecisionItem[];
 }
 
-const CRITERION_LOOKUP = Object.fromEntries(
-  EB1A_CRITERIA_DEFINITIONS.map((criterion) => [criterion.code, criterion]),
-) as Record<string, (typeof EB1A_CRITERIA_DEFINITIONS)[number]>;
-
-function sortBands(bands: ReviewCategoryBandData[]) {
-  return [...bands].sort((left, right) => left.legalCode.localeCompare(right.legalCode));
+interface DocumentActionMenuState {
+  item: ReviewDecisionItem;
+  kind: "file" | "bundle" | "reference" | "other-bundle";
+  x: number;
+  y: number;
 }
 
-function createEmptyBand(
-  criterionCode: string,
-  denseReviewHref: string,
-): ReviewCategoryBandData {
-  const criterion = CRITERION_LOOKUP[criterionCode];
-
-  return {
-    key: criterionCode,
-    legalCode: criterion?.legalCode ?? criterionCode,
-    title: criterion?.name ?? "Criterion",
-    taggedCount: 0,
-    note: null,
-    decisions: [],
-    routine: {
-      count: 0,
-      samples: [],
-      denseReviewHref,
-      label: "routine Keep",
-    },
-  };
+interface BundlePickerState {
+  item: ReviewDecisionItem;
+  source: "bundle" | "other-bundle";
+  x: number;
+  y: number;
 }
 
-function cloneViewState(state: ReviewViewState): ReviewViewState {
+interface CriterionPickerState {
+  item: ReviewBundleDecisionItem;
+  source: "criterion" | "other-criterion";
+  x: number;
+  y: number;
+}
+
+interface BundleActionMenuState {
+  item: ReviewBundleDecisionItem;
+  kind: "criterion" | "other-criterion";
+  x: number;
+  y: number;
+}
+
+function cloneViewState(state: ViewState): ViewState {
   return structuredClone(state);
 }
 
-function buildNextState(
-  input: Omit<ActionItemsSummaryProps, "clientId" | "clientName" | "strategyHref" | "denseWorkbenchHref" | "archiveReviewHref"> & {
-    archiveSamples: string[];
-  },
-): ReviewViewState {
+function buildInitialViewState(props: ActionItemsSummaryProps): ViewState {
   return {
-    bands: input.bands,
-    routineCount: input.initialRoutineCount,
-    archiveCount: input.initialArchiveCount,
-    archiveSampleTitles: input.archiveSamples,
-    referenceItems: input.initialReferenceItems,
-    criterionCounts: input.initialCriterionCounts,
-    humanReviewQueue: input.humanReviewQueue,
+    readyBands: props.readyBands,
+    fileDecisionItems: props.fileDecisionItems,
+    bundleReviewGroups: props.bundleReviewGroups,
+    otherBundleGroups: props.otherBundleGroups,
+    criterionReviewQueue: props.criterionReviewQueue,
+    otherCriterionQueue: props.otherCriterionQueue,
+    referenceItems: props.initialReferenceItems,
+    archiveCount: props.initialArchiveCount,
+    archiveSampleTitles: props.archiveSamples,
   };
 }
 
-function removeDecisionItemFromBands(
-  bands: ReviewCategoryBandData[],
-  itemId: string,
-): { bands: ReviewCategoryBandData[]; sourceBand: ReviewCategoryBandData | null } {
-  let sourceBand: ReviewCategoryBandData | null = null;
-
-  const nextBands = bands.map((band) => {
-    const target = band.decisions.find((entry) => entry.id === itemId);
-
-    if (!target) {
-      return band;
-    }
-
-    sourceBand = band;
-
-    return {
-      ...band,
-      decisions: band.decisions.filter((entry) => entry.id !== itemId),
-    };
-  });
-
-  return {
-    bands: nextBands,
-    sourceBand,
-  };
+function readyCountFromBands(bands: ReviewCategoryBandData[]) {
+  return bands.reduce((sum, band) => sum + (band.routine?.count ?? 0), 0);
 }
 
-function upsertRoutineEntry(
-  bands: ReviewCategoryBandData[],
+function getDisplayBundleName(item: ReviewDecisionItem) {
+  return item.currentBundleName ?? "Bundle review needed";
+}
+
+function getDisplayBundleId(item: ReviewDecisionItem) {
+  return item.currentBundleId ?? `unassigned:${item.id}`;
+}
+
+function upsertBundleGroup(
+  groups: ReviewBundleFitGroup[],
+  input: Omit<ReviewBundleFitGroup, "itemCount" | "items">,
   item: ReviewDecisionItem,
-  criterionCode: string,
-  incrementTaggedCount: boolean,
-): ReviewCategoryBandData[] {
-  const denseReviewHref = item.denseReviewHref;
-  const nextBands = [...bands];
-  const bandIndex = nextBands.findIndex((band) => band.key === criterionCode);
-  const existingBand =
-    bandIndex >= 0 ? nextBands[bandIndex] : createEmptyBand(criterionCode, denseReviewHref);
+) {
+  const nextGroups = groups.map((group) => ({ ...group, items: [...group.items] }));
+  const existingIndex = nextGroups.findIndex((group) => group.key === input.key);
 
-  const nextBand = {
-    ...existingBand,
-    taggedCount: existingBand.taggedCount + (incrementTaggedCount ? 1 : 0),
-    routine: {
-      count: (existingBand.routine?.count ?? 0) + 1,
-      samples: [item.title, ...(existingBand.routine?.samples ?? [])].slice(0, 4),
-      denseReviewHref:
-        existingBand.routine?.denseReviewHref ?? denseReviewHref,
-      label: existingBand.routine?.label ?? "routine Keep",
+  if (existingIndex >= 0) {
+    const current = nextGroups[existingIndex];
+    current.items = [item, ...current.items];
+    current.itemCount = current.items.length;
+    return nextGroups;
+  }
+
+  return [
+    {
+      ...input,
+      itemCount: 1,
+      items: [item],
     },
-  };
-
-  if (bandIndex >= 0) {
-    nextBands[bandIndex] = nextBand;
-  } else {
-    nextBands.push(nextBand);
-  }
-
-  return sortBands(nextBands);
+    ...nextGroups,
+  ];
 }
 
-function decrementBandCount(
-  bands: ReviewCategoryBandData[],
-  criterionCode: string | null,
-): ReviewCategoryBandData[] {
-  if (!criterionCode) {
-    return bands;
-  }
-
-  return bands
-    .map((band) =>
-      band.key === criterionCode
-        ? {
-            ...band,
-            taggedCount: Math.max(0, band.taggedCount - 1),
-          }
-        : band,
-    )
-    .filter((band) => band.taggedCount > 0 || band.decisions.length > 0 || (band.routine?.count ?? 0) > 0);
+function removeItemFromGroups(groups: ReviewBundleFitGroup[], itemId: string) {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.id !== itemId),
+    }))
+    .filter((group) => group.items.length > 0)
+    .map((group) => ({
+      ...group,
+      itemCount: group.items.length,
+    }));
 }
 
-function moveDecisionToReference(state: ReviewViewState, item: ReviewDecisionItem) {
-  const { bands } = removeDecisionItemFromBands(state.bands, item.id);
-
+function addToBundleReviewGroups(state: ViewState, item: ReviewDecisionItem) {
   return {
     ...state,
-    bands: decrementBandCount(bands, item.currentCriterionCode),
+    bundleReviewGroups: upsertBundleGroup(
+      state.bundleReviewGroups,
+      {
+        key: `${item.jobId}:${getDisplayBundleId(item)}`,
+        jobId: item.jobId,
+        workspaceLabel: item.workspaceLabel,
+        bundleId: item.currentBundleId,
+        bundleName: getDisplayBundleName(item),
+      },
+      { ...item, reviewStatus: "kept" as const },
+    ),
+  };
+}
+
+function addToOtherBundleGroups(state: ViewState, item: ReviewDecisionItem) {
+  return {
+    ...state,
+    otherBundleGroups: upsertBundleGroup(
+      state.otherBundleGroups,
+      {
+        key: `${item.jobId}:other-bundle`,
+        jobId: item.jobId,
+        workspaceLabel: item.workspaceLabel,
+        bundleId: null,
+        bundleName: "Other bundle",
+      },
+      { ...item, reviewStatus: "kept" as const },
+    ),
+  };
+}
+
+function moveItemToReference(state: ViewState, item: ReviewDecisionItem) {
+  return {
+    ...state,
+    fileDecisionItems: state.fileDecisionItems.filter((entry) => entry.id !== item.id),
+    bundleReviewGroups: removeItemFromGroups(state.bundleReviewGroups, item.id),
+    otherBundleGroups: removeItemFromGroups(state.otherBundleGroups, item.id),
     referenceItems: [{ ...item, reviewStatus: "reference" as const }, ...state.referenceItems],
-    criterionCounts: item.currentCriterionCode
-      ? {
-          ...state.criterionCounts,
-          [item.currentCriterionCode]: Math.max(
-            0,
-            (state.criterionCounts[item.currentCriterionCode] ?? 0) - 1,
-          ),
-        }
-      : state.criterionCounts,
   };
 }
 
-function moveReferenceToArchive(state: ReviewViewState, item: ReviewDecisionItem) {
+function moveItemToArchive(state: ViewState, item: ReviewDecisionItem) {
   return {
     ...state,
+    fileDecisionItems: state.fileDecisionItems.filter((entry) => entry.id !== item.id),
+    bundleReviewGroups: removeItemFromGroups(state.bundleReviewGroups, item.id),
+    otherBundleGroups: removeItemFromGroups(state.otherBundleGroups, item.id),
     referenceItems: state.referenceItems.filter((entry) => entry.id !== item.id),
     archiveCount: state.archiveCount + 1,
     archiveSampleTitles: [item.title, ...state.archiveSampleTitles].slice(0, 4),
   };
 }
 
-function moveDecisionToArchive(state: ReviewViewState, item: ReviewDecisionItem) {
-  const { bands } = removeDecisionItemFromBands(state.bands, item.id);
-
-  return {
-    ...state,
-    bands: decrementBandCount(bands, item.currentCriterionCode),
-    archiveCount: state.archiveCount + 1,
-    archiveSampleTitles: [item.title, ...state.archiveSampleTitles].slice(0, 4),
-    criterionCounts: item.currentCriterionCode
-      ? {
-          ...state.criterionCounts,
-          [item.currentCriterionCode]: Math.max(
-            0,
-            (state.criterionCounts[item.currentCriterionCode] ?? 0) - 1,
-          ),
-        }
-      : state.criterionCounts,
-  };
-}
-
-function keepDecisionInBand(
-  state: ReviewViewState,
-  item: ReviewDecisionItem,
-  targetCriterionCode: string,
-): ReviewViewState {
-  const { bands } = removeDecisionItemFromBands(state.bands, item.id);
-  const sourceCriterionCode = item.currentCriterionCode;
-  const nextBands =
-    sourceCriterionCode && sourceCriterionCode !== targetCriterionCode
-      ? decrementBandCount(bands, sourceCriterionCode)
-      : bands;
-  const nextState = {
-    ...state,
-    bands: upsertRoutineEntry(
-      nextBands,
-      item,
-      targetCriterionCode,
-      sourceCriterionCode !== targetCriterionCode,
-    ),
-    routineCount: state.routineCount + 1,
-    criterionCounts: { ...state.criterionCounts },
-  };
-
-  if (sourceCriterionCode && sourceCriterionCode !== targetCriterionCode) {
-    nextState.criterionCounts[sourceCriterionCode] = Math.max(
-      0,
-      (nextState.criterionCounts[sourceCriterionCode] ?? 0) - 1,
-    );
-    nextState.criterionCounts[targetCriterionCode] =
-      (nextState.criterionCounts[targetCriterionCode] ?? 0) + 1;
+function removeBundleItem(state: ViewState, bundleId: string, source: "criterion" | "other-criterion") {
+  if (source === "criterion") {
+    return {
+      ...state,
+      criterionReviewQueue: state.criterionReviewQueue.filter((item) => item.id !== bundleId),
+    };
   }
 
-  return nextState;
-}
-
-function keepReferenceInBand(
-  state: ReviewViewState,
-  item: ReviewDecisionItem,
-  targetCriterionCode: string,
-): ReviewViewState {
   return {
     ...state,
-    referenceItems: state.referenceItems.filter((entry) => entry.id !== item.id),
-    bands: upsertRoutineEntry(state.bands, item, targetCriterionCode, true),
-    routineCount: state.routineCount + 1,
-    criterionCounts: {
-      ...state.criterionCounts,
-      [targetCriterionCode]: (state.criterionCounts[targetCriterionCode] ?? 0) + 1,
-    },
+    otherCriterionQueue: state.otherCriterionQueue.filter((item) => item.id !== bundleId),
   };
 }
 
-function moveReferenceToReferenceBundle(
-  state: ReviewViewState,
-  itemId: string,
-  bundleName: string,
-  bundleId: string,
-  parentBundleId: string | null,
+function addBundleToOtherCriterion(state: ViewState, item: ReviewBundleDecisionItem) {
+  return {
+    ...state,
+    criterionReviewQueue: state.criterionReviewQueue.filter((entry) => entry.id !== item.id),
+    otherCriterionQueue: [item, ...state.otherCriterionQueue.filter((entry) => entry.id !== item.id)],
+  };
+}
+
+function addBundleToCriterionQueue(state: ViewState, item: ReviewBundleDecisionItem) {
+  return {
+    ...state,
+    otherCriterionQueue: state.otherCriterionQueue.filter((entry) => entry.id !== item.id),
+    criterionReviewQueue: [item, ...state.criterionReviewQueue.filter((entry) => entry.id !== item.id)],
+  };
+}
+
+function buildCriterionPickerItems(
+  item: ReviewBundleDecisionItem,
+  onSelect: (criterionCode: string) => void,
 ) {
-  return {
-    ...state,
-    referenceItems: state.referenceItems.map((entry) =>
-      entry.id === itemId
-        ? {
-            ...entry,
-            currentBundleName: bundleName,
-            currentBundleId: bundleId,
-            currentParentBundleId: parentBundleId,
-          }
-        : entry,
-    ),
-  };
+  return EB1A_CRITERIA_DEFINITIONS.map<ContextMenuEntry>((criterion) => ({
+    id: `criterion-${criterion.code}`,
+    label: `${criterion.legalCode} ${criterion.name}`,
+    disabled: item.bucketCode === criterion.code,
+    onSelect: () => onSelect(criterion.code),
+  }));
 }
 
-function removeHumanReviewBundle(state: ReviewViewState, itemId: string) {
-  return {
-    ...state,
-    humanReviewQueue: state.humanReviewQueue.filter((entry) => entry.id !== itemId),
-  };
-}
-
-function resolveCriterionBandCode(
-  item: ReviewDecisionItem,
-  criterionCode: string,
-  role: CriterionTagRole,
-) {
-  if (role === "primary") {
-    return criterionCode;
+function resolveExistingCriterionCode(item: ReviewBundleDecisionItem) {
+  if (EB1A_CRITERIA_DEFINITIONS.some((criterion) => criterion.code === item.bucketCode)) {
+    return item.bucketCode;
   }
 
-  return item.currentCriterionCode ?? criterionCode;
+  return item.criterionCode;
+}
+
+function documentActionButtonClass() {
+  return "setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold";
 }
 
 export function ActionItemsSummary({
@@ -382,37 +279,49 @@ export function ActionItemsSummary({
   initialRoutineCount,
   initialArchiveCount,
   initialReferenceItems,
-  initialCriterionCounts,
   workspaceContexts,
-  bands: initialBands,
-  humanReviewQueue,
+  readyBands,
+  fileDecisionItems,
+  bundleReviewGroups,
+  otherBundleGroups,
+  criterionReviewQueue,
+  otherCriterionQueue,
   archiveSamples,
   archiveReviewHref,
   strategyHref,
   denseWorkbenchHref,
 }: ActionItemsSummaryProps) {
   const router = useRouter();
-  const [viewState, setViewState] = useState<ReviewViewState>(() =>
-    buildNextState({
+  const [viewState, setViewState] = useState<ViewState>(() =>
+    buildInitialViewState({
+      clientId,
+      clientName,
       totalTagged,
       initialRoutineCount,
       initialArchiveCount,
       initialReferenceItems,
-      initialCriterionCounts,
       workspaceContexts,
-      bands: initialBands,
-      humanReviewQueue,
+      readyBands,
+      fileDecisionItems,
+      bundleReviewGroups,
+      otherBundleGroups,
+      criterionReviewQueue,
+      otherCriterionQueue,
       archiveSamples,
+      archiveReviewHref,
+      strategyHref,
+      denseWorkbenchHref,
     }),
   );
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [reasoning, setReasoning] = useState<ReasoningState | null>(null);
-  const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
-  const [busyLabel, setBusyLabel] = useState("Saving review action");
-  const [menuState, setMenuState] = useState<MenuState | null>(null);
-  const [bundleMenuState, setBundleMenuState] = useState<BundleMenuState | null>(null);
-  const [criterionMenuState, setCriterionMenuState] = useState<CriterionMenuState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [busyLabel, setBusyLabel] = useState("Saving review action");
+  const [documentMenuState, setDocumentMenuState] = useState<DocumentActionMenuState | null>(null);
+  const [bundlePickerState, setBundlePickerState] = useState<BundlePickerState | null>(null);
+  const [criterionPickerState, setCriterionPickerState] = useState<CriterionPickerState | null>(null);
+  const [bundleActionMenuState, setBundleActionMenuState] = useState<BundleActionMenuState | null>(null);
 
   useEffect(() => {
     if (!toast) {
@@ -423,13 +332,23 @@ export function ActionItemsSummary({
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const needsDecisionCount = useMemo(
-    () => viewState.bands.reduce((sum, band) => sum + band.decisions.length, 0),
-    [viewState.bands],
+  const fileDecisionCount = viewState.fileDecisionItems.length;
+  const bundleDecisionCount = useMemo(
+    () => viewState.bundleReviewGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [viewState.bundleReviewGroups],
   );
-  const bundleDecisionCount = viewState.humanReviewQueue.length;
-  const unresolvedCount = needsDecisionCount + bundleDecisionCount;
+  const criterionDecisionCount = viewState.criterionReviewQueue.length;
+  const otherBundleCount = useMemo(
+    () => viewState.otherBundleGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [viewState.otherBundleGroups],
+  );
+  const otherCriterionCount = viewState.otherCriterionQueue.length;
   const referenceCount = viewState.referenceItems.length;
+  const readyCount = useMemo(
+    () => readyCountFromBands(viewState.readyBands) || initialRoutineCount,
+    [initialRoutineCount, viewState.readyBands],
+  );
+  const unresolvedCount = fileDecisionCount + bundleDecisionCount + criterionDecisionCount;
 
   async function patchReviewStatus(id: string, status: EvidenceReviewStatus) {
     const response = await fetch(`/api/evidence/${id}/status`, {
@@ -441,53 +360,55 @@ export function ActionItemsSummary({
     });
 
     if (!response.ok) {
-      throw new Error("Unable to save the review status.");
+      throw new Error("Unable to save the file decision.");
     }
   }
 
-  async function upsertCriterion(
-    id: string,
-    code: string,
-    role: CriterionTagRole,
+  async function patchDocumentBundleDecision(
+    jobId: string,
+    documentId: string,
+    status: "accepted" | "other" | "clear",
   ) {
-    const response = await fetch(`/api/evidence/${id}/criteria`, {
+    const response = await fetch("/api/review-workflow", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ code, role }),
+      body: JSON.stringify({
+        jobId,
+        type: "document-bundle",
+        documentId,
+        status,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error("Unable to save the criterion assignment.");
+      throw new Error("Unable to save the bundle review state.");
     }
   }
 
-  async function patchCriterionRole(
-    id: string,
-    code: string,
-    role: CriterionTagRole,
+  async function patchBundleCriterionDecision(
+    jobId: string,
+    bundleId: string,
+    status: "accepted" | "other" | "clear",
+    criterionCode: string | null,
   ) {
-    const response = await fetch(`/api/evidence/${id}/criteria/${code}`, {
-      method: "PATCH",
+    const response = await fetch("/api/review-workflow", {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({
+        jobId,
+        type: "bundle-criterion",
+        bundleId,
+        status,
+        criterionCode,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error("Unable to update the criterion role.");
-    }
-  }
-
-  async function deleteCriterion(id: string, code: string) {
-    const response = await fetch(`/api/evidence/${id}/criteria/${code}`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      throw new Error("Unable to remove the existing criterion.");
+      throw new Error("Unable to save the criterion review state.");
     }
   }
 
@@ -502,25 +423,23 @@ export function ActionItemsSummary({
       },
       body: JSON.stringify({
         jobId: item.jobId,
-        targetBundleId:
-          option.kind === "bundle" ? option.id : option.parentBundleId,
+        targetBundleId: option.kind === "bundle" ? option.id : option.parentBundleId,
         targetSubBundleId: option.kind === "sub_bundle" ? option.id : null,
       }),
     });
 
     if (!response.ok) {
-      throw new Error("Unable to move the document to the selected bundle.");
+      throw new Error("Unable to move the file to the selected bundle.");
     }
   }
 
   async function createBundleForItem(item: ReviewDecisionItem) {
-    const parentBundleId = item.currentParentBundleId ?? item.currentBundleId;
+    const parentBundleId = item.topLevelBundleId;
 
     if (!parentBundleId) {
-      throw new Error("This document does not have a parent bundle yet.");
+      throw new Error("Setu needs a top-level bundle before it can create a sub-bundle.");
     }
 
-    const name = `Custom bundle — ${item.title.slice(0, 38)}`;
     const response = await fetch(`/api/bundles/${parentBundleId}/sub-bundles`, {
       method: "POST",
       headers: {
@@ -528,7 +447,7 @@ export function ActionItemsSummary({
       },
       body: JSON.stringify({
         jobId: item.jobId,
-        name,
+        name: `New bundle — ${item.title.slice(0, 36)}`,
         evidenceIds: [],
       }),
     });
@@ -550,11 +469,7 @@ export function ActionItemsSummary({
       throw new Error("Unable to create a new bundle.");
     }
 
-    return {
-      id: payload.data.id,
-      parentBundleId: payload.data.parentBundleId,
-      name: payload.data.name,
-    };
+    return payload.data;
   }
 
   async function patchBundleCategory(item: ReviewBundleDecisionItem, bucketCode: string) {
@@ -572,31 +487,39 @@ export function ActionItemsSummary({
     });
 
     if (!response.ok) {
-      throw new Error("Unable to move the bundle into the selected criterion.");
+      throw new Error("Unable to save the criterion assignment.");
     }
   }
 
-  async function runOptimisticAction(
-    item: ReviewDecisionItem,
+  async function runViewStateAction(
+    key: string,
     label: string,
-    mutator: (state: ReviewViewState) => ReviewViewState,
+    mutator: (state: ViewState) => ViewState,
     runner: () => Promise<void>,
+    successMessage?: string,
   ) {
-    if (busyDocumentId) {
+    if (busyKey) {
       return;
     }
 
     const snapshot = cloneViewState(viewState);
-    setBusyDocumentId(item.id);
+    setBusyKey(key);
     setBusyLabel(label);
-    setMenuState(null);
-    setBundleMenuState(null);
-    setCriterionMenuState(null);
+    setDocumentMenuState(null);
+    setBundlePickerState(null);
+    setCriterionPickerState(null);
+    setBundleActionMenuState(null);
     setViewState((current) => mutator(cloneViewState(current)));
 
     try {
       await runner();
       router.refresh();
+      if (successMessage) {
+        setToast({
+          tone: "info",
+          message: successMessage,
+        });
+      }
     } catch (error) {
       setViewState(snapshot);
       setToast({
@@ -607,95 +530,83 @@ export function ActionItemsSummary({
             : "Setu could not save that review action.",
       });
     } finally {
-      setBusyDocumentId(null);
+      setBusyKey(null);
       setBusyLabel("Saving review action");
     }
   }
 
-  async function runOptimisticBundleAction(
-    item: ReviewBundleDecisionItem,
-    label: string,
-    mutator: (state: ReviewViewState) => ReviewViewState,
-    runner: () => Promise<void>,
-  ) {
-    if (busyDocumentId) {
-      return;
-    }
-
-    const snapshot = cloneViewState(viewState);
-    setBusyDocumentId(item.id);
-    setBusyLabel(label);
-    setMenuState(null);
-    setBundleMenuState(null);
-    setCriterionMenuState(null);
-    setViewState((current) => mutator(cloneViewState(current)));
-
-    try {
-      await runner();
-      router.refresh();
-      setToast({
-        tone: "info",
-        message: "Bundle category updated.",
-      });
-    } catch (error) {
-      setViewState(snapshot);
-      setToast({
-        tone: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Setu could not save that bundle action.",
-      });
-    } finally {
-      setBusyDocumentId(null);
-      setBusyLabel("Saving review action");
-    }
-  }
-
-  function openItemMenu(
+  function openDocumentMenu(
     item: ReviewDecisionItem,
+    kind: DocumentActionMenuState["kind"],
     x: number,
     y: number,
   ) {
-    setBundleMenuState(null);
-    setMenuState({
+    setBundlePickerState(null);
+    setCriterionPickerState(null);
+    setBundleActionMenuState(null);
+    setDocumentMenuState({
       item,
+      kind,
       x,
       y,
     });
   }
 
-  function openItemMenuAtElement(
+  function openDocumentMenuAtElement(
     item: ReviewDecisionItem,
+    kind: DocumentActionMenuState["kind"],
     element: HTMLElement,
   ) {
     const rect = element.getBoundingClientRect();
-    setCriterionMenuState(null);
-    openItemMenu(item, rect.left, rect.bottom + 6);
+    openDocumentMenu(item, kind, rect.left, rect.bottom + 6);
   }
 
-  function openCriterionMenuAtElement(
+  function openBundlePicker(
     item: ReviewDecisionItem,
+    source: BundlePickerState["source"],
     element: HTMLElement,
   ) {
     const rect = element.getBoundingClientRect();
-    setMenuState(null);
-    setBundleMenuState(null);
-    setCriterionMenuState({
+    setDocumentMenuState(null);
+    setCriterionPickerState(null);
+    setBundleActionMenuState(null);
+    setBundlePickerState({
       item,
+      source,
       x: rect.left,
       y: rect.bottom + 6,
     });
   }
 
-  function openBundleMenuAtElement(
+  function openCriterionPicker(
     item: ReviewBundleDecisionItem,
+    source: CriterionPickerState["source"],
     element: HTMLElement,
   ) {
     const rect = element.getBoundingClientRect();
-    setMenuState(null);
-    setBundleMenuState({
+    setDocumentMenuState(null);
+    setBundlePickerState(null);
+    setBundleActionMenuState(null);
+    setCriterionPickerState({
       item,
+      source,
+      x: rect.left,
+      y: rect.bottom + 6,
+    });
+  }
+
+  function openBundleActionMenu(
+    item: ReviewBundleDecisionItem,
+    kind: BundleActionMenuState["kind"],
+    element: HTMLElement,
+  ) {
+    const rect = element.getBoundingClientRect();
+    setDocumentMenuState(null);
+    setBundlePickerState(null);
+    setCriterionPickerState(null);
+    setBundleActionMenuState({
+      item,
+      kind,
       x: rect.left,
       y: rect.bottom + 6,
     });
@@ -709,250 +620,572 @@ export function ActionItemsSummary({
     });
   }
 
-  function handleMoveToStatus(item: ReviewDecisionItem, status: EvidenceReviewStatus) {
-    if (status === "reference") {
-      const mutator = (state: ReviewViewState) =>
-        item.reviewStatus === "reference" ? state : moveDecisionToReference(state, item);
-
-      void runOptimisticAction(item, "Moving document to Reference", mutator, async () => {
-        await patchReviewStatus(item.id, "reference");
-      });
-      return;
-    }
-
-    const mutator = (state: ReviewViewState) => {
-      if (item.reviewStatus === "reference") {
-        return moveReferenceToArchive(state, item);
-      }
-
-      return moveDecisionToArchive(state, item);
-    };
-
-    void runOptimisticAction(item, "Moving document to Archive", mutator, async () => {
-      await patchReviewStatus(item.id, "archived");
+  function showReasoning(title: string, reasoningText: string) {
+    setReasoning({
+      title,
+      reasoning: reasoningText,
     });
   }
 
-  function handleKeepForCriterion(
-    item: ReviewDecisionItem,
-    criterionCode: string,
-    role: CriterionTagRole,
-  ) {
-    const targetBandCode = resolveCriterionBandCode(item, criterionCode, role);
-    const previousStatus = item.reviewStatus;
-    const previousCriterionCode = item.currentCriterionCode;
-    const previousRole = item.currentCriterionRole ?? "primary";
-    const updatesCurrentCriterion = previousCriterionCode === criterionCode;
-
-    const mutator = (state: ReviewViewState) => {
-      if (item.reviewStatus === "reference") {
-        return keepReferenceInBand(state, item, targetBandCode);
-      }
-
-      return keepDecisionInBand(state, item, targetBandCode);
-    };
-
-    void runOptimisticAction(item, "Keeping document for the selected criterion", mutator, async () => {
-      let criterionSaved = false;
-
-      try {
-        if (updatesCurrentCriterion) {
-          await patchCriterionRole(item.id, criterionCode, role);
-        } else {
-          await upsertCriterion(item.id, criterionCode, role);
-        }
-        criterionSaved = true;
-        await patchReviewStatus(item.id, "kept");
-      } catch (error) {
-        if (criterionSaved) {
-          if (updatesCurrentCriterion) {
-            await patchCriterionRole(item.id, criterionCode, previousRole);
-          } else {
-            await deleteCriterion(item.id, criterionCode).catch(() => null);
-          }
-        }
-
-        if (previousStatus !== "kept") {
-          await patchReviewStatus(item.id, previousStatus).catch(() => null);
-        }
-
-        throw error;
-      }
-    });
-  }
-
-  function handleReassignCriterion(item: ReviewDecisionItem, criterionCode: string) {
-    const previousStatus = item.reviewStatus;
-    const previousCriterionCode = item.currentCriterionCode;
-    const previousRole = item.currentCriterionRole ?? "primary";
-
-    if (!previousCriterionCode || previousCriterionCode === criterionCode) {
-      return;
-    }
-
-    const mutator = (state: ReviewViewState) => {
-      if (item.reviewStatus === "reference") {
-        return keepReferenceInBand(state, item, criterionCode);
-      }
-
-      return keepDecisionInBand(state, item, criterionCode);
-    };
-
-    void runOptimisticAction(item, "Reassigning criterion", mutator, async () => {
-      let deletedOld = false;
-      let addedNew = false;
-
-      try {
-        await deleteCriterion(item.id, previousCriterionCode);
-        deletedOld = true;
-        await upsertCriterion(item.id, criterionCode, previousRole);
-        addedNew = true;
-        await patchReviewStatus(item.id, "kept");
-      } catch (error) {
-        if (addedNew) {
-          await deleteCriterion(item.id, criterionCode).catch(() => null);
-        }
-
-        if (deletedOld) {
-          await upsertCriterion(item.id, previousCriterionCode, previousRole).catch(() => null);
-        }
-
-        if (previousStatus !== "kept") {
-          await patchReviewStatus(item.id, previousStatus).catch(() => null);
-        }
-
-        throw error;
-      }
-    });
-  }
-
-  function handleMoveToBundle(
-    item: ReviewDecisionItem,
-    option: ReviewWorkspaceBundleOption | { kind: "create" },
-  ) {
-    const mutator = (state: ReviewViewState) => {
-      if (item.reviewStatus === "reference") {
-        if (option.kind === "create") {
-          return state;
-        }
-
-        return moveReferenceToReferenceBundle(
-          state,
-          item.id,
-          option.name,
-          option.id,
-          option.parentBundleId,
-        );
-      }
-
-      return keepDecisionInBand(
-        state,
-        item,
-        item.currentCriterionCode ?? EB1A_CRITERIA_DEFINITIONS[0].code,
-      );
-    };
-
-    void runOptimisticAction(item, "Moving document to the selected bundle", mutator, async () => {
-      if (option.kind === "create") {
-        const created = await createBundleForItem(item);
-        await moveToBundle(item, {
-          id: created.id,
-          jobId: item.jobId,
-          parentBundleId: created.parentBundleId,
-          name: created.name,
-          documentCount: 1,
-          kind: "sub_bundle",
-        });
-      } else {
-        await moveToBundle(item, option);
-      }
-
-      if (item.reviewStatus === "pending") {
-        await patchReviewStatus(item.id, "kept");
-      }
-    });
-  }
-
-  function handleAssignBundleCriterion(item: ReviewBundleDecisionItem, criterionCode: string) {
-    void runOptimisticBundleAction(
-      item,
-      "Assigning bundle to the selected criterion",
-      (state) => removeHumanReviewBundle(state, item.id),
+  function handleKeepFile(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Keeping file in the active review set",
+      (state) => addToBundleReviewGroups(
+        {
+          ...state,
+          fileDecisionItems: state.fileDecisionItems.filter((entry) => entry.id !== item.id),
+        },
+        { ...item, reviewStatus: "kept" as const },
+      ),
       async () => {
-        await patchBundleCategory(item, criterionCode);
+        await patchReviewStatus(item.id, "kept");
       },
     );
   }
 
-  const bundleMenuItems: ContextMenuEntry[] = bundleMenuState
-    ? EB1A_CRITERIA_DEFINITIONS.map((criterion) => ({
-        id: `bundle-criterion-${criterion.code}`,
-        label: `${criterion.legalCode} ${criterion.name}`,
-        onSelect: () => handleAssignBundleCriterion(bundleMenuState.item, criterion.code),
-      }))
-    : [];
+  function handleMoveToReference(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Moving file to Reference",
+      (state) => moveItemToReference(state, item),
+      async () => {
+        await patchReviewStatus(item.id, "reference");
+      },
+    );
+  }
 
-  function handleQuickAssignCriterion(item: ReviewDecisionItem, criterionCode: string) {
-    const nextRole = item.currentCriterionRole ?? item.roleHint ?? "primary";
+  function handleMoveToArchive(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Moving file to Archive",
+      (state) => moveItemToArchive(state, item),
+      async () => {
+        await patchReviewStatus(item.id, "archived");
+      },
+    );
+  }
 
-    setCriterionMenuState(null);
+  function handleReturnFromReference(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Returning file to active review",
+      (state) =>
+        addToBundleReviewGroups(
+          {
+            ...state,
+            referenceItems: state.referenceItems.filter((entry) => entry.id !== item.id),
+          },
+          { ...item, reviewStatus: "kept" as const },
+        ),
+      async () => {
+        await patchReviewStatus(item.id, "kept");
+      },
+    );
+  }
 
-    if (!item.currentCriterionCode || item.currentCriterionCode === criterionCode) {
-      handleKeepForCriterion(item, criterionCode, nextRole);
+  function handleAcceptBundle(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Confirming the bundle fit",
+      (state) => ({
+        ...state,
+        bundleReviewGroups: removeItemFromGroups(state.bundleReviewGroups, item.id),
+      }),
+      async () => {
+        await patchDocumentBundleDecision(item.jobId, item.id, "accepted");
+      },
+    );
+  }
+
+  function handleMarkOtherBundle(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Holding file for a later bundle decision",
+      (state) =>
+        addToOtherBundleGroups(
+          {
+            ...state,
+            bundleReviewGroups: removeItemFromGroups(state.bundleReviewGroups, item.id),
+          },
+          { ...item, reviewStatus: "kept" as const },
+        ),
+      async () => {
+        await patchDocumentBundleDecision(item.jobId, item.id, "other");
+      },
+    );
+  }
+
+  function handleReturnFromOtherBundle(item: ReviewDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Returning file to bundle review",
+      (state) =>
+        addToBundleReviewGroups(
+          {
+            ...state,
+            otherBundleGroups: removeItemFromGroups(state.otherBundleGroups, item.id),
+          },
+          { ...item, reviewStatus: "kept" as const },
+        ),
+      async () => {
+        await patchDocumentBundleDecision(item.jobId, item.id, "clear");
+      },
+    );
+  }
+
+  function handleMoveFileToBundle(
+    item: ReviewDecisionItem,
+    option: ReviewWorkspaceBundleOption | { kind: "create" },
+    source: "bundle" | "other-bundle",
+  ) {
+    void runViewStateAction(
+      item.id,
+      "Moving file into the selected bundle",
+      (state) => ({
+        ...state,
+        bundleReviewGroups:
+          source === "bundle"
+            ? removeItemFromGroups(state.bundleReviewGroups, item.id)
+            : state.bundleReviewGroups,
+        otherBundleGroups:
+          source === "other-bundle"
+            ? removeItemFromGroups(state.otherBundleGroups, item.id)
+            : state.otherBundleGroups,
+      }),
+      async () => {
+        if (option.kind === "create") {
+          const created = await createBundleForItem(item);
+          await moveToBundle(item, {
+            id: created.id,
+            jobId: item.jobId,
+            parentBundleId: created.parentBundleId,
+            name: created.name,
+            documentCount: 1,
+            kind: "sub_bundle",
+          });
+        } else {
+          await moveToBundle(item, option);
+        }
+
+        await patchDocumentBundleDecision(item.jobId, item.id, "accepted");
+      },
+      "Bundle assignment saved.",
+    );
+  }
+
+  function handleAcceptCriterion(item: ReviewBundleDecisionItem) {
+    const targetCriterionCode = resolveExistingCriterionCode(item);
+
+    if (!targetCriterionCode) {
+      setToast({
+        tone: "error",
+        message: "Setu needs a concrete criterion before this bundle can be accepted.",
+      });
       return;
     }
 
-    handleReassignCriterion(item, criterionCode);
+    void runViewStateAction(
+      item.id,
+      "Confirming the bundle criterion",
+      (state) => removeBundleItem(state, item.id, "criterion"),
+      async () => {
+        if (item.bucketCode !== targetCriterionCode) {
+          await patchBundleCategory(item, targetCriterionCode);
+        }
+
+        await patchBundleCriterionDecision(item.jobId, item.id, "accepted", targetCriterionCode);
+      },
+      "Criterion assignment confirmed.",
+    );
   }
 
-  const criterionMenuItems: ContextMenuEntry[] = criterionMenuState
-    ? EB1A_CRITERIA_DEFINITIONS.map((criterion) => ({
-        id: `criterion-direct-${criterion.code}`,
-        label: `${criterion.legalCode} ${criterion.name}`,
-        disabled: criterionMenuState.item.currentCriterionCode === criterion.code,
-        onSelect: () => handleQuickAssignCriterion(criterionMenuState.item, criterion.code),
-      }))
+  function handleAssignCriterion(item: ReviewBundleDecisionItem, criterionCode: string, source: "criterion" | "other-criterion") {
+    void runViewStateAction(
+      item.id,
+      "Assigning the bundle to a criterion",
+      (state) => removeBundleItem(state, item.id, source),
+      async () => {
+        await patchBundleCategory(item, criterionCode);
+        await patchBundleCriterionDecision(item.jobId, item.id, "accepted", criterionCode);
+      },
+      "Criterion assignment saved.",
+    );
+  }
+
+  function handleMarkOtherCriterion(item: ReviewBundleDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Holding bundle in Other criterion",
+      (state) => addBundleToOtherCriterion(state, item),
+      async () => {
+        if (item.bucketCode !== "REVIEW") {
+          await patchBundleCategory(item, "REVIEW");
+        }
+
+        await patchBundleCriterionDecision(item.jobId, item.id, "other", null);
+      },
+      "Bundle moved to Other criterion.",
+    );
+  }
+
+  function handleReturnFromOtherCriterion(item: ReviewBundleDecisionItem) {
+    void runViewStateAction(
+      item.id,
+      "Returning bundle to criterion review",
+      (state) => addBundleToCriterionQueue(state, item),
+      async () => {
+        await patchBundleCriterionDecision(item.jobId, item.id, "clear", null);
+      },
+    );
+  }
+
+  const bundlePickerItems: ContextMenuEntry[] = bundlePickerState
+    ? (() => {
+        const workspace =
+          workspaceContexts.find((entry) => entry.jobId === bundlePickerState.item.jobId) ?? null;
+
+        if (!workspace) {
+          return [];
+        }
+
+        return [
+          ...workspace.bundleOptions.map((option) => ({
+            id: `bundle-${option.id}`,
+            label: `${option.name} · ${option.documentCount} file${option.documentCount === 1 ? "" : "s"}`,
+            disabled:
+              option.kind === "bundle"
+                ? option.id === bundlePickerState.item.topLevelBundleId &&
+                  bundlePickerState.item.currentParentBundleId === null
+                : option.id === bundlePickerState.item.currentBundleId,
+            onSelect: () =>
+              handleMoveFileToBundle(
+                bundlePickerState.item,
+                option,
+                bundlePickerState.source,
+              ),
+          })),
+          {
+            id: "bundle-divider",
+            type: "separator" as const,
+          },
+          {
+            id: "bundle-create",
+            label: "Create new bundle",
+            onSelect: () =>
+              handleMoveFileToBundle(
+                bundlePickerState.item,
+                { kind: "create" },
+                bundlePickerState.source,
+              ),
+          },
+        ];
+      })()
+    : [];
+
+  const criterionPickerItems: ContextMenuEntry[] = criterionPickerState
+    ? buildCriterionPickerItems(criterionPickerState.item, (criterionCode) =>
+        handleAssignCriterion(
+          criterionPickerState.item,
+          criterionCode,
+          criterionPickerState.source,
+        ),
+      )
+    : [];
+
+  const bundleActionMenuItems: ContextMenuEntry[] = bundleActionMenuState
+    ? (() => {
+        const bundleItem = bundleActionMenuState.item;
+        const criterionChildren = buildCriterionPickerItems(bundleItem, (criterionCode) =>
+          handleAssignCriterion(
+            bundleItem,
+            criterionCode,
+            bundleActionMenuState.kind,
+          ),
+        );
+        const currentCriterionCode = resolveExistingCriterionCode(bundleItem);
+
+        return [
+          {
+            id: "bundle-accept",
+            label:
+              bundleActionMenuState.kind === "criterion"
+                ? "Accept current criterion"
+                : "Return to criterion queue",
+            disabled:
+              bundleActionMenuState.kind === "criterion" ? !currentCriterionCode : false,
+            onSelect: () =>
+              bundleActionMenuState.kind === "criterion"
+                ? handleAcceptCriterion(bundleItem)
+                : handleReturnFromOtherCriterion(bundleItem),
+          },
+          {
+            id: "bundle-assign",
+            label: "Assign criterion",
+            children: criterionChildren,
+          },
+          ...(bundleActionMenuState.kind === "criterion"
+            ? [
+                {
+                  id: "bundle-other",
+                  label: "Move to Other criterion",
+                  onSelect: () => handleMarkOtherCriterion(bundleItem),
+                } satisfies ContextMenuEntry,
+              ]
+            : []),
+          {
+            id: "bundle-divider",
+            type: "separator" as const,
+          },
+          {
+            id: "bundle-open-dense",
+            label: "Open in dense workbench",
+            onSelect: () => {
+              router.push(bundleItem.denseReviewHref);
+            },
+          },
+          {
+            id: "bundle-show-reasoning",
+            label: "Show AI reasoning",
+            onSelect: () => showReasoning(bundleItem.bundleName, bundleItem.rationale),
+          },
+        ];
+      })()
+    : [];
+
+  const documentActionMenuItems: ContextMenuEntry[] = documentMenuState
+    ? (() => {
+        const item = documentMenuState.item;
+
+        if (documentMenuState.kind === "file") {
+          return [
+            {
+              id: "file-keep",
+              label: "Keep file",
+              onSelect: () => handleKeepFile(item),
+            },
+            {
+              id: "file-reference",
+              label: "Move to Reference",
+              onSelect: () => handleMoveToReference(item),
+            },
+            {
+              id: "file-archive",
+              label: "Move to Archive",
+              onSelect: () => handleMoveToArchive(item),
+            },
+            {
+              id: "file-divider",
+              type: "separator" as const,
+            },
+            {
+              id: "file-peek",
+              label: "Open Quick peek",
+              onSelect: () => handleQuickPeek(item),
+            },
+            {
+              id: "file-reasoning",
+              label: "Show AI reasoning",
+              onSelect: () => showReasoning(item.title, item.reasoning),
+            },
+          ];
+        }
+
+        if (documentMenuState.kind === "reference") {
+          return [
+            {
+              id: "reference-return",
+              label: "Return to active review",
+              onSelect: () => handleReturnFromReference(item),
+            },
+            {
+              id: "reference-archive",
+              label: "Move to Archive",
+              onSelect: () => handleMoveToArchive(item),
+            },
+            {
+              id: "reference-divider",
+              type: "separator" as const,
+            },
+            {
+              id: "reference-peek",
+              label: "Open Quick peek",
+              onSelect: () => handleQuickPeek(item),
+            },
+            {
+              id: "reference-reasoning",
+              label: "Show AI reasoning",
+              onSelect: () => showReasoning(item.title, item.reasoning),
+            },
+          ];
+        }
+
+        if (documentMenuState.kind === "other-bundle") {
+          const workspace = workspaceContexts.find((entry) => entry.jobId === item.jobId) ?? null;
+          const bundleChildren: ContextMenuEntry[] = workspace
+            ? [
+                ...workspace.bundleOptions.map((option) => ({
+                  id: `bundle-${option.id}`,
+                  label: `${option.name} · ${option.documentCount} file${option.documentCount === 1 ? "" : "s"}`,
+                  onSelect: () => handleMoveFileToBundle(item, option, "other-bundle"),
+                })),
+                {
+                  id: "other-bundle-divider",
+                  type: "separator" as const,
+                },
+                {
+                  id: "other-bundle-create",
+                  label: "Create new bundle",
+                  onSelect: () => handleMoveFileToBundle(item, { kind: "create" }, "other-bundle"),
+                },
+              ]
+            : [];
+
+          return [
+            {
+              id: "other-bundle-return",
+              label: "Return to bundle review",
+              onSelect: () => handleReturnFromOtherBundle(item),
+            },
+            {
+              id: "other-bundle-move",
+              label: "Move to bundle",
+              children: bundleChildren,
+            },
+            {
+              id: "other-bundle-archive",
+              label: "Move to Archive",
+              onSelect: () => handleMoveToArchive(item),
+            },
+            {
+              id: "other-bundle-divider-two",
+              type: "separator" as const,
+            },
+            {
+              id: "other-bundle-peek",
+              label: "Open Quick peek",
+              onSelect: () => handleQuickPeek(item),
+            },
+            {
+              id: "other-bundle-reasoning",
+              label: "Show AI reasoning",
+              onSelect: () => showReasoning(item.title, item.reasoning),
+            },
+          ];
+        }
+
+        const workspace = workspaceContexts.find((entry) => entry.jobId === item.jobId) ?? null;
+        const bundleChildren: ContextMenuEntry[] = workspace
+          ? [
+              ...workspace.bundleOptions.map((option) => ({
+                id: `bundle-${option.id}`,
+                label: `${option.name} · ${option.documentCount} file${option.documentCount === 1 ? "" : "s"}`,
+                onSelect: () => handleMoveFileToBundle(item, option, "bundle"),
+              })),
+              {
+                id: "bundle-divider",
+                type: "separator" as const,
+              },
+              {
+                id: "bundle-create",
+                label: "Create new bundle",
+                onSelect: () => handleMoveFileToBundle(item, { kind: "create" }, "bundle"),
+              },
+            ]
+          : [];
+
+        return [
+          {
+            id: "bundle-accept",
+            label: "Accept bundle",
+            onSelect: () => handleAcceptBundle(item),
+          },
+          {
+            id: "bundle-move",
+            label: "Move to bundle",
+            children: bundleChildren,
+          },
+          {
+            id: "bundle-other",
+            label: "Move to Other bundle",
+            onSelect: () => handleMarkOtherBundle(item),
+          },
+          {
+            id: "bundle-reference",
+            label: "Move to Reference",
+            onSelect: () => handleMoveToReference(item),
+          },
+          {
+            id: "bundle-archive",
+            label: "Move to Archive",
+            onSelect: () => handleMoveToArchive(item),
+          },
+          {
+            id: "bundle-divider-two",
+            type: "separator" as const,
+          },
+          {
+            id: "bundle-peek",
+            label: "Open Quick peek",
+            onSelect: () => handleQuickPeek(item),
+          },
+          {
+            id: "bundle-reasoning",
+            label: "Show AI reasoning",
+            onSelect: () => showReasoning(item.title, item.reasoning),
+          },
+        ];
+      })()
     : [];
 
   return (
     <div className="space-y-5">
       <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          Action items summary
+          Review workflow
         </p>
         <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-          {totalTagged} document(s) tagged for {clientName}
+          {totalTagged} tagged document(s) for {clientName}
         </h2>
         <p className="mt-2 max-w-4xl text-[12px] leading-6 text-[var(--muted)]">
-          Setu keeps the routine work collapsed so the remaining human decisions stay obvious across
-          multiple review sessions.
+          Files leave the active queue as soon as a human makes the next required decision. Setu
+          keeps held-later items visible, but the page always defaults to the work that still needs
+          a call today.
         </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <div className="mt-4 grid gap-3 md:grid-cols-6">
           <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
             <p className="text-[22px] font-semibold text-[var(--foreground)]">{totalTagged}</p>
             <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Tagged</p>
           </div>
-          <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--foreground)]">{viewState.routineCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Routine</p>
+          <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
+            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{fileDecisionCount}</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
+              File decisions
+            </p>
           </div>
           <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{needsDecisionCount}</p>
+            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{bundleDecisionCount}</p>
             <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
-              Need decision
+              Bundle review
+            </p>
+          </div>
+          <div className="rounded-[14px] border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-3">
+            <p className="text-[22px] font-semibold text-[var(--brand-deep)]">{criterionDecisionCount}</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--brand-deep)]">
+              Criterion review
             </p>
           </div>
           <div className="rounded-[14px] border border-[var(--state-warning)]/20 bg-[var(--state-warning-soft)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--state-warning)]">{referenceCount}</p>
+            <p className="text-[22px] font-semibold text-[var(--state-warning)]">
+              {referenceCount + otherBundleCount + otherCriterionCount}
+            </p>
             <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--state-warning)]">
-              Reference
+              Held later
             </p>
           </div>
           <div className="rounded-[14px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3">
-            <p className="text-[22px] font-semibold text-[var(--foreground)]">{bundleDecisionCount}</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
-              Bundle review
-            </p>
+            <p className="text-[22px] font-semibold text-[var(--foreground)]">{readyCount}</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Ready</p>
           </div>
         </div>
       </div>
@@ -970,142 +1203,448 @@ export function ActionItemsSummary({
       ) : null}
 
       <div className="space-y-4">
-        {viewState.bands.map((band) => (
-          <CategoryBand
-            key={band.key}
-            legalCode={band.legalCode}
-            title={band.title}
-            taggedCount={band.taggedCount}
-            decisionCount={band.decisions.length}
-            routineCount={band.routine?.count ?? 0}
-            note={band.note}
-            defaultOpen={band.decisions.length > 0}
-          >
-            {band.decisions.map((item) => (
-              <DecisionRow
+        <CategoryBand
+          legalCode="1"
+          title="Keep or archive files"
+          taggedCount={fileDecisionCount}
+          decisionCount={fileDecisionCount}
+          routineCount={0}
+          note="Start here. Decide whether the file stays in the active petition set before making any bundle or criterion call."
+          defaultOpen={fileDecisionCount > 0}
+          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+        >
+          {viewState.fileDecisionItems.length ? (
+            viewState.fileDecisionItems.map((item) => (
+              <WorkflowDocumentCard
                 key={item.id}
                 item={item}
+                stageLabel="File decision"
+                helperLabel="What needs a call"
+                helperBody={item.reasoning}
                 onContextMenu={(nextItem, event) => {
                   event.preventDefault();
-                  openItemMenu(nextItem, event.clientX, event.clientY);
+                  openDocumentMenu(nextItem, "file", event.clientX, event.clientY);
                 }}
-                onOpenCriterionPicker={(nextItem, event) => {
-                  openCriterionMenuAtElement(nextItem, event.currentTarget);
-                }}
-                onOpenActions={(nextItem, event) => {
-                  openItemMenuAtElement(nextItem, event.currentTarget);
-                }}
+                actions={
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleKeepFile(item)}
+                      className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+                    >
+                      Keep
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveToArchive(item)}
+                      className={documentActionButtonClass()}
+                    >
+                      Archive
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickPeek(item)}
+                      className={documentActionButtonClass()}
+                    >
+                      Quick peek
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => openDocumentMenuAtElement(item, "file", event.currentTarget)}
+                      className={documentActionButtonClass()}
+                    >
+                      Actions
+                    </button>
+                  </>
+                }
               />
-            ))}
-            {band.routine ? (
-              <RoutineRow
-                label={band.routine.label}
-                count={band.routine.count}
-                samples={band.routine.samples}
-                href={band.routine.denseReviewHref}
-              />
-            ) : null}
-          </CategoryBand>
-        ))}
-
-        <CategoryBand
-          legalCode="Archive"
-          title="Routine cleanup"
-          taggedCount={viewState.archiveCount}
-          decisionCount={0}
-          routineCount={viewState.archiveCount}
-          note="Filename rules and manual archive actions stay separate from the active petition set."
-        >
-          <RoutineRow
-            label="routine archive"
-            count={viewState.archiveCount}
-            samples={viewState.archiveSampleTitles}
-            href={archiveReviewHref}
-          />
+            ))
+          ) : (
+            <p className="text-[12px] leading-6 text-[var(--muted)]">
+              No file-level decisions are waiting right now.
+            </p>
+          )}
         </CategoryBand>
 
-        <ReferenceCategoryBand
-          items={viewState.referenceItems}
-          onContextMenu={(item, event) => {
-            event.preventDefault();
-            openItemMenu(item, event.clientX, event.clientY);
-          }}
-          onOpenCriterionPicker={(item, event) => {
-            openCriterionMenuAtElement(item, event.currentTarget);
-          }}
-          onOpenActions={(item, event) => {
-            openItemMenuAtElement(item, event.currentTarget);
-          }}
-        />
-
         <CategoryBand
-          legalCode="Review"
-          title="Human review queue"
+          legalCode="2"
+          title="Confirm the right bundle"
           taggedCount={bundleDecisionCount}
           decisionCount={bundleDecisionCount}
           routineCount={0}
-          note="These bundles need a criterion assignment before strategy work can lean on them."
+          note="Once a file is kept, confirm whether it belongs in the current bundle or move it before criterion review begins."
           defaultOpen={bundleDecisionCount > 0}
+          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
         >
-          {viewState.humanReviewQueue.length ? (
-            viewState.humanReviewQueue.map((item) => (
+          {viewState.bundleReviewGroups.length ? (
+            viewState.bundleReviewGroups.map((group) => (
               <div
-                key={item.id}
-                className="rounded-[16px] border border-[var(--brand)]/25 bg-[var(--paper-primary)] px-4 py-4"
+                key={group.key}
+                className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
               >
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
-                        Bundle decision
-                      </span>
-                      <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                        {item.workspaceLabel}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-[14px] font-semibold text-[var(--foreground)]">
-                      {item.bundleName}
-                    </p>
-                    <p className="mt-2 text-[12px] leading-6 text-[var(--foreground)]/88">
-                      {item.rationale}
-                    </p>
-                    {item.criterionHint ? (
-                      <p className="mt-2 text-[11px] text-[var(--muted)]">
-                        Suggested fit: {item.criterionHint}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={(event) => openBundleMenuAtElement(item, event.currentTarget)}
-                      className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold"
-                    >
-                      Assign criterion
-                    </button>
-                    <Link
-                      href={item.denseReviewHref}
-                      className="inline-flex items-center rounded-full border border-[var(--border-primary)] bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]"
-                    >
-                      Open in dense workbench
-                    </Link>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
+                    {group.bundleName}
+                  </span>
+                  <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                    {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
+                  </span>
+                  <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                    {group.workspaceLabel}
+                  </span>
                 </div>
+                {group.items.map((item) => (
+                  <WorkflowDocumentCard
+                    key={item.id}
+                    item={item}
+                    stageLabel="Bundle review"
+                    helperLabel="Why Setu paused"
+                    helperBody="Confirm the current bundle, move this file into a better bundle, or hold it in Other bundle until you decide later."
+                    accentTone="muted"
+                    onContextMenu={(nextItem, event) => {
+                      event.preventDefault();
+                      openDocumentMenu(nextItem, "bundle", event.clientX, event.clientY);
+                    }}
+                    actions={
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptBundle(item)}
+                          className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+                        >
+                          Accept bundle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => openBundlePicker(item, "bundle", event.currentTarget)}
+                          className={documentActionButtonClass()}
+                        >
+                          Move bundle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMarkOtherBundle(item)}
+                          className={documentActionButtonClass()}
+                        >
+                          Other bundle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickPeek(item)}
+                          className={documentActionButtonClass()}
+                        >
+                          Quick peek
+                        </button>
+                      </>
+                    }
+                  />
+                ))}
               </div>
             ))
           ) : (
             <p className="text-[12px] leading-6 text-[var(--muted)]">
-              No bundle-level decisions are waiting right now.
+              No kept files are waiting for a bundle call right now.
             </p>
           )}
+        </CategoryBand>
+
+        <CategoryBand
+          legalCode="3"
+          title="Confirm the right criterion"
+          taggedCount={criterionDecisionCount}
+          decisionCount={criterionDecisionCount}
+          routineCount={0}
+          note="Only bundles whose kept files have already cleared bundle review appear here."
+          defaultOpen={criterionDecisionCount > 0}
+          headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+        >
+          {viewState.criterionReviewQueue.length ? (
+            viewState.criterionReviewQueue.map((item) => (
+              <WorkflowBundleCard
+                key={item.id}
+                item={item}
+                stageLabel="Criterion review"
+                helperText="Accept the current criterion, move the bundle into the right criterion, or park it in Other criterion for later."
+                onContextMenu={(nextItem, event) => {
+                  event.preventDefault();
+                  openBundleActionMenu(nextItem, "criterion", event.currentTarget);
+                }}
+                actions={
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAcceptCriterion(item)}
+                      disabled={!resolveExistingCriterionCode(item)}
+                      className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Accept criterion
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => openCriterionPicker(item, "criterion", event.currentTarget)}
+                      className={documentActionButtonClass()}
+                    >
+                      Assign criterion
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMarkOtherCriterion(item)}
+                      className={documentActionButtonClass()}
+                    >
+                      Other criterion
+                    </button>
+                    <Link
+                      href={item.denseReviewHref}
+                      className={documentActionButtonClass()}
+                    >
+                      Dense workbench
+                    </Link>
+                  </>
+                }
+              />
+            ))
+          ) : (
+            <p className="text-[12px] leading-6 text-[var(--muted)]">
+              No bundle-level criterion calls are waiting right now.
+            </p>
+          )}
+        </CategoryBand>
+
+        <CategoryBand
+          legalCode="Hold"
+          title="Review later"
+          taggedCount={referenceCount + otherBundleCount + otherCriterionCount}
+          decisionCount={0}
+          routineCount={referenceCount + otherBundleCount + otherCriterionCount}
+          note="These items were intentionally held aside. They stay visible without adding noise to the active queue."
+          defaultOpen={
+            referenceCount + otherBundleCount + otherCriterionCount > 0
+          }
+          headerChipClassName="bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+        >
+          {viewState.referenceItems.length ? (
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                Reference
+              </p>
+              {viewState.referenceItems.map((item) => (
+                <WorkflowDocumentCard
+                  key={item.id}
+                  item={item}
+                  stageLabel="Reference"
+                  helperLabel="Why it is held"
+                  helperBody="This file is real and retrievable, but it is not currently load-bearing for a claimed criterion."
+                  accentTone="warning"
+                  onContextMenu={(nextItem, event) => {
+                    event.preventDefault();
+                    openDocumentMenu(nextItem, "reference", event.clientX, event.clientY);
+                  }}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleReturnFromReference(item)}
+                        className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+                      >
+                        Return to review
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveToArchive(item)}
+                        className={documentActionButtonClass()}
+                      >
+                        Archive
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickPeek(item)}
+                        className={documentActionButtonClass()}
+                      >
+                        Quick peek
+                      </button>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {viewState.otherBundleGroups.length ? (
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                Other bundle
+              </p>
+              {viewState.otherBundleGroups.map((group) => (
+                <div
+                  key={group.key}
+                  className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--foreground)]">
+                      {group.workspaceLabel}
+                    </span>
+                    <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2 py-1 text-[9px] font-semibold tracking-[0.14em] text-[var(--muted)]">
+                      {group.itemCount} file{group.itemCount === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  {group.items.map((item) => (
+                    <WorkflowDocumentCard
+                      key={item.id}
+                      item={item}
+                      stageLabel="Other bundle"
+                      helperLabel="Why it is held"
+                      helperBody="Keep this file, but do not force it into a named event until you are confident about the right bundle."
+                      accentTone="warning"
+                      onContextMenu={(nextItem, event) => {
+                        event.preventDefault();
+                        openDocumentMenu(nextItem, "other-bundle", event.clientX, event.clientY);
+                      }}
+                      actions={
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleReturnFromOtherBundle(item)}
+                            className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-1.5 text-[10px] font-semibold text-white"
+                          >
+                            Return to queue
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) =>
+                              openBundlePicker(item, "other-bundle", event.currentTarget)
+                            }
+                            className={documentActionButtonClass()}
+                          >
+                            Move bundle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickPeek(item)}
+                            className={documentActionButtonClass()}
+                          >
+                            Quick peek
+                          </button>
+                        </>
+                      }
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {viewState.otherCriterionQueue.length ? (
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                Other criterion
+              </p>
+              {viewState.otherCriterionQueue.map((item) => (
+                <WorkflowBundleCard
+                  key={item.id}
+                  item={item}
+                  stageLabel="Other criterion"
+                  helperText="This bundle stays out of the active criteria until you are ready to classify it."
+                  onContextMenu={(nextItem, event) => {
+                    event.preventDefault();
+                    openBundleActionMenu(nextItem, "other-criterion", event.currentTarget);
+                  }}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleReturnFromOtherCriterion(item)}
+                        className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white"
+                      >
+                        Return to queue
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) =>
+                          openCriterionPicker(item, "other-criterion", event.currentTarget)
+                        }
+                        className={documentActionButtonClass()}
+                      >
+                        Assign criterion
+                      </button>
+                      <Link
+                        href={item.denseReviewHref}
+                        className={documentActionButtonClass()}
+                      >
+                        Dense workbench
+                      </Link>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {referenceCount + otherBundleCount + otherCriterionCount === 0 ? (
+            <p className="text-[12px] leading-6 text-[var(--muted)]">
+              Nothing is parked for later right now.
+            </p>
+          ) : null}
+        </CategoryBand>
+
+        <CategoryBand
+          legalCode="Ready"
+          title="Ready library"
+          taggedCount={readyCount}
+          decisionCount={0}
+          routineCount={readyCount}
+          note="These files already cleared keep/archive, bundle fit, and criterion fit."
+          defaultOpen={readyCount > 0}
+        >
+          {viewState.readyBands.length ? (
+            viewState.readyBands.map((band) => (
+              <CategoryBand
+                key={band.key}
+                legalCode={band.legalCode}
+                title={band.title}
+                taggedCount={band.taggedCount}
+                decisionCount={0}
+                routineCount={band.routine?.count ?? 0}
+                note={band.note}
+              >
+                {band.routine ? (
+                  <RoutineRow
+                    label={band.routine.label}
+                    count={band.routine.count}
+                    samples={band.routine.samples}
+                    href={band.routine.denseReviewHref}
+                  />
+                ) : null}
+              </CategoryBand>
+            ))
+          ) : (
+            <p className="text-[12px] leading-6 text-[var(--muted)]">
+              Files will land here once all three review steps are complete.
+            </p>
+          )}
+        </CategoryBand>
+
+        <CategoryBand
+          legalCode="Archive"
+          title="Archived out of the active petition set"
+          taggedCount={viewState.archiveCount}
+          decisionCount={0}
+          routineCount={viewState.archiveCount}
+          note="Archived files stay available in the dense workbench, but they are no longer part of the active review workflow."
+        >
+          <RoutineRow
+            label="archived file"
+            count={viewState.archiveCount}
+            samples={viewState.archiveSampleTitles}
+            href={archiveReviewHref}
+          />
         </CategoryBand>
       </div>
 
       <div className="flex flex-col gap-3 rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-[12px] leading-6 text-[var(--muted)]">
           {unresolvedCount > 0
-            ? "Strategy should wait until the remaining review decisions are resolved. You can still open the workspace if you need the dense tools."
-            : "Review is complete. You can move forward into the next surface when the strategy phase is ready."}
+            ? "Strategy should wait until the next-step queues are resolved. Reference and Other holds can stay parked without blocking the rest of the case."
+            : "All required review steps are complete. You can move straight into Strategy."}
         </p>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -1123,22 +1662,12 @@ export function ActionItemsSummary({
             </Link>
           ) : null}
           {unresolvedCount > 0 ? (
-            <>
-              <button
-                type="button"
-                disabled
-                title="Resolve the remaining review decisions first."
-                className="rounded-[8px] border border-[var(--border-primary)] bg-[var(--paper-tertiary)] px-3 py-2 text-[11px] font-semibold text-[var(--muted)]"
-              >
-                Continue to Strategy
-              </button>
-              <Link
-                href={strategyHref}
-                className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[11px] font-semibold text-white"
-              >
-                Preview strategy with pending items
-              </Link>
-            </>
+            <Link
+              href={strategyHref}
+              className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[11px] font-semibold text-white"
+            >
+              Preview strategy with pending queues
+            </Link>
           ) : (
             <Link
               href={strategyHref}
@@ -1150,41 +1679,36 @@ export function ActionItemsSummary({
         </div>
       </div>
 
-      <RowContextMenu
-        open={Boolean(menuState)}
-        x={menuState?.x ?? 0}
-        y={menuState?.y ?? 0}
-        item={menuState?.item ?? null}
-        criterionCounts={viewState.criterionCounts}
-        workspaceContexts={workspaceContexts}
-        onClose={() => setMenuState(null)}
-        onKeepForCriterion={handleKeepForCriterion}
-        onMoveToStatus={handleMoveToStatus}
-        onReassignCriterion={handleReassignCriterion}
-        onMoveToBundle={handleMoveToBundle}
-        onOpenQuickPeek={handleQuickPeek}
-        onShowReasoning={(item) =>
-          setReasoning({
-            title: item.title,
-            reasoning: item.reasoning,
-          })
-        }
+      <ContextMenu
+        open={Boolean(documentMenuState)}
+        x={documentMenuState?.x ?? 0}
+        y={documentMenuState?.y ?? 0}
+        items={documentActionMenuItems}
+        onClose={() => setDocumentMenuState(null)}
       />
 
       <ContextMenu
-        open={Boolean(bundleMenuState)}
-        x={bundleMenuState?.x ?? 0}
-        y={bundleMenuState?.y ?? 0}
-        items={bundleMenuItems}
-        onClose={() => setBundleMenuState(null)}
+        open={Boolean(bundlePickerState)}
+        x={bundlePickerState?.x ?? 0}
+        y={bundlePickerState?.y ?? 0}
+        items={bundlePickerItems}
+        onClose={() => setBundlePickerState(null)}
       />
 
       <ContextMenu
-        open={Boolean(criterionMenuState)}
-        x={criterionMenuState?.x ?? 0}
-        y={criterionMenuState?.y ?? 0}
-        items={criterionMenuItems}
-        onClose={() => setCriterionMenuState(null)}
+        open={Boolean(criterionPickerState)}
+        x={criterionPickerState?.x ?? 0}
+        y={criterionPickerState?.y ?? 0}
+        items={criterionPickerItems}
+        onClose={() => setCriterionPickerState(null)}
+      />
+
+      <ContextMenu
+        open={Boolean(bundleActionMenuState)}
+        x={bundleActionMenuState?.x ?? 0}
+        y={bundleActionMenuState?.y ?? 0}
+        items={bundleActionMenuItems}
+        onClose={() => setBundleActionMenuState(null)}
       />
 
       {preview ? (
@@ -1232,7 +1756,7 @@ export function ActionItemsSummary({
             <div className="flex items-center justify-between gap-3 border-b border-[var(--border-secondary)] px-4 py-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                  AI reasoning
+                  Review note
                 </p>
                 <p className="mt-1 text-[14px] font-semibold text-[var(--foreground)]">
                   {reasoning.title}
@@ -1255,7 +1779,7 @@ export function ActionItemsSummary({
         </div>
       ) : null}
 
-      {busyDocumentId ? (
+      {busyKey ? (
         <div className="fixed bottom-5 right-5 z-50 rounded-full border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-2 text-[11px] font-semibold text-[var(--foreground)] shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
           {busyLabel}
         </div>

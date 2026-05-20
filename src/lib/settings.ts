@@ -1,5 +1,6 @@
 import { EXPORT_ROOT, QDRANT_COLLECTION, QDRANT_URL } from "@/lib/constants";
 import {
+  DEFAULT_BUNDLING_PROMPT_TEMPLATE,
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
   DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
@@ -9,6 +10,7 @@ import {
   DEFAULT_STRATEGY_PROMPT_TEMPLATE,
   DEFAULT_STRESS_TEST_PROMPT_TEMPLATE,
   DEFAULT_TRIAGE_PROMPT_TEMPLATE,
+  LEGACY_CLASSIFICATION_PROMPT_TEMPLATE,
   LEGACY_SUMMARY_PROMPT_TEMPLATE,
 } from "@/lib/prompt-library";
 import { debugQdrantStoragePath } from "@/lib/qdrant";
@@ -18,6 +20,7 @@ import type { SettingsSnapshot } from "@/lib/types";
 export interface RuntimeSettings {
   candidateName: string;
   summaryPrompt: string;
+  bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
   triagePrompt: string;
@@ -39,6 +42,7 @@ export interface RuntimeSettings {
 interface PersistedSettingsState {
   candidateName?: string | null;
   summaryPrompt?: string | null;
+  bundlingPrompt?: string | null;
   classificationPrompt?: string | null;
   taggingPrompt?: string | null;
   triagePrompt?: string | null;
@@ -79,6 +83,10 @@ export function getRuntimeSettings(): RuntimeSettings {
     persisted.summaryPrompt?.trim() === LEGACY_SUMMARY_PROMPT_TEMPLATE
       ? DEFAULT_SUMMARY_PROMPT_TEMPLATE
       : persisted.summaryPrompt?.trim();
+  const normalizedClassificationPrompt =
+    persisted.classificationPrompt?.trim() === LEGACY_CLASSIFICATION_PROMPT_TEMPLATE
+      ? DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
+      : persisted.classificationPrompt?.trim();
 
   return {
     candidateName:
@@ -87,8 +95,12 @@ export function getRuntimeSettings(): RuntimeSettings {
       normalizedSummaryPrompt ||
       process.env.EB1A_SUMMARY_PROMPT ||
       DEFAULT_SUMMARY_PROMPT_TEMPLATE,
+    bundlingPrompt:
+      persisted.bundlingPrompt?.trim() ||
+      process.env.EB1A_BUNDLING_PROMPT ||
+      DEFAULT_BUNDLING_PROMPT_TEMPLATE,
     classificationPrompt:
-      persisted.classificationPrompt?.trim() ||
+      normalizedClassificationPrompt ||
       process.env.EB1A_CLASSIFICATION_PROMPT ||
       DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
     taggingPrompt:
@@ -145,6 +157,7 @@ export function getRuntimeSettings(): RuntimeSettings {
 export function saveRuntimeSettings(input: {
   candidateName: string;
   summaryPrompt: string;
+  bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
   triagePrompt: string;
@@ -166,6 +179,8 @@ export function saveRuntimeSettings(input: {
     ...current,
     candidateName: input.candidateName.trim(),
     summaryPrompt: input.summaryPrompt.trim() || DEFAULT_SUMMARY_PROMPT_TEMPLATE,
+    bundlingPrompt:
+      input.bundlingPrompt.trim() || DEFAULT_BUNDLING_PROMPT_TEMPLATE,
     classificationPrompt:
       input.classificationPrompt.trim() || DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
     taggingPrompt: input.taggingPrompt.trim() || DEFAULT_TAGGING_PROMPT_TEMPLATE,
@@ -194,6 +209,7 @@ export function setActiveStyleProfileId(activeStyleProfileId: string) {
   saveRuntimeSettings({
     candidateName: current.candidateName,
     summaryPrompt: current.summaryPrompt,
+    bundlingPrompt: current.bundlingPrompt,
     classificationPrompt: current.classificationPrompt,
     taggingPrompt: current.taggingPrompt,
     triagePrompt: current.triagePrompt,
@@ -216,6 +232,7 @@ export function getPublicSettings(): SettingsSnapshot {
   return {
     candidateName: settings.candidateName,
     summaryPrompt: settings.summaryPrompt,
+    bundlingPrompt: settings.bundlingPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
     triagePrompt: settings.triagePrompt,

@@ -98,6 +98,7 @@ function readWorkspaceTaggingState(jobId: string) {
 export async function buildLibrarySnapshot(input?: {
   jobId?: string | null;
   clientId?: string | null;
+  suppressActiveJob?: boolean;
 }): Promise<LibrarySnapshot> {
   const settings = getRuntimeSettings();
   await ensureQdrantCollection(settings.embeddingDimensions);
@@ -105,7 +106,7 @@ export async function buildLibrarySnapshot(input?: {
   const jobs = input?.clientId
     ? allJobs.filter((job) => job.clientId === input.clientId)
     : allJobs.slice(0, 40);
-  const activeJob = resolveActiveJob(jobs, input?.jobId);
+  const activeJob = input?.suppressActiveJob ? null : resolveActiveJob(jobs, input?.jobId);
   const activeClientId = input?.clientId ?? activeJob?.clientId ?? null;
   const activeClient = activeClientId ? getClient(activeClientId) : null;
   const clientJobIds = jobs.map((job) => job.id);
@@ -206,7 +207,9 @@ export async function buildLibrarySnapshot(input?: {
     reviewState,
     settings: {
       ...publicSettings,
-      candidateName: activeClient?.displayName || publicSettings.candidateName,
+      candidateName:
+        activeClient?.displayName ||
+        (input?.suppressActiveJob && !input?.clientId ? "" : publicSettings.candidateName),
     },
   };
 }

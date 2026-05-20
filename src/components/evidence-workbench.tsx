@@ -54,6 +54,7 @@ import type {
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
 import {
+  DEFAULT_BUNDLING_PROMPT_TEMPLATE,
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
   DEFAULT_FINAL_MERITS_DETERMINATION_PROMPT_TEMPLATE,
@@ -68,6 +69,7 @@ import {
 interface EvidenceWorkbenchProps {
   initialSnapshot: LibrarySnapshot;
   pageMode?: "dashboard" | "review";
+  scopedClientId?: string | null;
 }
 
 interface PendingFolderStats {
@@ -80,6 +82,7 @@ interface PendingFolderStats {
 interface SettingsDraft {
   candidateName: string;
   summaryPrompt: string;
+  bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
   triagePrompt: string;
@@ -94,6 +97,29 @@ interface SettingsDraft {
   embeddingModel: string;
   embeddingDimensions: string;
   outputRootPath: string;
+}
+
+const DASHBOARD_INTAKE_JOB_STORAGE_KEY = "setu.dashboard.intake-job-id";
+
+function readStoredDashboardIntakeJobId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.sessionStorage.getItem(DASHBOARD_INTAKE_JOB_STORAGE_KEY)?.trim() || null;
+}
+
+function writeStoredDashboardIntakeJobId(jobId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (jobId) {
+    window.sessionStorage.setItem(DASHBOARD_INTAKE_JOB_STORAGE_KEY, jobId);
+    return;
+  }
+
+  window.sessionStorage.removeItem(DASHBOARD_INTAKE_JOB_STORAGE_KEY);
 }
 
 interface WorkspaceActivity {
@@ -755,6 +781,7 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
   return {
     candidateName: settings.candidateName,
     summaryPrompt: settings.summaryPrompt,
+    bundlingPrompt: settings.bundlingPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
     triagePrompt: settings.triagePrompt,
@@ -772,15 +799,23 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
   };
 }
 
-async function requestLibrarySnapshot(jobId?: string | null, clientId?: string | null) {
+async function requestLibrarySnapshot(input?: {
+  jobId?: string | null;
+  clientId?: string | null;
+  suppressActiveJob?: boolean;
+}) {
   const searchParams = new URLSearchParams();
 
-  if (jobId) {
-    searchParams.set("jobId", jobId);
+  if (input?.jobId) {
+    searchParams.set("jobId", input.jobId);
   }
 
-  if (clientId) {
-    searchParams.set("clientId", clientId);
+  if (input?.clientId) {
+    searchParams.set("clientId", input.clientId);
+  }
+
+  if (input?.suppressActiveJob) {
+    searchParams.set("suppressActiveJob", "1");
   }
 
   const response = await fetch(`/api/library${searchParams.toString() ? `?${searchParams.toString()}` : ""}`, {
@@ -1291,6 +1326,24 @@ function normalizeBundlingStatus(
   }
 
   return status;
+}
+
+function mapReviewStageStatusToPipelineCardStatus(
+  status: ReviewPipelineStageStatus,
+): "active" | "done" | "problem" | "idle" {
+  if (status === "completed") {
+    return "done";
+  }
+
+  if (status === "processing" || status === "queued") {
+    return "active";
+  }
+
+  if (status === "failed") {
+    return "problem";
+  }
+
+  return "idle";
 }
 
 function buildReviewPipeline(input: {
@@ -1980,8 +2033,13 @@ function buildWorkspaceActivity(input: {
 export function EvidenceWorkbench({
   initialSnapshot,
   pageMode = "dashboard",
+  scopedClientId = null,
 }: EvidenceWorkbenchProps) {
   const router = useRouter();
+  const rememberedDashboardJobId =
+    pageMode === "dashboard" && !scopedClientId && !initialSnapshot.activeJobId
+      ? readStoredDashboardIntakeJobId()
+      : null;
   const leftPanelStorageKey =
     pageMode === "review"
       ? "eb1a-evidence-studio.review.left-panel-width"
@@ -1989,7 +2047,7 @@ export function EvidenceWorkbench({
   const rightPanelStorageKey = "eb1a-evidence-studio.review.right-panel-width";
   const [library, setLibrary] = useState(initialSnapshot);
   const [activeJobId, setActiveJobId] = useState<string | null>(
-    initialSnapshot.activeJobId ?? null,
+    initialSnapshot.activeJobId ?? rememberedDashboardJobId ?? null,
   );
   const [semanticResults, setSemanticResults] = useState<SearchResult[] | null>(null);
   const [semanticQuery, setSemanticQuery] = useState("");
@@ -1997,9 +2055,26 @@ export function EvidenceWorkbench({
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     initialSnapshot.documents[0]?.id ?? null,
   );
-  const clientScopeId = initialSnapshot.activeClientId ?? null;
+  const workspaceClientId = library.activeClientId ?? null;
+  const intakeClientScopeId =
+    pageMode === "dashboard" ? scopedClientId : (initialSnapshot.activeClientId ?? null);
+  const [intakeCandidateName, setIntakeCandidateName] = useState(() =>
+    pageMode === "dashboard"
+      ? scopedClientId
+        ? initialSnapshot.settings.candidateName
+        : ""
+      : initialSnapshot.settings.candidateName,
+  );
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [pendingStats, setPendingStats] = useState<PendingFolderStats | null>(null);
+  const [dashboardIntakeStats, setDashboardIntakeStats] = useState<PendingFolderStats | null>(
+    null,
+  );
+  const [dashboardIntakeJobId, setDashboardIntakeJobId] = useState<string | null>(
+    pageMode === "dashboard"
+      ? (initialSnapshot.activeJobId ?? rememberedDashboardJobId ?? null)
+      : null,
+  );
   const [isUploading, setIsUploading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isApplyingOverride, setIsApplyingOverride] = useState(false);
@@ -2009,6 +2084,7 @@ export function EvidenceWorkbench({
   const [settingsDraft, setSettingsDraft] = useState(() =>
     buildSettingsDraft(initialSnapshot.settings),
   );
+  const [candidateNameDraftDirty, setCandidateNameDraftDirty] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isCancelingProcess, setIsCancelingProcess] = useState(false);
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
@@ -2098,6 +2174,27 @@ export function EvidenceWorkbench({
   const bundleSubmenuRef = useRef<HTMLDivElement | null>(null);
 
   const deferredFilter = useDeferredValue(quickFilter.trim());
+  const syncSettingsDraft = useCallback(
+    (settings: SettingsSnapshot, options?: { preserveCandidateName?: boolean }) => {
+      setSettingsDraft((current) => {
+        const nextDraft = buildSettingsDraft(settings);
+
+        if (options?.preserveCandidateName && candidateNameDraftDirty) {
+          return {
+            ...nextDraft,
+            candidateName: current.candidateName,
+          };
+        }
+
+        return nextDraft;
+      });
+
+      if (!(options?.preserveCandidateName && candidateNameDraftDirty)) {
+        setCandidateNameDraftDirty(false);
+      }
+    },
+    [candidateNameDraftDirty],
+  );
   const semanticResultIds = semanticResults
     ? new Set(semanticResults.map((document) => document.id))
     : null;
@@ -2134,9 +2231,14 @@ export function EvidenceWorkbench({
     documentsForSelection[0] ??
     null;
   const workspaceCandidate =
-    settingsDraft.candidateName.trim() || library.settings.candidateName.trim();
+    (pageMode === "dashboard" ? intakeCandidateName.trim() : settingsDraft.candidateName.trim()) ||
+    library.settings.candidateName.trim();
   const candidateDisplayName = workspaceCandidate || "Candidate not set";
-  const candidateNameInput = settingsDraft.candidateName.trim();
+  const candidateNameInput =
+    pageMode === "dashboard"
+      ? intakeCandidateName.trim()
+      : settingsDraft.candidateName.trim();
+  const intakeFolderStats = pendingStats ?? dashboardIntakeStats;
   const activeWorkspaceRunAt = activeJob ? formatDateTime(getJobLastRunAt(activeJob)) : "Not yet";
   const reviewWorkspaceHref = activeJobId ? `/review/${activeJobId}` : null;
   const activeWorkspaceDocuments = library.overview.totalDocuments;
@@ -2283,24 +2385,57 @@ export function EvidenceWorkbench({
     eventBundles: library.eventBundles,
     eb1aClassification: library.eb1aClassification,
     criteriaTagging: library.criteriaTagging,
-    pendingStats,
+    pendingStats: pendingStats ?? dashboardIntakeStats,
     isUploading,
     totalJobs: library.jobs.length,
-    hasCandidateName: Boolean(settingsDraft.candidateName.trim()),
+    hasCandidateName: Boolean(candidateNameInput),
   });
   const reviewPipeline = buildReviewPipeline({
     activeJob,
     eventBundles: library.eventBundles,
     eb1aClassification: library.eb1aClassification,
     criteriaTagging: library.criteriaTagging,
-    pendingStats,
+    pendingStats: pendingStats ?? dashboardIntakeStats,
     isUploading,
   });
+  const isCurrentDashboardIntakeJobLoaded =
+    Boolean(dashboardIntakeJobId) && activeJob?.id === dashboardIntakeJobId;
+  const currentDashboardIntakeReviewReady =
+    isCurrentDashboardIntakeJobLoaded &&
+    reviewPipeline.stages.some((stage) => stage.id === "review" && stage.status === "completed");
+  const isStagingNewWorkspace =
+    pageMode === "dashboard" &&
+    (Boolean(pendingStats) ||
+      Boolean(dashboardIntakeStats) ||
+      isUploading ||
+      (Boolean(dashboardIntakeJobId) && !currentDashboardIntakeReviewReady));
+  const centerReviewPipeline =
+    pageMode === "dashboard"
+      ? buildReviewPipeline({
+          activeJob:
+            isStagingNewWorkspace && isCurrentDashboardIntakeJobLoaded ? activeJob : null,
+          eventBundles:
+            isStagingNewWorkspace && isCurrentDashboardIntakeJobLoaded
+              ? library.eventBundles
+              : null,
+          eb1aClassification:
+            isStagingNewWorkspace && isCurrentDashboardIntakeJobLoaded
+              ? library.eb1aClassification
+              : null,
+          criteriaTagging:
+            isStagingNewWorkspace && isCurrentDashboardIntakeJobLoaded
+              ? library.criteriaTagging
+              : null,
+          pendingStats: pendingStats ?? dashboardIntakeStats,
+          isUploading,
+        })
+      : reviewPipeline;
   const bundleReviewReady = library.eventBundles?.status === "completed";
   const reviewStageReady = reviewPipeline.stages.some(
     (stage) => stage.id === "review" && stage.status === "completed",
   );
-  const showDashboardReview = pageMode === "dashboard" && reviewStageReady;
+  const showDashboardReview =
+    pageMode === "dashboard" && !isStagingNewWorkspace && reviewStageReady;
   const shouldRenderReviewSurface = pageMode === "review" || showDashboardReview;
   const hasAbortableProcessing = Boolean(
     activeJobId &&
@@ -2320,11 +2455,9 @@ export function EvidenceWorkbench({
       pendingStats &&
       candidateNameInput &&
       !isUploading &&
-      !hasAbortableProcessing &&
       !isCancelingProcess,
   );
-  const canCancelSelection =
-    pendingFiles.length > 0 && !isUploading && !hasAbortableProcessing && !isCancelingProcess;
+  const canCancelSelection = pendingFiles.length > 0 && !isUploading && !isCancelingProcess;
   const canDeleteSelectedWorkspace = Boolean(
     activeJobId &&
       !isDeletingWorkspace &&
@@ -2345,10 +2478,14 @@ export function EvidenceWorkbench({
 
   const refreshLibrary = useCallback(
     async (requestedJobId?: string | null) => {
-      const snapshot = await requestLibrarySnapshot(
-        requestedJobId ?? activeJobId,
-        clientScopeId,
-      );
+      const effectiveJobId = requestedJobId ?? activeJobId;
+      const shouldSuppressActiveJob =
+        pageMode === "dashboard" && !intakeClientScopeId && !effectiveJobId;
+      const snapshot = await requestLibrarySnapshot({
+        jobId: effectiveJobId,
+        clientId: intakeClientScopeId,
+        suppressActiveJob: shouldSuppressActiveJob,
+      });
 
       if (!snapshot) {
         return;
@@ -2358,11 +2495,11 @@ export function EvidenceWorkbench({
         setLibrary(snapshot);
         setActiveJobId(snapshot.activeJobId);
         if (!settingsOpen) {
-          setSettingsDraft(buildSettingsDraft(snapshot.settings));
+          syncSettingsDraft(snapshot.settings, { preserveCandidateName: true });
         }
       });
     },
-    [activeJobId, clientScopeId, settingsOpen],
+    [activeJobId, intakeClientScopeId, pageMode, settingsOpen, syncSettingsDraft],
   );
 
   const startPanelResize = useCallback(
@@ -2431,10 +2568,13 @@ export function EvidenceWorkbench({
     let active = true;
 
     void (async () => {
-      const snapshot = await requestLibrarySnapshot(
-        initialSnapshot.activeJobId,
-        clientScopeId,
-      );
+      const shouldSuppressActiveJob =
+        pageMode === "dashboard" && !intakeClientScopeId && !initialSnapshot.activeJobId;
+      const snapshot = await requestLibrarySnapshot({
+        jobId: initialSnapshot.activeJobId,
+        clientId: intakeClientScopeId,
+        suppressActiveJob: shouldSuppressActiveJob,
+      });
 
       if (!active || !snapshot) {
         return;
@@ -2443,14 +2583,14 @@ export function EvidenceWorkbench({
       startTransition(() => {
         setLibrary(snapshot);
         setActiveJobId(snapshot.activeJobId);
-        setSettingsDraft(buildSettingsDraft(snapshot.settings));
+        syncSettingsDraft(snapshot.settings, { preserveCandidateName: true });
       });
     })();
 
     return () => {
       active = false;
     };
-  }, [clientScopeId, initialSnapshot.activeJobId]);
+  }, [initialSnapshot.activeJobId, intakeClientScopeId, pageMode, syncSettingsDraft]);
 
   useEffect(() => {
     const hasActiveIndexing = library.jobs.some((job) => isActiveJob(job.status));
@@ -2483,6 +2623,7 @@ export function EvidenceWorkbench({
   const persistSettings = async (options?: {
     successMessage?: string | null;
     closeModal?: boolean;
+    candidateNameOverride?: string;
   }) => {
     setIsSavingSettings(true);
     setBannerMessage(null);
@@ -2494,8 +2635,9 @@ export function EvidenceWorkbench({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          candidateName: settingsDraft.candidateName,
+          candidateName: options?.candidateNameOverride ?? settingsDraft.candidateName,
           summaryPrompt: settingsDraft.summaryPrompt,
+          bundlingPrompt: settingsDraft.bundlingPrompt,
           classificationPrompt: settingsDraft.classificationPrompt,
           taggingPrompt: settingsDraft.taggingPrompt,
           triagePrompt: settingsDraft.triagePrompt,
@@ -2523,7 +2665,7 @@ export function EvidenceWorkbench({
           ...current,
           settings: payload.settings,
         }));
-        setSettingsDraft(buildSettingsDraft(payload.settings));
+        syncSettingsDraft(payload.settings);
       });
 
       if (options?.closeModal) {
@@ -2554,6 +2696,9 @@ export function EvidenceWorkbench({
     if (canCancelSelection) {
       setPendingFiles([]);
       setPendingStats(null);
+      setDashboardIntakeStats(null);
+      setDashboardIntakeJobId(null);
+      writeStoredDashboardIntakeJobId(null);
       if (folderInputRef.current) {
         folderInputRef.current.value = "";
       }
@@ -2589,7 +2734,7 @@ export function EvidenceWorkbench({
         setLibrary(snapshot);
         setActiveJobId(snapshot.activeJobId);
         if (!settingsOpen) {
-          setSettingsDraft(buildSettingsDraft(snapshot.settings));
+          syncSettingsDraft(snapshot.settings, { preserveCandidateName: true });
         }
       });
 
@@ -2640,6 +2785,9 @@ export function EvidenceWorkbench({
       startTransition(() => {
         setLibrary(snapshot);
         setActiveJobId(nextJobId);
+        setDashboardIntakeJobId(null);
+        setDashboardIntakeStats(null);
+        writeStoredDashboardIntakeJobId(null);
         setSemanticResults(null);
         setSemanticQuery("");
         setQuickFilter("");
@@ -2666,7 +2814,7 @@ export function EvidenceWorkbench({
           submenu: null,
         });
         if (!settingsOpen) {
-          setSettingsDraft(buildSettingsDraft(snapshot.settings));
+          syncSettingsDraft(snapshot.settings);
         }
       });
 
@@ -2689,6 +2837,18 @@ export function EvidenceWorkbench({
   };
 
   const handleSelectJob = async (jobId: string) => {
+    setPendingFiles([]);
+    setPendingStats(null);
+    setDashboardIntakeStats(null);
+    setDashboardIntakeJobId(null);
+    writeStoredDashboardIntakeJobId(null);
+    if (pageMode === "dashboard" && !scopedClientId) {
+      setIntakeCandidateName("");
+    }
+    if (folderInputRef.current) {
+      folderInputRef.current.value = "";
+    }
+    setCandidateNameDraftDirty(false);
     setActiveJobId(jobId);
     setSemanticResults(null);
     setSemanticQuery("");
@@ -2720,6 +2880,14 @@ export function EvidenceWorkbench({
       router.push(`/review/${jobId}`);
       return;
     }
+
+    const searchParams = new URLSearchParams();
+    searchParams.set("view", "workspace");
+    if (intakeClientScopeId) {
+      searchParams.set("clientId", intakeClientScopeId);
+    }
+    searchParams.set("jobId", jobId);
+    router.replace(`/?${searchParams.toString()}`);
 
     await refreshLibrary(jobId);
   };
@@ -2767,7 +2935,7 @@ export function EvidenceWorkbench({
         setLibrary(snapshot);
         setActiveJobId(snapshot.activeJobId);
         if (!settingsOpen) {
-          setSettingsDraft(buildSettingsDraft(snapshot.settings));
+          syncSettingsDraft(snapshot.settings, { preserveCandidateName: true });
         }
       });
 
@@ -2822,7 +2990,7 @@ export function EvidenceWorkbench({
       return;
     }
 
-    if (!settingsDraft.candidateName.trim()) {
+    if (!candidateNameInput) {
       setBannerMessage("Add a candidate name before indexing evidence.");
       return;
     }
@@ -2831,17 +2999,20 @@ export function EvidenceWorkbench({
     setBannerMessage(null);
 
     try {
-      const persisted = await persistSettings();
+      const persisted = await persistSettings({
+        candidateNameOverride: candidateNameInput,
+      });
+ 
 
       if (!persisted) {
         return;
       }
 
       const formData = new FormData();
-      formData.append("candidateName", settingsDraft.candidateName.trim());
+      formData.append("candidateName", candidateNameInput);
       formData.append("folderLabel", pendingStats.rootLabel);
-      if (clientScopeId) {
-        formData.append("clientId", clientScopeId);
+      if (intakeClientScopeId) {
+        formData.append("clientId", intakeClientScopeId);
       }
 
       pendingFiles.forEach((file) => {
@@ -2859,6 +3030,7 @@ export function EvidenceWorkbench({
         throw new Error(payload.error || "Folder ingestion failed.");
       }
 
+      setDashboardIntakeStats(pendingStats);
       setPendingFiles([]);
       setPendingStats(null);
       if (folderInputRef.current) {
@@ -2868,7 +3040,18 @@ export function EvidenceWorkbench({
       setSemanticResults(null);
       setSemanticQuery("");
       setSelectedDocumentId(null);
+      setDashboardIntakeJobId(payload.jobId);
+      writeStoredDashboardIntakeJobId(payload.jobId);
       setActiveJobId(payload.jobId);
+      if (pageMode === "dashboard") {
+        const searchParams = new URLSearchParams();
+        searchParams.set("view", "workspace");
+        if (intakeClientScopeId) {
+          searchParams.set("clientId", intakeClientScopeId);
+        }
+        searchParams.set("jobId", payload.jobId);
+        router.replace(`/?${searchParams.toString()}`);
+      }
       setBannerMessage(
         `Started indexing ${payload.totalFiles} files for ${payload.candidateName} from ${payload.folderLabel}.`,
       );
@@ -3644,84 +3827,19 @@ export function EvidenceWorkbench({
     </div>
   );
   const showReviewSurface = pageMode === "review" || showDashboardReview;
-  const pipelineCards = [
-    {
-      key: "indexing",
-      label: "Indexing",
-      detail: activeJob
-        ? `${activeJob.processedFiles} of ${activeJob.totalFiles} file(s) processed.`
-        : "Waiting for a folder upload.",
-      status:
-        activeJob?.status === "queued" || activeJob?.status === "processing"
-          ? "active"
-          : activeJob?.status === "completed" || activeJob?.status === "completed_with_errors"
-            ? "done"
-            : activeJob?.status === "failed" || activeJob?.status === "canceled"
-              ? "problem"
-              : "idle",
-    },
-    {
-      key: "bundling",
-      label: "Bundling",
-      detail:
-        library.eventBundles?.message ||
-        "Event bundling starts after document summaries complete.",
-      status:
-        library.eventBundles?.status === "queued" || library.eventBundles?.status === "processing"
-          ? "active"
-          : library.eventBundles?.status === "completed"
-            ? "done"
-            : library.eventBundles?.status === "failed" ||
-                library.eventBundles?.status === "canceled"
-              ? "problem"
-              : "idle",
-    },
-    {
-      key: "classification",
-      label: "Classifying",
-      detail:
-        library.eb1aClassification?.message ||
-        "EB1A criteria classification starts after bundling.",
-      status:
-        library.eb1aClassification?.status === "queued" ||
-        library.eb1aClassification?.status === "processing"
-          ? "active"
-          : library.eb1aClassification?.status === "completed"
-            ? "done"
-            : library.eb1aClassification?.status === "failed" ||
-                library.eb1aClassification?.status === "canceled"
-              ? "problem"
-              : "idle",
-    },
-    {
-      key: "tagging",
-      label: "Tagging",
-      detail:
-        library.criteriaTagging?.message ||
-        "Document-level evidence tagging starts after classification.",
-      status:
-        library.criteriaTagging?.status === "queued" ||
-        library.criteriaTagging?.status === "processing"
-          ? "active"
-          : library.criteriaTagging?.status === "completed"
-            ? "done"
-            : library.criteriaTagging?.status === "failed" ||
-                library.criteriaTagging?.status === "canceled"
-              ? "problem"
-              : "idle",
-    },
-    {
-      key: "ready",
-      label: "Ready",
-      detail:
-        taggingReady
-          ? "Evidence is ready for bundle, criterion, and file review."
-          : classificationReady
-            ? "Final review unlocks as soon as evidence tagging finishes."
-            : "Review unlocks as the AI passes complete.",
-      status: taggingReady ? "done" : classificationReady ? "active" : "idle",
-    },
-  ] as const;
+  const pipelineCards = centerReviewPipeline.stages.map((stage) => ({
+    key: stage.id,
+    label:
+      stage.id === "review"
+        ? "Ready"
+        : stage.id === "classification"
+          ? "Classifying"
+          : stage.id === "indexing"
+            ? "Indexing"
+            : stage.label.replace(/\s+evidence$/i, ""),
+    detail: stage.detail,
+    status: mapReviewStageStatusToPipelineCardStatus(stage.status),
+  }));
 
   const saveDocumentMeta = async (documentId: string, payload: { notes?: string; isPinned?: boolean }) => {
     try {
@@ -3759,7 +3877,11 @@ export function EvidenceWorkbench({
                   <SetuHomeLink />
                   <span className="setu-scope-chip">
                     <span className="setu-scope-dot" />
-                    <span>{activeJob?.folderLabel || "No workspace yet"}</span>
+                    <span>
+                      {isStagingNewWorkspace
+                        ? pendingStats?.rootLabel || "New workspace staging"
+                        : activeJob?.folderLabel || "No workspace yet"}
+                    </span>
                   </span>
                 </div>
                 <div className="space-y-1">
@@ -3779,17 +3901,17 @@ export function EvidenceWorkbench({
                   <UserRound className="h-3.5 w-3.5 text-[var(--brand)]" />
                   Candidate · {candidateDisplayName}
                 </span>
-                {clientScopeId ? (
+                {workspaceClientId ? (
                   <Link
-                    href={`/clients/${clientScopeId}`}
+                    href={`/clients/${workspaceClientId}`}
                     className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                   >
                     Client home
                   </Link>
                 ) : null}
-                {clientScopeId ? (
+                {workspaceClientId ? (
                   <Link
-                    href={`/clients/${clientScopeId}/review`}
+                    href={`/clients/${workspaceClientId}/review`}
                     className="inline-flex items-center gap-2 rounded-[6px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]"
                   >
                     Action-items review
@@ -4038,13 +4160,10 @@ export function EvidenceWorkbench({
                           1. Candidate full name
                         </span>
                         <input
-                          value={settingsDraft.candidateName}
-                          onChange={(event) =>
-                            setSettingsDraft((current) => ({
-                              ...current,
-                              candidateName: event.target.value,
-                            }))
-                          }
+                          value={intakeCandidateName}
+                          onChange={(event) => {
+                            setIntakeCandidateName(event.target.value);
+                          }}
                           placeholder="Enter the beneficiary full name"
                           className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-3 text-[12px] outline-none transition focus:border-[var(--brand)]"
                         />
@@ -4193,7 +4312,7 @@ export function EvidenceWorkbench({
                 </div>
               </section>
 
-              {pageMode === "dashboard" ? (
+              {pageMode === "dashboard" && !isStagingNewWorkspace ? (
                 <section className="grid gap-4 xl:items-start xl:grid-cols-[minmax(0,1.15fr)_340px]">
                   <div className="setu-paper-panel rounded-[18px] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4307,7 +4426,7 @@ export function EvidenceWorkbench({
                 </section>
               ) : null}
 
-              {activeJob && !showReviewSurface ? (
+              {activeJob && !showReviewSurface && !isStagingNewWorkspace ? (
                 <section className="setu-panel rounded-[18px] p-4">
                   <div className="flex flex-col gap-3 border-b border-[var(--border-secondary)] pb-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
@@ -4401,6 +4520,7 @@ export function EvidenceWorkbench({
               ) : null}
 
               {pageMode === "dashboard" &&
+              !isStagingNewWorkspace &&
               taggingReady &&
               reviewableDocuments.length > 0 &&
               !showDashboardReview ? (
@@ -5180,9 +5300,9 @@ export function EvidenceWorkbench({
                       </div>
                     </div>
                   </div>
-                  {clientScopeId ? (
+                  {workspaceClientId ? (
                     <ChatDock
-                      clientId={clientScopeId}
+                      clientId={workspaceClientId}
                       candidateName={candidateDisplayName}
                       workspaceCount={library.clientWorkspaces?.length ?? 1}
                       variant="launcher"
@@ -5277,9 +5397,9 @@ export function EvidenceWorkbench({
                       </p>
                     </div>
                   </div>
-                  {clientScopeId ? (
+                  {workspaceClientId ? (
                     <ChatDock
-                      clientId={clientScopeId}
+                      clientId={workspaceClientId}
                       candidateName={candidateDisplayName}
                       workspaceCount={library.clientWorkspaces?.length ?? 1}
                       variant="launcher"
@@ -5779,6 +5899,13 @@ export function EvidenceWorkbench({
                             setSettingsDraft((current) => ({ ...current, summaryPrompt: value })),
                         },
                         {
+                          label: "Event bundling prompt",
+                          value: settingsDraft.bundlingPrompt,
+                          reset: DEFAULT_BUNDLING_PROMPT_TEMPLATE,
+                          setter: (value: string) =>
+                            setSettingsDraft((current) => ({ ...current, bundlingPrompt: value })),
+                        },
+                        {
                           label: "EB1A classification prompt",
                           value: settingsDraft.classificationPrompt,
                           reset: DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
@@ -6017,7 +6144,7 @@ export function EvidenceWorkbench({
               <button
                 type="button"
                 onClick={() => {
-                  setSettingsDraft(buildSettingsDraft(library.settings));
+                  syncSettingsDraft(library.settings, { preserveCandidateName: true });
                   setSettingsOpen(true);
                 }}
                 className="inline-flex items-center gap-2 rounded-full bg-[var(--foreground)] px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-[#2a2940]"
@@ -6379,6 +6506,14 @@ export function EvidenceWorkbench({
                 </div>
               </div>
 
+              {isStagingNewWorkspace ? (
+                <div className="mt-4 rounded-[16px] border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-900">
+                  You are staging a brand-new workspace. Existing folder statuses, older review
+                  lists, and historical coverage are intentionally hidden from the center area
+                  until this new upload starts or you clear the staged intake.
+                </div>
+              ) : null}
+
               <div className="mt-4 grid gap-3 xl:grid-cols-2">
                 <div className="rounded-[22px] border border-white/80 bg-white/84 px-4 py-4">
                   <div className="flex items-center gap-2">
@@ -6424,7 +6559,7 @@ export function EvidenceWorkbench({
                       Selected root
                     </p>
                     <p className="mt-1 truncate text-[12px] font-semibold text-[var(--foreground)]">
-                      {pendingStats?.rootLabel ?? "No folder selected"}
+                      {intakeFolderStats?.rootLabel ?? "No folder selected"}
                     </p>
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
@@ -6439,14 +6574,14 @@ export function EvidenceWorkbench({
                   <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                     Files selected
                   </p>
-                  <p className={metricValueClassName()}>{pendingStats?.fileCount ?? 0}</p>
+                  <p className={metricValueClassName()}>{intakeFolderStats?.fileCount ?? 0}</p>
                 </div>
                 <div className="rounded-[18px] border border-white/80 bg-white/82 px-3 py-2.5">
                   <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                     Folder size
                   </p>
                   <p className={metricValueClassName()}>
-                    {pendingStats ? formatBytes(pendingStats.totalBytes) : "0 B"}
+                    {intakeFolderStats ? formatBytes(intakeFolderStats.totalBytes) : "0 B"}
                   </p>
                 </div>
                 <div className="rounded-[18px] border border-white/80 bg-white/82 px-3 py-2.5">
@@ -6454,13 +6589,13 @@ export function EvidenceWorkbench({
                     Root label
                   </p>
                   <p className="mt-1 truncate text-sm font-semibold text-[var(--foreground)]">
-                    {pendingStats?.rootLabel ?? "No folder selected"}
+                    {intakeFolderStats?.rootLabel ?? "No folder selected"}
                   </p>
                 </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {(pendingStats?.fileTypes ?? []).map((type) => (
+                {(intakeFolderStats?.fileTypes ?? []).map((type) => (
                   <span
                     key={type}
                     className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.15em] text-slate-600"
@@ -6499,23 +6634,23 @@ export function EvidenceWorkbench({
                       Review pipeline
                     </p>
                     <p className="mt-1 text-[11px] font-semibold text-[var(--foreground)]">
-                      {reviewPipeline.currentStageLabel}
+                      {centerReviewPipeline.currentStageLabel}
                     </p>
                   </div>
                   <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                    {Math.round(reviewPipeline.overallProgress)}%
+                    {Math.round(centerReviewPipeline.overallProgress)}%
                   </span>
                 </div>
 
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
                   <div
                     className="h-full rounded-full bg-[linear-gradient(90deg,#8a6ee5,#5f87f0)] transition-all duration-500"
-                    style={{ width: `${reviewPipeline.overallProgress}%` }}
+                    style={{ width: `${centerReviewPipeline.overallProgress}%` }}
                   />
                 </div>
 
                 <div className="mt-3 grid gap-2 xl:grid-cols-5">
-                  {reviewPipeline.stages.map((stage, index) => (
+                  {centerReviewPipeline.stages.map((stage, index) => (
                     <div
                       key={stage.id}
                       className={`rounded-[14px] border px-2.5 py-2 ${
@@ -8478,12 +8613,13 @@ export function EvidenceWorkbench({
                 </span>
                 <input
                   value={settingsDraft.candidateName}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setCandidateNameDraftDirty(true);
                     setSettingsDraft((current) => ({
                       ...current,
                       candidateName: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder="Enter the beneficiary name"
                   className="w-full rounded-2xl border border-white/80 bg-white/88 px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
                 />
@@ -8544,6 +8680,44 @@ export function EvidenceWorkbench({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                        Event bundling prompt
+                      </p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                        Controls the second pass that groups completed files into event or project
+                        bundles before EB1A classification starts.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettingsDraft((current) => ({
+                          ...current,
+                          bundlingPrompt: DEFAULT_BUNDLING_PROMPT_TEMPLATE,
+                        }))
+                      }
+                      className="rounded-full border border-white/80 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)] transition hover:bg-white"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={settingsDraft.bundlingPrompt}
+                    onChange={(event) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        bundlingPrompt: event.target.value,
+                      }))
+                    }
+                    rows={8}
+                    className="mt-3 w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-[11px] leading-6 outline-none transition focus:border-[var(--brand)]"
+                  />
+                </div>
+
+                <div className="mt-3 rounded-[18px] border border-white/80 bg-white/88 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                         EB1A classification prompt
                       </p>
                       <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
@@ -8581,8 +8755,8 @@ export function EvidenceWorkbench({
                 <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
                   Available placeholders: <span className="font-mono">{"{{candidateName}}"}</span>{" "}
                   and <span className="font-mono">{"{{criteriaCatalog}}"}</span>. The app still
-                  enforces structured JSON output and keeps unclassified review available when the
-                  model is unsure.
+                  enforces structured JSON output for bundling and classification and keeps
+                  unclassified review available when the model is unsure.
                 </p>
               </div>
 

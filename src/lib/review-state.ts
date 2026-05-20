@@ -26,6 +26,8 @@ export function createEmptyWorkspaceReviewState(jobId: string): WorkspaceReviewS
     updatedAt: new Date(0).toISOString(),
     bannerDismissedAt: null,
     subBundles: [],
+    documentBundleDecisions: {},
+    bundleCriterionDecisions: {},
   };
 }
 
@@ -54,6 +56,42 @@ export function getWorkspaceReviewState(jobId: string) {
           updatedAt: subBundle.updatedAt || subBundle.createdAt,
         }))
       : [],
+    documentBundleDecisions:
+      state.documentBundleDecisions && typeof state.documentBundleDecisions === "object"
+        ? Object.fromEntries(
+            Object.entries(state.documentBundleDecisions)
+              .filter(([, value]) => Boolean(value && typeof value === "object"))
+              .map(([documentId, value]) => [
+                documentId,
+                {
+                  status: value.status === "other" ? "other" : "accepted",
+                  updatedAt:
+                    typeof value.updatedAt === "string"
+                      ? value.updatedAt
+                      : new Date(0).toISOString(),
+                },
+              ]),
+          )
+        : {},
+    bundleCriterionDecisions:
+      state.bundleCriterionDecisions && typeof state.bundleCriterionDecisions === "object"
+        ? Object.fromEntries(
+            Object.entries(state.bundleCriterionDecisions)
+              .filter(([, value]) => Boolean(value && typeof value === "object"))
+              .map(([bundleId, value]) => [
+                bundleId,
+                {
+                  status: value.status === "other" ? "other" : "accepted",
+                  criterionCode:
+                    typeof value.criterionCode === "string" ? value.criterionCode : null,
+                  updatedAt:
+                    typeof value.updatedAt === "string"
+                      ? value.updatedAt
+                      : new Date(0).toISOString(),
+                },
+              ]),
+          )
+        : {},
   } satisfies WorkspaceReviewState;
 }
 
@@ -158,5 +196,129 @@ export function removeDocumentFromSubBundles(
     ...current,
     updatedAt: new Date().toISOString(),
     subBundles: nextSubBundles,
+  });
+}
+
+export function setDocumentBundleDecision(
+  jobId: string,
+  documentId: string,
+  status: "accepted" | "other",
+) {
+  const current = getWorkspaceReviewState(jobId);
+  const now = new Date().toISOString();
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: now,
+    documentBundleDecisions: {
+      ...current.documentBundleDecisions,
+      [documentId]: {
+        status,
+        updatedAt: now,
+      },
+    },
+  });
+}
+
+export function clearDocumentBundleDecision(jobId: string, documentId: string) {
+  const current = getWorkspaceReviewState(jobId);
+
+  if (!(documentId in current.documentBundleDecisions)) {
+    return;
+  }
+
+  const nextDecisions = { ...current.documentBundleDecisions };
+  delete nextDecisions[documentId];
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: new Date().toISOString(),
+    documentBundleDecisions: nextDecisions,
+  });
+}
+
+export function clearDocumentBundleDecisions(jobId: string, documentIds: string[]) {
+  const current = getWorkspaceReviewState(jobId);
+  const nextDecisions = { ...current.documentBundleDecisions };
+  let changed = false;
+
+  documentIds.forEach((documentId) => {
+    if (documentId in nextDecisions) {
+      delete nextDecisions[documentId];
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return;
+  }
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: new Date().toISOString(),
+    documentBundleDecisions: nextDecisions,
+  });
+}
+
+export function setBundleCriterionDecision(
+  jobId: string,
+  bundleId: string,
+  status: "accepted" | "other",
+  criterionCode: string | null,
+) {
+  const current = getWorkspaceReviewState(jobId);
+  const now = new Date().toISOString();
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: now,
+    bundleCriterionDecisions: {
+      ...current.bundleCriterionDecisions,
+      [bundleId]: {
+        status,
+        criterionCode,
+        updatedAt: now,
+      },
+    },
+  });
+}
+
+export function clearBundleCriterionDecision(jobId: string, bundleId: string) {
+  const current = getWorkspaceReviewState(jobId);
+
+  if (!(bundleId in current.bundleCriterionDecisions)) {
+    return;
+  }
+
+  const nextDecisions = { ...current.bundleCriterionDecisions };
+  delete nextDecisions[bundleId];
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: new Date().toISOString(),
+    bundleCriterionDecisions: nextDecisions,
+  });
+}
+
+export function clearBundleCriterionDecisions(jobId: string, bundleIds: string[]) {
+  const current = getWorkspaceReviewState(jobId);
+  const nextDecisions = { ...current.bundleCriterionDecisions };
+  let changed = false;
+
+  bundleIds.forEach((bundleId) => {
+    if (bundleId in nextDecisions) {
+      delete nextDecisions[bundleId];
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return;
+  }
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: new Date().toISOString(),
+    bundleCriterionDecisions: nextDecisions,
   });
 }

@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { countApproved } from "@/lib/approval";
 import { SynthesisWorkspace } from "@/components/synthesis/SynthesisWorkspace";
 import { getClient, getSynthesisLifecycleStatus, updateClient } from "@/lib/clients";
 import { listCriterionDrafts } from "@/lib/drafts";
@@ -43,10 +44,10 @@ export default async function ClientSynthesisPage({
     clientId,
     [...lockedStrategy.primary, ...lockedStrategy.supporting].map((entry) => entry.criterionCode),
   );
-  const approvedDraftCount = drafts.filter((draft) => draft.latestApprovedVersion !== null).length;
+  const approvedDraftCount = countApproved(drafts);
   const claimedCriteriaCount = drafts.length;
   const synthesisDrafts = listSynthesisDrafts(clientId);
-  const approvedSynthesisCount = synthesisDrafts.filter((draft) => draft.latestApprovedVersion !== null).length;
+  const approvedSynthesisCount = countApproved(synthesisDrafts);
 
   const derivedStatus = getSynthesisLifecycleStatus({
     locked: true,

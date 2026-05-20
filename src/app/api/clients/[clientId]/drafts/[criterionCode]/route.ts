@@ -2,6 +2,7 @@ import { z } from "zod";
 import { notFound } from "next/navigation";
 import crypto from "node:crypto";
 import { generateClientBriefDraft } from "@/lib/chat-service";
+import { countApproved } from "@/lib/approval";
 import { getClient, getDraftLifecycleStatus, updateClient } from "@/lib/clients";
 import { appendDraftVersion, ensureCriterionDraft, getCriterionDraft, saveDraftVersion } from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
@@ -50,7 +51,7 @@ function syncClientDraftStatus(clientId: string) {
   const drafts = claimedCriteria
     .map((criterionCode) => getCriterionDraft(clientId, criterionCode))
     .filter(Boolean);
-  const approvedCriteriaCount = drafts.filter((draft) => draft?.latestApprovedVersion !== null).length;
+  const approvedCriteriaCount = countApproved(drafts);
   return updateClient(clientId, {
     status: getDraftLifecycleStatus({
       locked: true,

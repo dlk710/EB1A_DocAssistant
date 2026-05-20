@@ -1,5 +1,6 @@
 import { getJob } from "@/lib/jobs";
 import { getDocument, setDocumentPayload } from "@/lib/qdrant";
+import { clearDocumentBundleDecision } from "@/lib/review-state";
 import { appendClientTimelineEvent } from "@/lib/timeline";
 import type { EvidenceReviewStatus } from "@/lib/types";
 
@@ -28,6 +29,10 @@ export async function PATCH(
     reviewStatusSource: "manual",
     reviewStatusReason: null,
   });
+
+  if (payload.status !== "kept") {
+    clearDocumentBundleDecision(document.jobId, id);
+  }
 
   const job = getJob(document.jobId);
 

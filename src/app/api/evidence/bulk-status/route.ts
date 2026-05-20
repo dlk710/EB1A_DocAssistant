@@ -1,5 +1,6 @@
 import { getJob } from "@/lib/jobs";
 import { getDocument, setDocumentsPayload } from "@/lib/qdrant";
+import { clearDocumentBundleDecisions } from "@/lib/review-state";
 import { appendClientTimelineEvent } from "@/lib/timeline";
 
 export const runtime = "nodejs";
@@ -22,6 +23,10 @@ export async function POST(request: Request) {
   });
 
   const firstDocument = await getDocument(payload.ids[0]);
+
+  if (payload.status !== "kept" && firstDocument) {
+    clearDocumentBundleDecisions(firstDocument.jobId, payload.ids);
+  }
   const job = firstDocument ? getJob(firstDocument.jobId) : null;
 
   if (firstDocument && job?.clientId) {

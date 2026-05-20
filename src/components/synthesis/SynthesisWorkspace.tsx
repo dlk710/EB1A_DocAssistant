@@ -13,6 +13,7 @@ import { SynthesisFactCheckBanner } from "@/components/synthesis/SynthesisFactCh
 import { SynthesisPane } from "@/components/synthesis/SynthesisPane";
 import { SynthesisTabStrip } from "@/components/synthesis/SynthesisTabStrip";
 import { SynthesisToolbar } from "@/components/synthesis/SynthesisToolbar";
+import { hasApprovedVersion } from "@/lib/approval";
 import type { SynthesisDraft, SynthesisParagraph, SynthesisSectionKind, SynthesisVersion } from "@/lib/types";
 
 interface ApprovedDraftReference {
@@ -72,8 +73,8 @@ export function SynthesisWorkspace(props: {
     [currentVersion],
   );
   const selectedReference = props.approvedDrafts.find((entry) => entry.criterionCode === selectedReferenceCode) ?? null;
-  const allApproved = (drafts["statement-of-eligibility"]?.latestApprovedVersion !== null) &&
-    (drafts["final-merits-determination"]?.latestApprovedVersion !== null);
+  const allApproved = hasApprovedVersion(drafts["statement-of-eligibility"]) &&
+    hasApprovedVersion(drafts["final-merits-determination"]);
   const hasBlockingFactCheck = visibleParagraphs.some((paragraph) => {
     if (paragraph.factCheckStatus === "uncited") {
       return true;

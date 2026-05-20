@@ -4,6 +4,7 @@ import { getPublicSettings, saveRuntimeSettings } from "@/lib/settings";
 const settingsInputSchema = z.object({
   candidateName: z.string().max(160),
   summaryPrompt: z.string().min(1).max(12000),
+  bundlingPrompt: z.string().min(1).max(12000),
   classificationPrompt: z.string().min(1).max(12000),
   taggingPrompt: z.string().min(1).max(12000),
   triagePrompt: z.string().min(1).max(12000),

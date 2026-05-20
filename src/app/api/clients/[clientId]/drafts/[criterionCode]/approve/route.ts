@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { notFound } from "next/navigation";
+import { countApproved } from "@/lib/approval";
 import { getClient, getDraftLifecycleStatus, updateClient } from "@/lib/clients";
 import { approveDraftVersion, getCriterionDraft } from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
@@ -33,10 +34,9 @@ export async function POST(
   const claimedCriteria = [...(lockedStrategy?.primary ?? []), ...(lockedStrategy?.supporting ?? [])].map(
     (entry) => entry.criterionCode,
   );
-  const approvedCriteriaCount = claimedCriteria.filter((code) => {
-    const current = getCriterionDraft(clientId, code);
-    return current?.latestApprovedVersion !== null;
-  }).length;
+  const approvedCriteriaCount = countApproved(
+    claimedCriteria.map((code) => getCriterionDraft(clientId, code)),
+  );
 
   const client = updateClient(clientId, {
     status: getDraftLifecycleStatus({

@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { StitchingWorkspace } from "@/components/stitching/StitchingWorkspace";
+import { countApproved } from "@/lib/approval";
 import { buildPacketAssembly } from "@/lib/assembly";
 import { getClient, getSynthesisLifecycleStatus, updateClient } from "@/lib/clients";
 import { listCriterionDrafts } from "@/lib/drafts";
@@ -25,13 +26,11 @@ export default async function ClientStitchingPage({ params }: ClientStitchingPag
     (entry) => entry.criterionCode,
   );
   const drafts = listCriterionDrafts(clientId, claimedCriteria);
-  const approvedCriteriaCount = drafts.filter((draft) => draft.latestApprovedVersion !== null).length;
-  const approvedSynthesisCount = (
-    [
-      getSynthesisDraft(clientId, "statement-of-eligibility"),
-      getSynthesisDraft(clientId, "final-merits-determination"),
-    ] as const
-  ).filter((draft) => draft?.latestApprovedVersion !== null).length;
+  const approvedCriteriaCount = countApproved(drafts);
+  const approvedSynthesisCount = countApproved([
+    getSynthesisDraft(clientId, "statement-of-eligibility"),
+    getSynthesisDraft(clientId, "final-merits-determination"),
+  ] as const);
 
   const derivedStatus = getSynthesisLifecycleStatus({
     locked: true,

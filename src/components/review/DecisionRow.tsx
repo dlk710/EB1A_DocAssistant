@@ -21,6 +21,8 @@ export interface ReviewDecisionItem {
   currentCriterionLegalCode: string | null;
   currentCriterionName: string | null;
   currentCriterionRole: CriterionTagRole | null;
+  topLevelBundleId: string | null;
+  topLevelBundleName: string | null;
   currentBundleId: string | null;
   currentBundleName: string | null;
   currentParentBundleId: string | null;

@@ -9,6 +9,8 @@ import {
 import { buildLibrarySnapshot } from "@/lib/library";
 import { getJobDocuments } from "@/lib/qdrant";
 import {
+  clearBundleCriterionDecisions,
+  clearDocumentBundleDecision,
   getWorkspaceReviewState,
   removeDocumentFromSubBundles,
   saveWorkspaceReviewState,
@@ -98,6 +100,11 @@ export async function POST(
   saveWorkspaceManualOverrideState(job.id, refreshedOverrideState);
 
   removeDocumentFromSubBundles(job.id, [id]);
+  clearDocumentBundleDecision(job.id, id);
+  clearBundleCriterionDecisions(job.id, [
+    baseBundleId,
+    payload.targetBundleId,
+  ]);
 
   if (payload.targetSubBundleId) {
     const reviewState = getWorkspaceReviewState(job.id);

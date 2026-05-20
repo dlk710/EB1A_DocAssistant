@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { z } from "zod";
+import { countApproved } from "@/lib/approval";
 import { getClient, getSynthesisLifecycleStatus, updateClient } from "@/lib/clients";
 import { listCriterionDrafts } from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
@@ -40,15 +41,11 @@ export async function POST(
   const claimedCriteria = [...(lockedStrategy?.primary ?? []), ...(lockedStrategy?.supporting ?? [])].map(
     (entry) => entry.criterionCode,
   );
-  const approvedCriteriaCount = listCriterionDrafts(clientId, claimedCriteria).filter(
-    (entry) => entry.latestApprovedVersion !== null,
-  ).length;
-  const approvedSynthesisCount = (
-    [
-      getSynthesisDraft(clientId, "statement-of-eligibility"),
-      getSynthesisDraft(clientId, "final-merits-determination"),
-    ] as const
-  ).filter((entry) => entry?.latestApprovedVersion !== null).length;
+  const approvedCriteriaCount = countApproved(listCriterionDrafts(clientId, claimedCriteria));
+  const approvedSynthesisCount = countApproved([
+    getSynthesisDraft(clientId, "statement-of-eligibility"),
+    getSynthesisDraft(clientId, "final-merits-determination"),
+  ] as const);
 
   const client = updateClient(clientId, {
     status: getSynthesisLifecycleStatus({

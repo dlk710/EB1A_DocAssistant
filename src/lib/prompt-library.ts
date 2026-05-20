@@ -20,7 +20,26 @@ export const DEFAULT_SUMMARY_PROMPT_TEMPLATE = [
   "recommendedUse should suggest how the evidence may be organized, grouped, or referenced in later review steps.",
 ].join(" ");
 
-export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
+export const DEFAULT_BUNDLING_PROMPT_TEMPLATE = [
+  "You organize completed evidence documents into real-world event bundles for {{candidateName}}.",
+  "An event can be a project, product, platform, initiative, speaking engagement, judging assignment, authorship effort, award cycle, leadership role, press mention, or other real-world work stream.",
+  "Each completed document must end up in exactly one event bundle.",
+  "Use the most specific bundle name possible and keep it short.",
+  "Do not add year or month to the bundle name because the system prefixes dates automatically.",
+  "Never use raw folder paths, upload directory names, or long filename fragments as bundle names.",
+  "Do not use generic names like Photograph, Leadership Role, Original Contributions, Event, Project, Supporting Evidence, or Work Stream when the document digest already points to a specific project, product, platform, or initiative.",
+  "If the document digest includes structured bundle hints such as role prefixes, suggested bundle names, aliases, or bundle rationale, treat them as strong anchors.",
+  "Structured Critical Role, Leading Role, and Original Contribution dossiers should anchor project-specific bundles rather than generic role bundles.",
+  "When the digest provides a structured role prefix, preserve it in the bundle name using the exact forms CR, LR, or OC.",
+  "For example, prefer CR Smart Provider Finder, LR Smart Provider Finder, or OC Smart Provider Finder over generic titles.",
+  "If a structured dossier references multiple initiatives, choose the dominant initiative for that dossier's primary bundle instead of falling back to a generic role name.",
+  "Supporting emails, screenshots, newsletters, badges, recommendation letters, and release notes should be merged into the same underlying bundle when the aliases, acronyms, organizations, dates, or subject matter clearly align.",
+  "Do not categorize in EB1A terms.",
+  "If a document does not clearly belong with others, create a single-document event.",
+  "Return strict JSON only.",
+].join(" ");
+
+export const LEGACY_CLASSIFICATION_PROMPT_TEMPLATE = [
   "You classify event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
   "The candidate at the center of this review is {{candidateName}}.",
   "You are classifying bundle-level events, not isolated files.",
@@ -31,6 +50,28 @@ export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
   "Do not force uncertain evidence into a legal bucket just to avoid unclassified review.",
   "Write rationale for a case-prep reviewer, not legal advice.",
   "suggestedExhibitTitle should be concise and human-readable for downstream folder organization.",
+].join(" ");
+
+export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
+  "You classify completed event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
+  "The candidate at the center of this review is {{candidateName}}.",
+  "You are classifying bundle-level events or work streams, not isolated files.",
+  "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",
+  "First decide whether the bundle is genuinely probative for any EB1A criterion at all.",
+  "If the bundle is too ambiguous, too weak, too mixed, or not clearly appropriate for any criterion, leave the primary criterion empty and explain why it belongs in human review.",
+  "Choose one primary criterion only when the bundle's core theory is clear and the supporting evidence is substantial.",
+  "Use at most two secondary criteria and only when the same bundle plausibly supports them without stretching.",
+  "Do not force uncertain evidence into a legal bucket just to avoid unclassified review.",
+  "Be conservative with routine employment materials, internal-only project updates, generic team collaboration evidence, and ordinary delivery milestones. Those often belong in human review instead of a forced legal bucket.",
+  "For criterion (v) Original Contributions, look for evidence of novel technical or substantive contributions plus meaningful significance, adoption, measurable impact, or credible expert validation beyond ordinary implementation.",
+  "For criterion (viii) Leading or Critical Role, look for responsibility for a distinguished organization, major platform, or consequential business function, not merely participation on a project team.",
+  "For criterion (iv) Judging, look for judging, peer review, panel evaluation, selection, or review responsibilities over the work of others.",
+  "For criterion (iii) Published Material, look for coverage about the candidate or the candidate's work in publications or media, not the candidate's own authored work unless the bundle is actually about press coverage.",
+  "For criterion (vi) Authorship, look for articles, books, white papers, scholarly or professional publications, or comparable authored material credited to the candidate.",
+  "For criteria (i), (ii), (vii), (ix), (x), and (xi), require bundle-specific support rather than broad career impressions.",
+  "Do not use EB1A criteria as a proxy for bundle naming. Keep the reasoning tied to what the bundle actually proves.",
+  "Write rationale for a case-prep reviewer, not legal advice.",
+  "suggestedExhibitTitle should be concise, human-readable, and usable for downstream folder organization.",
 ].join(" ");
 
 export const DEFAULT_TAGGING_PROMPT_TEMPLATE = [

@@ -1,5 +1,11 @@
 import { buildLibrarySnapshot } from "@/lib/library";
-import { getWorkspaceReviewState, removeDocumentFromSubBundles, saveWorkspaceReviewState } from "@/lib/review-state";
+import {
+  clearBundleCriterionDecision,
+  clearDocumentBundleDecisions,
+  getWorkspaceReviewState,
+  removeDocumentFromSubBundles,
+  saveWorkspaceReviewState,
+} from "@/lib/review-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +38,8 @@ export async function POST(request: Request) {
   }
 
   removeDocumentFromSubBundles(payload.jobId, documentIds);
+  clearDocumentBundleDecisions(payload.jobId, documentIds);
+  clearBundleCriterionDecision(payload.jobId, payload.targetBundleId);
 
   if (payload.targetSubBundleId) {
     const reviewState = getWorkspaceReviewState(payload.jobId);

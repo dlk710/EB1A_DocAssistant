@@ -136,6 +136,7 @@ Verify:
 - bundle cards in the human-review queue can be reassigned directly into a criterion
 - review cards, table rows, and workbench entries expose permanent `FILE` and `BUNDLE` badges with explicit action wording
 - the review page supports `Inbox`, `Table`, `Workbench`, and `By category` without breaking existing actions
+- review actions can be staged locally and applied in one pass through `Accept all staged changes`
 - the review flow still honors the sequence `file -> bundle -> criterion`
 
 ### Pipeline behavior
@@ -143,6 +144,8 @@ Verify:
 Verify:
 
 - indexing still completes
+- exact duplicates are skipped before AI processing and reported in the intake summary
+- `.DS_Store` files are auto-archived before AI processing and reported in the intake summary
 - bundling still runs after summarization
 - classification still runs after bundling
 - tagging still runs after classification

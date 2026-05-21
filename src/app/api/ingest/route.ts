@@ -10,7 +10,11 @@ import { ensureStorageRoots } from "@/lib/state-store";
 import { appendClientTimelineEvent } from "@/lib/timeline";
 import { ensureQdrantCollection, upsertDocuments } from "@/lib/qdrant";
 import { UPLOAD_ROOT } from "@/lib/constants";
-import type { StoredDocument } from "@/lib/types";
+import type {
+  DuplicateDocumentGroup,
+  StoredDocument,
+  SystemArchivedIntakeFile,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +32,10 @@ function normalizeRelativePath(value: string) {
 function inferFolderLabel(paths: string[]) {
   const firstPath = paths[0] ?? "";
   return firstPath.split("/")[0] || "Uploaded evidence";
+}
+
+function isMacSystemFile(relativePath: string) {
+  return path.basename(relativePath) === ".DS_Store";
 }
 
 export async function POST(request: Request) {
@@ -72,13 +80,105 @@ export async function POST(request: Request) {
     });
   const effectiveCandidateName = existingClient?.displayName || candidateName;
   const jobId = crypto.randomUUID();
+  const duplicateGroupsByChecksum = new Map<string, DuplicateDocumentGroup>();
+  const uniqueUploads: Array<{
+    file: File;
+    relativePath: string;
+    bytes: Buffer;
+    checksum: string;
+  }> = [];
+  const systemArchiveUploads: Array<{
+    file: File;
+    relativePath: string;
+    bytes: Buffer;
+    checksum: string;
+  }> = [];
+  const firstUploadByChecksum = new Map<
+    string,
+    {
+      relativePath: string;
+    }
+  >();
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const relativePath = normalizedPaths[index];
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const checksum = crypto.createHash("sha256").update(bytes).digest("hex");
+
+    if (isMacSystemFile(relativePath)) {
+      systemArchiveUploads.push({
+        file,
+        relativePath,
+        bytes,
+        checksum,
+      });
+      continue;
+    }
+
+    const firstUpload = firstUploadByChecksum.get(checksum);
+
+    if (firstUpload) {
+      const existingGroup = duplicateGroupsByChecksum.get(checksum);
+
+      if (existingGroup) {
+        existingGroup.duplicateRelativePaths.push(relativePath);
+      } else {
+        duplicateGroupsByChecksum.set(checksum, {
+          checksum,
+          keptRelativePath: firstUpload.relativePath,
+          duplicateRelativePaths: [relativePath],
+        });
+      }
+
+      continue;
+    }
+
+    firstUploadByChecksum.set(checksum, {
+      relativePath,
+    });
+    uniqueUploads.push({
+      file,
+      relativePath,
+      bytes,
+      checksum,
+    });
+  }
+
+  const duplicateGroups = Array.from(duplicateGroupsByChecksum.values()).sort((left, right) =>
+    left.keptRelativePath.localeCompare(right.keptRelativePath),
+  );
+  const selectedIndexableFiles = files.length - systemArchiveUploads.length;
+  const skippedDuplicateFiles = selectedIndexableFiles - uniqueUploads.length;
+  const duplicateReport =
+    skippedDuplicateFiles > 0
+      ? {
+          selectedFiles: selectedIndexableFiles,
+          uniqueFiles: uniqueUploads.length,
+          skippedDuplicateFiles,
+          groups: duplicateGroups,
+        }
+      : null;
+  const systemArchivedFiles: SystemArchivedIntakeFile[] = systemArchiveUploads.map((upload) => ({
+    relativePath: upload.relativePath,
+    reason: "Auto-archived macOS .DS_Store system file.",
+  }));
+  const systemArchiveReport =
+    systemArchivedFiles.length > 0
+      ? {
+          autoArchivedFiles: systemArchivedFiles.length,
+          files: systemArchivedFiles,
+        }
+      : null;
 
   createJob({
     id: jobId,
     clientId: client.id,
     candidateName: effectiveCandidateName,
     folderLabel,
-    totalFiles: files.length,
+    totalFiles: uniqueUploads.length,
+    duplicateReport,
+    systemArchiveReport,
   });
   appendClientTimelineEvent({
     id: `${jobId}:workspace-added:${Date.now()}`,
@@ -90,18 +190,76 @@ export async function POST(request: Request) {
     metadata: {
       workspaceId: jobId,
       folderLabel,
-      fileCount: files.length,
+      selectedFileCount: files.length,
+      fileCount: uniqueUploads.length,
+      skippedDuplicateFiles,
+      autoArchivedSystemFiles: systemArchivedFiles.length,
     },
   });
 
+  const archivedSystemDocuments: StoredDocument[] = [];
   const queuedDocuments: StoredDocument[] = [];
 
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
-    const relativePath = normalizedPaths[index];
+  for (const upload of systemArchiveUploads) {
+    const file = upload.file;
+    const relativePath = upload.relativePath;
     const absolutePath = path.join(UPLOAD_ROOT, jobId, relativePath);
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const checksum = crypto.createHash("sha256").update(bytes).digest("hex");
+    const bytes = upload.bytes;
+    const timestamp = new Date().toISOString();
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, bytes);
+
+    archivedSystemDocuments.push({
+      id: crypto.randomUUID(),
+      jobId,
+      candidateName: effectiveCandidateName,
+      folderLabel,
+      fileName: path.basename(relativePath),
+      relativePath,
+      absolutePath,
+      extension: path.extname(relativePath).toLowerCase(),
+      mimeType:
+        file.type ||
+        (typeof mime.lookup(relativePath) === "string"
+          ? (mime.lookup(relativePath) as string)
+          : "application/octet-stream"),
+      bytes: bytes.byteLength,
+      checksum: upload.checksum,
+      pageCount: null,
+      extractedCharCount: 0,
+      sourceKind: "system_file",
+      processingStatus: "completed",
+      summary: null,
+      metadata: {
+        extractionMethod: "filename_only",
+        sourceKind: "system_file",
+        preview: "Auto-archived macOS .DS_Store system file.",
+        previewMode: "filename_only",
+        pageCount: null,
+        charCount: 0,
+        rootFolder: folderLabel,
+        indexedAt: timestamp,
+        relativePath,
+      },
+      usage: null,
+      criteriaTags: [],
+      reviewStatus: "archived",
+      reviewStatusSource: "rule",
+      reviewStatusReason: "Auto-archived macOS .DS_Store system file.",
+      notes: "",
+      isPinned: false,
+      error: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  }
+
+  for (const upload of uniqueUploads) {
+    const file = upload.file;
+    const relativePath = upload.relativePath;
+    const absolutePath = path.join(UPLOAD_ROOT, jobId, relativePath);
+    const bytes = upload.bytes;
     const timestamp = new Date().toISOString();
 
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -122,7 +280,7 @@ export async function POST(request: Request) {
           ? (mime.lookup(relativePath) as string)
           : "application/octet-stream"),
       bytes: bytes.byteLength,
-      checksum,
+      checksum: upload.checksum,
       pageCount: null,
       extractedCharCount: 0,
       sourceKind: "queued",
@@ -148,7 +306,7 @@ export async function POST(request: Request) {
     () => 0,
   );
   await upsertDocuments(
-    queuedDocuments.map((document) => ({
+    [...archivedSystemDocuments, ...queuedDocuments].map((document) => ({
       document,
       vector: zeroVector,
     })),
@@ -159,7 +317,13 @@ export async function POST(request: Request) {
     ok: true,
     jobId,
     candidateName: effectiveCandidateName,
-    totalFiles: files.length,
+    totalFiles: uniqueUploads.length,
+    selectedFiles: files.length,
+    uniqueFiles: uniqueUploads.length,
+    skippedDuplicateFiles,
+    autoArchivedSystemFiles: systemArchivedFiles.length,
+    systemArchivedFiles,
+    duplicateGroups,
     folderLabel,
   });
 }

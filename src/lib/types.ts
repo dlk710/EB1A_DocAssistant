@@ -236,6 +236,31 @@ export interface JobRecord {
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
+  duplicateReport: DuplicateDocumentReport | null;
+  systemArchiveReport: SystemArchiveReport | null;
+}
+
+export interface DuplicateDocumentGroup {
+  checksum: string;
+  keptRelativePath: string;
+  duplicateRelativePaths: string[];
+}
+
+export interface DuplicateDocumentReport {
+  selectedFiles: number;
+  uniqueFiles: number;
+  skippedDuplicateFiles: number;
+  groups: DuplicateDocumentGroup[];
+}
+
+export interface SystemArchivedIntakeFile {
+  relativePath: string;
+  reason: string;
+}
+
+export interface SystemArchiveReport {
+  autoArchivedFiles: number;
+  files: SystemArchivedIntakeFile[];
 }
 
 export interface SettingsSnapshot {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ContextMenu, type ContextMenuEntry } from "@/components/common/ContextMenu";
 import type { ReviewDecisionItem } from "@/components/review/DecisionRow";
@@ -96,9 +96,61 @@ interface BundleActionMenuState {
   y: number;
 }
 
+interface FileStagedChange {
+  item: ReviewDecisionItem;
+  status: EvidenceReviewStatus;
+}
+
+type BundleStagedMoveTarget =
+  | ReviewWorkspaceBundleOption
+  | {
+      kind: "create";
+      name: string;
+    };
+
+type BundleStagedChange =
+  | {
+      item: ReviewDecisionItem;
+      kind: "accepted";
+    }
+  | {
+      item: ReviewDecisionItem;
+      kind: "other";
+    }
+  | {
+      item: ReviewDecisionItem;
+      kind: "clear";
+    }
+  | {
+      item: ReviewDecisionItem;
+      kind: "move";
+      target: BundleStagedMoveTarget;
+    };
+
+type CriterionStagedChange =
+  | {
+      item: ReviewBundleDecisionItem;
+      kind: "accept";
+      criterionCode: string;
+    }
+  | {
+      item: ReviewBundleDecisionItem;
+      kind: "other";
+    }
+  | {
+      item: ReviewBundleDecisionItem;
+      kind: "clear";
+    }
+  | {
+      item: ReviewBundleDecisionItem;
+      kind: "archive";
+    };
+
 type ReviewMode = "inbox" | "table" | "workbench" | "by-category";
 type ReviewStageFilter = "all" | "file" | "bundle" | "criterion";
 type WorkbenchGroupBy = "stage" | "bundle" | "workspace";
+type TableSortKey = "name" | "type" | "summary" | "workspace" | "stage" | "bundle" | "confidence";
+type TableSortDirection = "asc" | "desc";
 
 type ReviewFocusEntry =
   | {
@@ -332,6 +384,12 @@ function reviewModeButtonClass(active: boolean) {
   }`;
 }
 
+function tableSortButtonClass(active: boolean) {
+  return `inline-flex items-center gap-1 transition ${
+    active ? "text-[var(--foreground)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
+  }`;
+}
+
 function getFocusStageKey(entry: ReviewFocusEntry): ReviewStageFilter {
   if (entry.kind === "file") {
     return "file";
@@ -420,6 +478,41 @@ function getFocusConfidence(entry: ReviewFocusEntry) {
   return Math.round(entry.item.confidence * 100);
 }
 
+function getDefaultSortDirection(sortKey: TableSortKey): TableSortDirection {
+  return sortKey === "confidence" ? "desc" : "asc";
+}
+
+function compareNullableNumbers(
+  left: number | null,
+  right: number | null,
+  direction: TableSortDirection,
+) {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return direction === "asc" ? left - right : right - left;
+}
+
+function compareStrings(left: string, right: string, direction: TableSortDirection) {
+  const comparison = left.localeCompare(right, undefined, { sensitivity: "base" });
+  return direction === "asc" ? comparison : -comparison;
+}
+
+function parseReviewMode(value: string | null): ReviewMode {
+  return value === "inbox" || value === "table" || value === "workbench" || value === "by-category"
+    ? value
+    : "by-category";
+}
+
 function getFocusCriterionLabel(entry: ReviewFocusEntry) {
   if (entry.kind === "criterion") {
     return entry.item.criterionHint ?? null;
@@ -466,6 +559,49 @@ export function ActionItemsSummary({
   denseWorkbenchHref,
 }: ActionItemsSummaryProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const serverViewState = useMemo(
+    () =>
+      buildInitialViewState({
+        clientId,
+        clientName,
+        totalTagged,
+        initialRoutineCount,
+        initialArchiveCount,
+        initialReferenceItems,
+        workspaceContexts,
+        readyBands,
+        fileDecisionItems,
+        bundleReviewGroups,
+        otherBundleGroups,
+        criterionReviewQueue,
+        otherCriterionQueue,
+        archiveSamples,
+        archiveReviewHref,
+        strategyHref,
+        denseWorkbenchHref,
+      }),
+    [
+      archiveReviewHref,
+      archiveSamples,
+      bundleReviewGroups,
+      clientId,
+      clientName,
+      criterionReviewQueue,
+      denseWorkbenchHref,
+      fileDecisionItems,
+      initialArchiveCount,
+      initialReferenceItems,
+      initialRoutineCount,
+      otherBundleGroups,
+      otherCriterionQueue,
+      readyBands,
+      strategyHref,
+      totalTagged,
+      workspaceContexts,
+    ],
+  );
   const [viewState, setViewState] = useState<ViewState>(() =>
     buildInitialViewState({
       clientId,
@@ -487,6 +623,14 @@ export function ActionItemsSummary({
       denseWorkbenchHref,
     }),
   );
+  const [stagedFileChanges, setStagedFileChanges] = useState<Record<string, FileStagedChange>>({});
+  const [stagedBundleChanges, setStagedBundleChanges] = useState<Record<string, BundleStagedChange>>(
+    {},
+  );
+  const [stagedCriterionChanges, setStagedCriterionChanges] = useState<
+    Record<string, CriterionStagedChange>
+  >({});
+  const [awaitingServerRefresh, setAwaitingServerRefresh] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [reasoning, setReasoning] = useState<ReasoningState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -496,11 +640,50 @@ export function ActionItemsSummary({
   const [bundlePickerState, setBundlePickerState] = useState<BundlePickerState | null>(null);
   const [criterionPickerState, setCriterionPickerState] = useState<CriterionPickerState | null>(null);
   const [bundleActionMenuState, setBundleActionMenuState] = useState<BundleActionMenuState | null>(null);
-  const [reviewMode, setReviewMode] = useState<ReviewMode>("by-category");
   const [tableSearch, setTableSearch] = useState("");
   const [tableStageFilter, setTableStageFilter] = useState<ReviewStageFilter>("all");
+  const [tableSortKey, setTableSortKey] = useState<TableSortKey | null>(null);
+  const [tableSortDirection, setTableSortDirection] = useState<TableSortDirection>("desc");
   const [workbenchGroupBy, setWorkbenchGroupBy] = useState<WorkbenchGroupBy>("stage");
   const [selectedFocusKey, setSelectedFocusKey] = useState<string | null>(null);
+  const [awaitingServerStateKey, setAwaitingServerStateKey] = useState<string | null>(null);
+  const reviewMode = parseReviewMode(searchParams.get("mode"));
+  const stagedFileCount = Object.keys(stagedFileChanges).length;
+  const stagedBundleCount = Object.keys(stagedBundleChanges).length;
+  const stagedCriterionCount = Object.keys(stagedCriterionChanges).length;
+  const totalStagedCount = stagedFileCount + stagedBundleCount + stagedCriterionCount;
+  const hasStagedChanges = totalStagedCount > 0;
+  const serverStateKey = useMemo(
+    () =>
+      JSON.stringify({
+        archiveCount: initialArchiveCount,
+        archiveSamples,
+        bundleReviewCount: bundleReviewGroups.length,
+        criterionReviewCount: criterionReviewQueue.length,
+        fileDecisionCount: fileDecisionItems.length,
+        otherBundleCount: otherBundleGroups.length,
+        otherCriterionCount: otherCriterionQueue.length,
+        readyBandCount: readyBands.length,
+        referenceCount: initialReferenceItems.length,
+        routineCount: initialRoutineCount,
+      }),
+    [
+      archiveSamples,
+      bundleReviewGroups.length,
+      criterionReviewQueue.length,
+      fileDecisionItems.length,
+      initialArchiveCount,
+      initialReferenceItems.length,
+      initialRoutineCount,
+      otherBundleGroups.length,
+      otherCriterionQueue.length,
+      readyBands.length,
+    ],
+  );
+  const waitingForServerRefresh =
+    awaitingServerRefresh && awaitingServerStateKey === serverStateKey;
+  const effectiveViewState =
+    hasStagedChanges || waitingForServerRefresh ? viewState : serverViewState;
 
   useEffect(() => {
     if (!toast) {
@@ -511,21 +694,21 @@ export function ActionItemsSummary({
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const fileDecisionCount = viewState.fileDecisionItems.length;
   const bundleDecisionCount = useMemo(
-    () => viewState.bundleReviewGroups.reduce((sum, group) => sum + group.items.length, 0),
-    [viewState.bundleReviewGroups],
+    () => effectiveViewState.bundleReviewGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [effectiveViewState.bundleReviewGroups],
   );
-  const criterionDecisionCount = viewState.criterionReviewQueue.length;
+  const fileDecisionCount = effectiveViewState.fileDecisionItems.length;
+  const criterionDecisionCount = effectiveViewState.criterionReviewQueue.length;
   const otherBundleCount = useMemo(
-    () => viewState.otherBundleGroups.reduce((sum, group) => sum + group.items.length, 0),
-    [viewState.otherBundleGroups],
+    () => effectiveViewState.otherBundleGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [effectiveViewState.otherBundleGroups],
   );
-  const otherCriterionCount = viewState.otherCriterionQueue.length;
-  const referenceCount = viewState.referenceItems.length;
+  const otherCriterionCount = effectiveViewState.otherCriterionQueue.length;
+  const referenceCount = effectiveViewState.referenceItems.length;
   const readyCount = useMemo(
-    () => readyCountFromBands(viewState.readyBands) || initialRoutineCount,
-    [initialRoutineCount, viewState.readyBands],
+    () => readyCountFromBands(effectiveViewState.readyBands) || initialRoutineCount,
+    [effectiveViewState.readyBands, initialRoutineCount],
   );
   const unresolvedCount = fileDecisionCount + bundleDecisionCount + criterionDecisionCount;
   const heldLaterCount = referenceCount + otherBundleCount + otherCriterionCount;
@@ -534,12 +717,12 @@ export function ActionItemsSummary({
 
   const focusEntries = useMemo<ReviewFocusEntry[]>(
     () => [
-      ...viewState.fileDecisionItems.map((item) => ({
+      ...effectiveViewState.fileDecisionItems.map((item) => ({
         key: `file:${item.id}`,
         kind: "file" as const,
         item,
       })),
-      ...viewState.bundleReviewGroups.flatMap((group) =>
+      ...effectiveViewState.bundleReviewGroups.flatMap((group) =>
         group.items.map((item) => ({
           key: `bundle:${item.id}`,
           kind: "bundle" as const,
@@ -547,46 +730,50 @@ export function ActionItemsSummary({
           groupName: group.bundleName,
         })),
       ),
-      ...viewState.criterionReviewQueue.map((item) => ({
+      ...effectiveViewState.criterionReviewQueue.map((item) => ({
         key: `criterion:${item.id}`,
         kind: "criterion" as const,
         item,
       })),
     ],
-    [viewState.bundleReviewGroups, viewState.criterionReviewQueue, viewState.fileDecisionItems],
+    [
+      effectiveViewState.bundleReviewGroups,
+      effectiveViewState.criterionReviewQueue,
+      effectiveViewState.fileDecisionItems,
+    ],
   );
 
   const activeBundleCount = useMemo(() => {
     const bundleKeys = new Set<string>();
 
-    viewState.bundleReviewGroups.forEach((group) => {
+    effectiveViewState.bundleReviewGroups.forEach((group) => {
       bundleKeys.add(group.bundleId ?? group.key);
     });
 
-    viewState.otherBundleGroups.forEach((group) => {
+    effectiveViewState.otherBundleGroups.forEach((group) => {
       bundleKeys.add(group.bundleId ?? group.key);
     });
 
-    viewState.criterionReviewQueue.forEach((item) => {
+    effectiveViewState.criterionReviewQueue.forEach((item) => {
       bundleKeys.add(item.id);
     });
 
-    viewState.otherCriterionQueue.forEach((item) => {
+    effectiveViewState.otherCriterionQueue.forEach((item) => {
       bundleKeys.add(item.id);
     });
 
     return bundleKeys.size;
   }, [
-    viewState.bundleReviewGroups,
-    viewState.criterionReviewQueue,
-    viewState.otherBundleGroups,
-    viewState.otherCriterionQueue,
+    effectiveViewState.bundleReviewGroups,
+    effectiveViewState.criterionReviewQueue,
+    effectiveViewState.otherBundleGroups,
+    effectiveViewState.otherCriterionQueue,
   ]);
 
   const filteredTableEntries = useMemo(() => {
     const normalizedSearch = tableSearch.trim().toLowerCase();
 
-    return focusEntries.filter((entry) => {
+    const filteredEntries = focusEntries.filter((entry) => {
       if (tableStageFilter !== "all" && getFocusStageKey(entry) !== tableStageFilter) {
         return false;
       }
@@ -608,7 +795,56 @@ export function ActionItemsSummary({
 
       return haystack.includes(normalizedSearch);
     });
-  }, [focusEntries, tableSearch, tableStageFilter]);
+
+    if (!tableSortKey) {
+      return filteredEntries;
+    }
+
+    return [...filteredEntries].sort((left, right) => {
+      switch (tableSortKey) {
+        case "confidence":
+          return compareNullableNumbers(
+            getFocusConfidence(left),
+            getFocusConfidence(right),
+            tableSortDirection,
+          );
+        case "name":
+          return compareStrings(getFocusTitle(left), getFocusTitle(right), tableSortDirection);
+        case "type":
+          return compareStrings(
+            getFocusTypeDisplayLabel(left),
+            getFocusTypeDisplayLabel(right),
+            tableSortDirection,
+          );
+        case "summary":
+          return compareStrings(
+            getFocusSummary(left),
+            getFocusSummary(right),
+            tableSortDirection,
+          );
+        case "workspace":
+          return compareStrings(
+            getFocusWorkspaceLabel(left),
+            getFocusWorkspaceLabel(right),
+            tableSortDirection,
+          );
+        case "stage":
+          return compareStrings(
+            getFocusStageLabel(left),
+            getFocusStageLabel(right),
+            tableSortDirection,
+          );
+        case "bundle":
+          return compareStrings(
+            getFocusBundleLabel(left) ?? "Unassigned",
+            getFocusBundleLabel(right) ?? "Unassigned",
+            tableSortDirection,
+          );
+        default:
+          return 0;
+      }
+    });
+  }, [focusEntries, tableSearch, tableSortDirection, tableSortKey, tableStageFilter]);
 
   const groupedWorkbenchEntries = useMemo(() => {
     const groups = new Map<string, ReviewFocusEntry[]>();
@@ -653,6 +889,63 @@ export function ActionItemsSummary({
 
     if (nextEntry) {
       setSelectedFocusKey(nextEntry.key);
+    }
+  }
+
+  function handleTableSort(sortKey: TableSortKey) {
+    if (tableSortKey === sortKey) {
+      setTableSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setTableSortKey(sortKey);
+    setTableSortDirection(getDefaultSortDirection(sortKey));
+  }
+
+  function renderTableSortHeader(label: string, sortKey: TableSortKey) {
+    const active = tableSortKey === sortKey;
+    const indicator = !active ? "↕" : tableSortDirection === "asc" ? "↑" : "↓";
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleTableSort(sortKey)}
+        className={tableSortButtonClass(active)}
+        aria-label={`Sort by ${label.toLowerCase()}`}
+      >
+        <span>{label}</span>
+        <span className="text-[9px]">{indicator}</span>
+      </button>
+    );
+  }
+
+  function updateReviewMode(nextMode: ReviewMode) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("mode", nextMode);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  function closeActionMenus() {
+    setDocumentMenuState(null);
+    setBundlePickerState(null);
+    setCriterionPickerState(null);
+    setBundleActionMenuState(null);
+  }
+
+  function resetStagedChanges(options?: { message?: string }) {
+    closeActionMenus();
+    setAwaitingServerRefresh(false);
+    setAwaitingServerStateKey(null);
+    setViewState(serverViewState);
+    setStagedFileChanges({});
+    setStagedBundleChanges({});
+    setStagedCriterionChanges({});
+    if (options?.message) {
+      setToast({
+        tone: "info",
+        message: options.message,
+      });
     }
   }
 
@@ -753,7 +1046,7 @@ export function ActionItemsSummary({
     }
   }
 
-  async function createBundleForItem(item: ReviewDecisionItem) {
+  async function createBundleForItem(item: ReviewDecisionItem, nameOverride?: string) {
     const parentBundleId = item.topLevelBundleId;
 
     if (!parentBundleId) {
@@ -767,7 +1060,7 @@ export function ActionItemsSummary({
       },
       body: JSON.stringify({
         jobId: item.jobId,
-        name: `New bundle — ${item.title.slice(0, 36)}`,
+        name: nameOverride || `New bundle — ${item.title.slice(0, 36)}`,
         evidenceIds: [],
       }),
     });
@@ -811,43 +1104,164 @@ export function ActionItemsSummary({
     }
   }
 
-  async function runViewStateAction(
+  function stageViewStateAction(
     key: string,
     label: string,
     mutator: (state: ViewState) => ViewState,
-    runner: () => Promise<void>,
-    successMessage?: string,
+    onStage?: () => void,
   ) {
     if (busyKey) {
       return;
     }
 
-    const snapshot = cloneViewState(viewState);
-    setBusyKey(key);
-    setBusyLabel(label);
-    setDocumentMenuState(null);
-    setBundlePickerState(null);
-    setCriterionPickerState(null);
-    setBundleActionMenuState(null);
-    setViewState((current) => mutator(cloneViewState(current)));
+    void key;
+    void label;
+    closeActionMenus();
+    setAwaitingServerStateKey(null);
+    setAwaitingServerRefresh(false);
+    setViewState(mutator(cloneViewState(effectiveViewState)));
+    onStage?.();
+  }
+
+  async function applyStagedFileChange(change: FileStagedChange) {
+    await patchReviewStatus(change.item.id, change.status);
+  }
+
+  async function applyStagedBundleChange(change: BundleStagedChange) {
+    if (change.kind === "accepted") {
+      await patchDocumentBundleDecision(change.item.jobId, change.item.id, "accepted");
+      return;
+    }
+
+    if (change.kind === "other") {
+      await patchDocumentBundleDecision(change.item.jobId, change.item.id, "other");
+      return;
+    }
+
+    if (change.kind === "clear") {
+      await patchDocumentBundleDecision(change.item.jobId, change.item.id, "clear");
+      return;
+    }
+
+    if (change.target.kind === "create") {
+      const created = await createBundleForItem(change.item, change.target.name);
+      await moveToBundle(change.item, {
+        id: created.id,
+        jobId: change.item.jobId,
+        parentBundleId: created.parentBundleId,
+        name: created.name,
+        documentCount: 1,
+        kind: "sub_bundle",
+      });
+    } else {
+      await moveToBundle(change.item, change.target);
+    }
+
+    await patchDocumentBundleDecision(change.item.jobId, change.item.id, "accepted");
+  }
+
+  async function applyStagedCriterionChange(change: CriterionStagedChange) {
+    if (change.kind === "archive") {
+      await patchBulkReviewStatus(change.item.documentIds, "archived");
+      await patchBundleCriterionDecision(change.item.jobId, change.item.id, "clear", null);
+      return;
+    }
+
+    if (change.kind === "other") {
+      if (change.item.bucketCode !== OTHER_REVIEW_BUCKET_CODE) {
+        await patchBundleCategory(change.item, OTHER_REVIEW_BUCKET_CODE);
+      }
+      await patchBundleCriterionDecision(change.item.jobId, change.item.id, "other", null);
+      return;
+    }
+
+    if (change.kind === "clear") {
+      await patchBundleCategory(
+        change.item,
+        change.item.bucketCode && change.item.bucketCode !== OTHER_REVIEW_BUCKET_CODE
+          ? change.item.bucketCode
+          : "REVIEW",
+      );
+      await patchBundleCriterionDecision(change.item.jobId, change.item.id, "clear", null);
+      return;
+    }
+
+    if (change.item.bucketCode !== change.criterionCode) {
+      await patchBundleCategory(change.item, change.criterionCode);
+    }
+
+    await patchBundleCriterionDecision(
+      change.item.jobId,
+      change.item.id,
+      "accepted",
+      change.criterionCode,
+    );
+  }
+
+  async function applyAllStagedChanges() {
+    if (busyKey || !hasStagedChanges) {
+      return;
+    }
+
+    setBusyKey("apply-all");
+    setBusyLabel("Applying staged review changes");
+
+    const fileEntries = Object.values(stagedFileChanges);
+    const bundleEntries = Object.values(stagedBundleChanges);
+    const criterionEntries = Object.values(stagedCriterionChanges);
+    let appliedCount = 0;
 
     try {
-      await runner();
-      router.refresh();
-      if (successMessage) {
-        setToast({
-          tone: "info",
-          message: successMessage,
+      for (const change of fileEntries) {
+        await applyStagedFileChange(change);
+        appliedCount += 1;
+        setStagedFileChanges((current) => {
+          const next = { ...current };
+          delete next[change.item.id];
+          return next;
         });
       }
+
+      for (const change of bundleEntries) {
+        await applyStagedBundleChange(change);
+        appliedCount += 1;
+        setStagedBundleChanges((current) => {
+          const next = { ...current };
+          delete next[change.item.id];
+          return next;
+        });
+      }
+
+      for (const change of criterionEntries) {
+        await applyStagedCriterionChange(change);
+        appliedCount += 1;
+        setStagedCriterionChanges((current) => {
+          const next = { ...current };
+          delete next[change.item.id];
+          return next;
+        });
+      }
+
+      setToast({
+        tone: "info",
+        message:
+          appliedCount === 1
+            ? "Applied 1 staged review change."
+            : `Applied ${appliedCount} staged review changes.`,
+      });
+      setAwaitingServerStateKey(serverStateKey);
+      setAwaitingServerRefresh(true);
+      setStagedFileChanges({});
+      setStagedBundleChanges({});
+      setStagedCriterionChanges({});
+      router.refresh();
     } catch (error) {
-      setViewState(snapshot);
       setToast({
         tone: "error",
         message:
           error instanceof Error
-            ? error.message
-            : "Setu could not save that review action.",
+            ? `${error.message} Any earlier staged changes that already applied were kept; the remaining staged changes are still waiting here.`
+            : "Setu could not apply every staged review change. Remaining changes are still staged.",
       });
     } finally {
       setBusyKey(null);
@@ -948,7 +1362,7 @@ export function ActionItemsSummary({
   }
 
   function handleKeepFile(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Keeping file in the active review set",
       (state) => addToBundleReviewGroups(
@@ -958,36 +1372,64 @@ export function ActionItemsSummary({
         },
         { ...item, reviewStatus: "kept" as const },
       ),
-      async () => {
-        await patchReviewStatus(item.id, "kept");
+      () => {
+        setStagedFileChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            status: "kept",
+          },
+        }));
       },
     );
   }
 
   function handleMoveToReference(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Moving file to Reference",
       (state) => moveItemToReference(state, item),
-      async () => {
-        await patchReviewStatus(item.id, "reference");
+      () => {
+        setStagedFileChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            status: "reference",
+          },
+        }));
+        setStagedBundleChanges((current) => {
+          const next = { ...current };
+          delete next[item.id];
+          return next;
+        });
       },
     );
   }
 
   function handleMoveToArchive(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Moving file to Archive",
       (state) => moveItemToArchive(state, item),
-      async () => {
-        await patchReviewStatus(item.id, "archived");
+      () => {
+        setStagedFileChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            status: "archived",
+          },
+        }));
+        setStagedBundleChanges((current) => {
+          const next = { ...current };
+          delete next[item.id];
+          return next;
+        });
       },
     );
   }
 
   function handleReturnFromReference(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Returning file to active review",
       (state) =>
@@ -998,28 +1440,40 @@ export function ActionItemsSummary({
           },
           { ...item, reviewStatus: "kept" as const },
         ),
-      async () => {
-        await patchReviewStatus(item.id, "kept");
+      () => {
+        setStagedFileChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            status: "kept",
+          },
+        }));
       },
     );
   }
 
   function handleAcceptBundle(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Confirming the bundle fit",
       (state) => ({
         ...state,
         bundleReviewGroups: removeItemFromGroups(state.bundleReviewGroups, item.id),
       }),
-      async () => {
-        await patchDocumentBundleDecision(item.jobId, item.id, "accepted");
+      () => {
+        setStagedBundleChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "accepted",
+          },
+        }));
       },
     );
   }
 
   function handleMarkOtherBundle(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Holding file for a later bundle decision",
       (state) =>
@@ -1030,14 +1484,20 @@ export function ActionItemsSummary({
           },
           { ...item, reviewStatus: "kept" as const },
         ),
-      async () => {
-        await patchDocumentBundleDecision(item.jobId, item.id, "other");
+      () => {
+        setStagedBundleChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "other",
+          },
+        }));
       },
     );
   }
 
   function handleReturnFromOtherBundle(item: ReviewDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Returning file to bundle review",
       (state) =>
@@ -1048,8 +1508,14 @@ export function ActionItemsSummary({
           },
           { ...item, reviewStatus: "kept" as const },
         ),
-      async () => {
-        await patchDocumentBundleDecision(item.jobId, item.id, "clear");
+      () => {
+        setStagedBundleChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "clear",
+          },
+        }));
       },
     );
   }
@@ -1059,7 +1525,7 @@ export function ActionItemsSummary({
     option: ReviewWorkspaceBundleOption | { kind: "create" },
     source: "bundle" | "other-bundle",
   ) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Moving file into the selected bundle",
       (state) => ({
@@ -1073,24 +1539,22 @@ export function ActionItemsSummary({
             ? removeItemFromGroups(state.otherBundleGroups, item.id)
             : state.otherBundleGroups,
       }),
-      async () => {
-        if (option.kind === "create") {
-          const created = await createBundleForItem(item);
-          await moveToBundle(item, {
-            id: created.id,
-            jobId: item.jobId,
-            parentBundleId: created.parentBundleId,
-            name: created.name,
-            documentCount: 1,
-            kind: "sub_bundle",
-          });
-        } else {
-          await moveToBundle(item, option);
-        }
-
-        await patchDocumentBundleDecision(item.jobId, item.id, "accepted");
+      () => {
+        setStagedBundleChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "move",
+            target:
+              option.kind === "create"
+                ? {
+                    kind: "create",
+                    name: `New bundle — ${item.title.slice(0, 36)}`,
+                  }
+                : option,
+          },
+        }));
       },
-      "Bundle assignment saved.",
     );
   }
 
@@ -1105,18 +1569,20 @@ export function ActionItemsSummary({
       return;
     }
 
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Confirming the bundle criterion",
       (state) => removeBundleItem(state, item.id, "criterion"),
-      async () => {
-        if (item.bucketCode !== targetCriterionCode) {
-          await patchBundleCategory(item, targetCriterionCode);
-        }
-
-        await patchBundleCriterionDecision(item.jobId, item.id, "accepted", targetCriterionCode);
+      () => {
+        setStagedCriterionChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "accept",
+            criterionCode: targetCriterionCode,
+          },
+        }));
       },
-      "Criterion assignment confirmed.",
     );
   }
 
@@ -1126,47 +1592,53 @@ export function ActionItemsSummary({
       return;
     }
 
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Assigning the bundle to a criterion",
       (state) => removeBundleItem(state, item.id, source),
-      async () => {
-        await patchBundleCategory(item, criterionCode);
-        await patchBundleCriterionDecision(item.jobId, item.id, "accepted", criterionCode);
+      () => {
+        setStagedCriterionChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "accept",
+            criterionCode,
+          },
+        }));
       },
-      "Criterion assignment saved.",
     );
   }
 
   function handleMarkOtherCriterion(item: ReviewBundleDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Holding bundle in OTHER",
       (state) => addBundleToOtherCriterion(state, item),
-      async () => {
-        if (item.bucketCode !== OTHER_REVIEW_BUCKET_CODE) {
-          await patchBundleCategory(item, OTHER_REVIEW_BUCKET_CODE);
-        }
-
-        await patchBundleCriterionDecision(item.jobId, item.id, "other", null);
+      () => {
+        setStagedCriterionChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "other",
+          },
+        }));
       },
-      "Bundle moved to OTHER.",
     );
   }
 
   function handleReturnFromOtherCriterion(item: ReviewBundleDecisionItem) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Returning bundle to criterion review",
       (state) => addBundleToCriterionQueue(state, item),
-      async () => {
-        await patchBundleCategory(
-          item,
-          item.bucketCode && item.bucketCode !== OTHER_REVIEW_BUCKET_CODE
-            ? item.bucketCode
-            : "REVIEW",
-        );
-        await patchBundleCriterionDecision(item.jobId, item.id, "clear", null);
+      () => {
+        setStagedCriterionChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "clear",
+          },
+        }));
       },
     );
   }
@@ -1175,15 +1647,19 @@ export function ActionItemsSummary({
     item: ReviewBundleDecisionItem,
     source: "criterion" | "other-criterion",
   ) {
-    void runViewStateAction(
+    stageViewStateAction(
       item.id,
       "Archiving the bundle from criterion review",
       (state) => moveBundleItemToArchive(state, item, source),
-      async () => {
-        await patchBulkReviewStatus(item.documentIds, "archived");
-        await patchBundleCriterionDecision(item.jobId, item.id, "clear", null);
+      () => {
+        setStagedCriterionChanges((current) => ({
+          ...current,
+          [item.id]: {
+            item,
+            kind: "archive",
+          },
+        }));
       },
-      "Bundle archived from review.",
     );
   }
 
@@ -1755,16 +2231,16 @@ export function ActionItemsSummary({
       <div className="rounded-[20px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
           <div className="inline-flex w-full flex-wrap items-center gap-1 rounded-[10px] bg-[var(--paper-secondary)] p-1 xl:w-auto">
-            <button type="button" onClick={() => setReviewMode("inbox")} className={reviewModeButtonClass(reviewMode === "inbox")}>
+            <button type="button" onClick={() => updateReviewMode("inbox")} className={reviewModeButtonClass(reviewMode === "inbox")}>
               Inbox
             </button>
-            <button type="button" onClick={() => setReviewMode("table")} className={reviewModeButtonClass(reviewMode === "table")}>
+            <button type="button" onClick={() => updateReviewMode("table")} className={reviewModeButtonClass(reviewMode === "table")}>
               Table
             </button>
-            <button type="button" onClick={() => setReviewMode("workbench")} className={reviewModeButtonClass(reviewMode === "workbench")}>
+            <button type="button" onClick={() => updateReviewMode("workbench")} className={reviewModeButtonClass(reviewMode === "workbench")}>
               Workbench
             </button>
-            <button type="button" onClick={() => setReviewMode("by-category")} className={reviewModeButtonClass(reviewMode === "by-category")}>
+            <button type="button" onClick={() => updateReviewMode("by-category")} className={reviewModeButtonClass(reviewMode === "by-category")}>
               By category
             </button>
           </div>
@@ -1778,6 +2254,45 @@ export function ActionItemsSummary({
             <span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[var(--brand-deep)]">
               {heldLaterCount}
             </span>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              Staged review changes
+            </p>
+            <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
+              <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[var(--foreground)]">
+                Files {stagedFileCount}
+              </span>
+              <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[var(--foreground)]">
+                Bundles {stagedBundleCount}
+              </span>
+              <span className="rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[var(--foreground)]">
+                Criteria {stagedCriterionCount}
+              </span>
+            </div>
+            <p className="text-[11px] leading-5 text-[var(--muted)]">
+              Review actions now stage locally first. Give everything a final glance, then apply the staged set in one pass.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => resetStagedChanges({ message: "Discarded the staged review changes." })}
+              disabled={!hasStagedChanges || Boolean(busyKey)}
+              className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Discard staged changes
+            </button>
+            <button
+              type="button"
+              onClick={() => void applyAllStagedChanges()}
+              disabled={!hasStagedChanges || Boolean(busyKey)}
+              className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Accept all staged changes
+            </button>
           </div>
         </div>
       </div>
@@ -1940,13 +2455,13 @@ export function ActionItemsSummary({
               <table className="min-w-full text-left">
                 <thead className="bg-[var(--paper-tertiary)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                   <tr>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">AI summary</th>
-                    <th className="px-4 py-3">Workspace</th>
-                    <th className="px-4 py-3">Stage</th>
-                    <th className="px-4 py-3">Bundle</th>
-                    <th className="px-4 py-3">Confidence</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Name", "name")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Type", "type")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("AI summary", "summary")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Workspace", "workspace")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Stage", "stage")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Bundle", "bundle")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Confidence", "confidence")}</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -1959,7 +2474,7 @@ export function ActionItemsSummary({
                             type="button"
                             onClick={() => {
                               setSelectedFocusKey(entry.key);
-                              setReviewMode("workbench");
+                              updateReviewMode("workbench");
                             }}
                             className="text-left"
                           >
@@ -2184,8 +2699,13 @@ export function ActionItemsSummary({
               defaultOpen={fileDecisionCount > 0}
               headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
             >
-              {viewState.fileDecisionItems.length ? (
-                viewState.fileDecisionItems.map((item) => (
+              {stagedFileCount > 0 ? (
+                <p className="mb-3 rounded-[12px] border border-[var(--brand)]/20 bg-[var(--brand-soft)]/55 px-3 py-2 text-[11px] leading-5 text-[var(--brand-deep)]">
+                  {stagedFileCount} file change{stagedFileCount === 1 ? "" : "s"} staged locally. Review the queue, then use <strong>Accept all staged changes</strong> when you are ready.
+                </p>
+              ) : null}
+              {effectiveViewState.fileDecisionItems.length ? (
+                effectiveViewState.fileDecisionItems.map((item) => (
                   <WorkflowDocumentCard
                     key={item.id}
                     item={item}
@@ -2216,8 +2736,13 @@ export function ActionItemsSummary({
               defaultOpen={bundleDecisionCount > 0}
               headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
             >
-              {viewState.bundleReviewGroups.length ? (
-                viewState.bundleReviewGroups.map((group) => (
+              {stagedBundleCount > 0 ? (
+                <p className="mb-3 rounded-[12px] border border-[var(--brand)]/20 bg-[var(--brand-soft)]/55 px-3 py-2 text-[11px] leading-5 text-[var(--brand-deep)]">
+                  {stagedBundleCount} bundle change{stagedBundleCount === 1 ? "" : "s"} staged locally. Files will keep their previewed placement until you apply the staged set.
+                </p>
+              ) : null}
+              {effectiveViewState.bundleReviewGroups.length ? (
+                effectiveViewState.bundleReviewGroups.map((group) => (
                   <div
                     key={group.key}
                     className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
@@ -2267,8 +2792,13 @@ export function ActionItemsSummary({
               defaultOpen={criterionDecisionCount > 0}
               headerChipClassName="bg-[var(--brand-soft)] text-[var(--brand-deep)]"
             >
-              {viewState.criterionReviewQueue.length ? (
-                viewState.criterionReviewQueue.map((item) => (
+              {stagedCriterionCount > 0 ? (
+                <p className="mb-3 rounded-[12px] border border-[var(--brand)]/20 bg-[var(--brand-soft)]/55 px-3 py-2 text-[11px] leading-5 text-[var(--brand-deep)]">
+                  {stagedCriterionCount} criterion change{stagedCriterionCount === 1 ? "" : "s"} staged locally. Use the final apply step once the overall review looks right.
+                </p>
+              ) : null}
+              {effectiveViewState.criterionReviewQueue.length ? (
+                effectiveViewState.criterionReviewQueue.map((item) => (
                   <WorkflowBundleCard
                     key={item.id}
                     item={item}
@@ -2298,12 +2828,12 @@ export function ActionItemsSummary({
               defaultOpen={heldLaterCount > 0}
               headerChipClassName="bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
             >
-              {viewState.referenceItems.length ? (
+              {effectiveViewState.referenceItems.length ? (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Reference
                   </p>
-                  {viewState.referenceItems.map((item) => (
+                  {effectiveViewState.referenceItems.map((item) => (
                     <WorkflowDocumentCard
                       key={item.id}
                       item={item}
@@ -2345,12 +2875,12 @@ export function ActionItemsSummary({
                 </div>
               ) : null}
 
-              {viewState.otherBundleGroups.length ? (
+              {effectiveViewState.otherBundleGroups.length ? (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Bundling placeholder
                   </p>
-                  {viewState.otherBundleGroups.map((group) => (
+                  {effectiveViewState.otherBundleGroups.map((group) => (
                     <div
                       key={group.key}
                       className="space-y-3 rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-3 py-3"
@@ -2383,12 +2913,12 @@ export function ActionItemsSummary({
                 </div>
               ) : null}
 
-              {viewState.otherCriterionQueue.length ? (
+              {effectiveViewState.otherCriterionQueue.length ? (
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
                     Category placeholder
                   </p>
-                  {viewState.otherCriterionQueue.map((item) => (
+                  {effectiveViewState.otherCriterionQueue.map((item) => (
                     <WorkflowBundleCard
                       key={item.id}
                       item={item}
@@ -2420,8 +2950,8 @@ export function ActionItemsSummary({
               note="These files already cleared keep/archive, bundle fit, and criterion fit."
               defaultOpen={readyCount > 0}
             >
-              {viewState.readyBands.length ? (
-                viewState.readyBands.map((band) => (
+              {effectiveViewState.readyBands.length ? (
+                effectiveViewState.readyBands.map((band) => (
                   <CategoryBand
                     key={band.key}
                     legalCode=""
@@ -2451,15 +2981,15 @@ export function ActionItemsSummary({
             <CategoryBand
               legalCode="Archive"
               title="Archived out of the active petition set"
-              taggedCount={viewState.archiveCount}
+              taggedCount={effectiveViewState.archiveCount}
               decisionCount={0}
-              routineCount={viewState.archiveCount}
+              routineCount={effectiveViewState.archiveCount}
               note="Archived files stay available in the dense workbench, but they are no longer part of the active review workflow."
             >
               <RoutineRow
                 label="archived file"
-                count={viewState.archiveCount}
-                samples={viewState.archiveSampleTitles}
+                count={effectiveViewState.archiveCount}
+                samples={effectiveViewState.archiveSampleTitles}
                 href={archiveReviewHref}
               />
             </CategoryBand>

@@ -182,6 +182,7 @@ The current review UX supports four complementary working modes:
 - `Workbench` for detailed master-detail inspection
 - `By category` for structured category and queue cleanup
 - permanent `FILE` and `BUNDLE` badges plus explicit action labels so the reviewer always knows whether a decision applies to one evidence file or a grouped bundle
+- local staging so the reviewer can queue multiple file, bundle, and criterion decisions and apply the full set only after a final glance
 
 The human-review sequence is intentionally staged:
 
@@ -194,6 +195,12 @@ When the reviewer is not ready to make a final bundle or criterion call, Setu ex
 ### Workspace dashboard
 
 The workspace dashboard remains for operational intake, job progress, and dense workspace intervention.
+
+It now also reports intake cleanup automatically:
+
+- exact duplicate files are skipped before indexing by checksum
+- macOS `.DS_Store` files are auto-archived immediately
+- the dashboard shows a simple intake report for indexed, skipped, and auto-archived files
 
 ### Strategy stage
 

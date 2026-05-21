@@ -44,6 +44,7 @@ The live app at `http://localhost:3001` currently supports:
 - human review states: `kept`, `pending`, `reference`, `archived`
 - manual overrides for evidence, event bundles, and criteria placement
 - human-review action bands with visible `Assign criterion` / `Actions` controls plus right-click shortcuts
+- staged human-review changes with a final `Accept all staged changes` apply step across file, bundle, and criterion decisions
 - client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders
@@ -58,6 +59,7 @@ The live app at `http://localhost:3001` currently supports:
 - prompt editing through Prompt Library
 - tracked OpenAI cost by pipeline stage
 - local packet preview and filable PDF generation
+- intake duplicate detection and automatic `.DS_Store` archiving with an end-of-intake report
 
 ## Lifecycle routes
 
@@ -156,6 +158,7 @@ The client review page is action-oriented. It emphasizes:
   - keep or archive the file
   - confirm the right bundle
   - confirm the right criterion
+- local staging so a reviewer can queue multiple file, bundle, and criterion decisions, then apply them together once the overall review looks right
 - an `OTHER` placeholder bucket for evidence or bundles that should stay visible but be revisited later
 
 ### Strategy stage

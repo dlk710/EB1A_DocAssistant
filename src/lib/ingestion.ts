@@ -130,7 +130,9 @@ export function startIngestionJob(jobId: string) {
 
       markJobProcessing(jobId);
       const documents = getJobDocuments(jobId);
-      const queuedDocuments = await documents;
+      const queuedDocuments = (await documents).filter(
+        (document) => document.processingStatus === "queued",
+      );
 
       for (const document of queuedDocuments) {
         if (isJobCancellationRequested(jobId)) {

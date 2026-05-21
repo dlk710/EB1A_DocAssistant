@@ -1,4 +1,4 @@
-import type { JobRecord } from "@/lib/types";
+import type { DuplicateDocumentReport, JobRecord, SystemArchiveReport } from "@/lib/types";
 import { readStateFile, writeStateFile } from "@/lib/state-store";
 
 interface JobsState {
@@ -16,6 +16,41 @@ function readJobsState(): JobsState {
       clientId: job.clientId ?? "",
       candidateName: job.candidateName ?? "",
       cancellationRequestedAt: job.cancellationRequestedAt ?? null,
+      duplicateReport:
+        job.duplicateReport &&
+        typeof job.duplicateReport === "object" &&
+        Array.isArray(job.duplicateReport.groups)
+          ? {
+              selectedFiles: Number(job.duplicateReport.selectedFiles ?? job.totalFiles ?? 0),
+              uniqueFiles: Number(job.duplicateReport.uniqueFiles ?? job.totalFiles ?? 0),
+              skippedDuplicateFiles: Number(job.duplicateReport.skippedDuplicateFiles ?? 0),
+              groups: job.duplicateReport.groups
+                .filter((group) => group && typeof group === "object")
+                .map((group) => ({
+                  checksum: String(group.checksum ?? ""),
+                  keptRelativePath: String(group.keptRelativePath ?? ""),
+                  duplicateRelativePaths: Array.isArray(group.duplicateRelativePaths)
+                    ? group.duplicateRelativePaths.map((value) => String(value))
+                    : [],
+                }))
+                .filter((group) => group.keptRelativePath && group.duplicateRelativePaths.length),
+            }
+          : null,
+      systemArchiveReport:
+        job.systemArchiveReport &&
+        typeof job.systemArchiveReport === "object" &&
+        Array.isArray(job.systemArchiveReport.files)
+          ? {
+              autoArchivedFiles: Number(job.systemArchiveReport.autoArchivedFiles ?? 0),
+              files: job.systemArchiveReport.files
+                .filter((file) => file && typeof file === "object")
+                .map((file) => ({
+                  relativePath: String(file.relativePath ?? ""),
+                  reason: String(file.reason ?? ""),
+                }))
+                .filter((file) => file.relativePath),
+            }
+          : null,
     })),
   };
 }
@@ -35,7 +70,10 @@ function updateJob(jobId: string, updater: (job: JobRecord) => JobRecord) {
 }
 
 export function createJob(
-  job: Pick<JobRecord, "id" | "clientId" | "candidateName" | "folderLabel" | "totalFiles">,
+  job: Pick<JobRecord, "id" | "clientId" | "candidateName" | "folderLabel" | "totalFiles"> & {
+    duplicateReport?: DuplicateDocumentReport | null;
+    systemArchiveReport?: SystemArchiveReport | null;
+  },
 ) {
   const state = readJobsState();
   state.jobs = sortJobs([
@@ -53,6 +91,8 @@ export function createJob(
       startedAt: null,
       completedAt: null,
       error: null,
+      duplicateReport: job.duplicateReport ?? null,
+      systemArchiveReport: job.systemArchiveReport ?? null,
     },
     ...state.jobs,
   ]);

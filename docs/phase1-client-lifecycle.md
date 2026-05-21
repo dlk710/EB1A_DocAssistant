@@ -77,6 +77,7 @@ The client review page emphasizes:
   - file decision
   - bundle review
   - criterion review
+- local staging with `Accept all staged changes`, so reviewers can queue multiple changes, glance across the full review surface, and then persist the whole set in one pass
 - an `OTHER` placeholder for evidence or bundles that should stay visible for later correction
 
 The most important behavioral rule is:
@@ -129,3 +130,11 @@ Phase 1 does **not** replace:
 - the original-file preview and export model
 
 Those remain the core substrate under the new lifecycle shell.
+
+## Intake cleanup
+
+Phase 1 now also hardens the intake edge:
+
+- exact duplicate files are detected by checksum within the uploaded folder and skipped before AI processing
+- macOS `.DS_Store` files are auto-archived immediately
+- the workspace dashboard shows an intake report so the operator can see what was indexed, skipped, or auto-archived

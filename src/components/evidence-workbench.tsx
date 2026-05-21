@@ -41,12 +41,14 @@ import {
 } from "lucide-react";
 import type {
   ClientDocument,
+  DuplicateDocumentReport,
   EventBundleKind,
   JobRecord,
   LibrarySnapshot,
   ReviewBucketKind,
   SearchResult,
   SettingsSnapshot,
+  SystemArchiveReport,
   WorkspaceCriteriaTaggingState,
   WorkspaceEb1aClassificationState,
   WorkspaceEventBundleState,
@@ -1237,6 +1239,67 @@ function getJobProgress(job: JobRecord | null) {
   return Math.min((job.processedFiles / job.totalFiles) * 100, 100);
 }
 
+function getJobDuplicateReport(job: JobRecord | null): DuplicateDocumentReport | null {
+  if (!job?.duplicateReport || job.duplicateReport.skippedDuplicateFiles <= 0) {
+    return null;
+  }
+
+  return job.duplicateReport;
+}
+
+function getJobSystemArchiveReport(job: JobRecord | null): SystemArchiveReport | null {
+  if (!job?.systemArchiveReport || job.systemArchiveReport.autoArchivedFiles <= 0) {
+    return null;
+  }
+
+  return job.systemArchiveReport;
+}
+
+function getDuplicateReportSuffix(job: JobRecord | null) {
+  const report = getJobDuplicateReport(job);
+  if (!report) {
+    return "";
+  }
+
+  return ` ${report.skippedDuplicateFiles} exact duplicate file(s) were skipped before indexing, so Setu kept ${report.uniqueFiles} unique file(s).`;
+}
+
+function getSystemArchiveReportSuffix(job: JobRecord | null) {
+  const report = getJobSystemArchiveReport(job);
+
+  if (!report) {
+    return "";
+  }
+
+  return ` ${report.autoArchivedFiles} macOS .DS_Store file(s) were auto-archived before AI indexing.`;
+}
+
+function getIntakeReportSuffix(job: JobRecord | null) {
+  return `${getDuplicateReportSuffix(job)}${getSystemArchiveReportSuffix(job)}`;
+}
+
+function getDuplicateReportSummary(report: DuplicateDocumentReport | null) {
+  if (!report) {
+    return null;
+  }
+
+  const groupLabel = report.groups.length === 1 ? "group" : "groups";
+
+  return `Skipped ${report.skippedDuplicateFiles} exact duplicate file(s) across ${report.groups.length} duplicate ${groupLabel}. Setu kept the first copy in each group and indexed ${report.uniqueFiles} unique file(s).`;
+}
+
+function getSystemArchiveReportSummary(report: SystemArchiveReport | null) {
+  if (!report) {
+    return null;
+  }
+
+  return `Auto-archived ${report.autoArchivedFiles} macOS .DS_Store system file(s) directly into Archive so they stay out of bundling, classification, and human review.`;
+}
+
+function getPathLeafName(value: string) {
+  return value.split("/").filter(Boolean).pop() || value;
+}
+
 function stageStatusLabel(status: ReviewPipelineStageStatus) {
   if (status === "completed") {
     return "Done";
@@ -1520,11 +1583,12 @@ function buildReviewPipeline(input: {
       ? input.activeJob.error || `Indexing stopped for ${input.activeJob.folderLabel}.`
       : input.activeJob.status === "canceling"
         ? `Cancellation was requested for ${input.activeJob.folderLabel}. The current file will stop before the next pipeline step begins.`
+          + getIntakeReportSuffix(input.activeJob)
       : input.activeJob.status === "queued"
-        ? `${input.activeJob.folderLabel} is queued and waiting for parsing to begin.`
+        ? `${input.activeJob.folderLabel} is queued and waiting for parsing to begin.${getIntakeReportSuffix(input.activeJob)}`
         : input.activeJob.status === "processing"
-          ? `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) processed.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) have already failed.` : ""}`
-          : `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) finished indexing.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) need follow-up.` : ""}`,
+          ? `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) processed.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) have already failed.` : ""}${getIntakeReportSuffix(input.activeJob)}`
+          : `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) finished indexing.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) need follow-up.` : ""}${getIntakeReportSuffix(input.activeJob)}`,
     progress:
       input.activeJob.status === "processing" ||
       input.activeJob.status === "canceling" ||
@@ -1812,7 +1876,7 @@ function buildWorkspaceActivity(input: {
     return {
       tone: "border-sky-200 bg-sky-50 text-sky-800",
       title: "Folder queued for indexing",
-      detail: `The folder ${input.activeJob.folderLabel} is isolated as its own workspace and is waiting for parsing to start.`,
+      detail: `The folder ${input.activeJob.folderLabel} is isolated as its own workspace and is waiting for parsing to start.${getIntakeReportSuffix(input.activeJob)}`,
       progress: getJobProgress(input.activeJob),
     };
   }
@@ -1830,7 +1894,7 @@ function buildWorkspaceActivity(input: {
     return {
       tone: "border-sky-200 bg-sky-50 text-sky-800",
       title: "Indexing is in progress",
-      detail: `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) have been processed for ${input.activeJob.folderLabel}.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) have failed so far.` : ""}`,
+      detail: `${input.activeJob.processedFiles} of ${input.activeJob.totalFiles} file(s) have been processed for ${input.activeJob.folderLabel}.${input.activeJob.failedFiles ? ` ${input.activeJob.failedFiles} file(s) have failed so far.` : ""}${getIntakeReportSuffix(input.activeJob)}`,
       progress: getJobProgress(input.activeJob),
     };
   }
@@ -2227,6 +2291,10 @@ export function EvidenceWorkbench({
   const selectedVisibleDocument =
     visibleDocuments.find((document) => document.id === selectedDocumentId) ?? null;
   const activeJob = library.activeJob;
+  const activeDuplicateReport = getJobDuplicateReport(activeJob);
+  const activeSystemArchiveReport = getJobSystemArchiveReport(activeJob);
+  const duplicateReportSummary = getDuplicateReportSummary(activeDuplicateReport);
+  const systemArchiveReportSummary = getSystemArchiveReportSummary(activeSystemArchiveReport);
   const activeJobProgress = getJobProgress(activeJob);
   const workspaceJobs = [...library.jobs].sort(
     (left, right) =>
@@ -3061,8 +3129,27 @@ export function EvidenceWorkbench({
         searchParams.set("jobId", payload.jobId);
         router.replace(`/?${searchParams.toString()}`);
       }
+      const skippedDuplicateFiles = Number(payload.skippedDuplicateFiles ?? 0);
+      const autoArchivedSystemFiles = Number(payload.autoArchivedSystemFiles ?? 0);
+      const uniqueFiles = Number(payload.uniqueFiles ?? payload.totalFiles ?? 0);
+      const intakeNotes: string[] = [];
+
+      if (skippedDuplicateFiles > 0) {
+        intakeNotes.push(
+          `${skippedDuplicateFiles} exact duplicate file(s) were skipped after checksum matching.`,
+        );
+      }
+
+      if (autoArchivedSystemFiles > 0) {
+        intakeNotes.push(
+          `${autoArchivedSystemFiles} macOS .DS_Store file(s) were auto-archived immediately.`,
+        );
+      }
+
       setBannerMessage(
-        `Started indexing ${payload.totalFiles} files for ${payload.candidateName} from ${payload.folderLabel}.`,
+        intakeNotes.length
+          ? `Started indexing ${uniqueFiles} unique file(s) for ${payload.candidateName} from ${payload.folderLabel}. ${intakeNotes.join(" ")}`
+          : `Started indexing ${payload.totalFiles} file(s) for ${payload.candidateName} from ${payload.folderLabel}.`,
       );
       await refreshLibrary(payload.jobId);
     } catch (error) {
@@ -4444,7 +4531,13 @@ export function EvidenceWorkbench({
                         files while indexing continues.
                       </p>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-3">
+                    <div
+                      className={`grid gap-2 ${
+                        activeDuplicateReport || activeSystemArchiveReport
+                          ? "sm:grid-cols-5"
+                          : "sm:grid-cols-3"
+                      }`}
+                    >
                       <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
                         <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
                           Processed
@@ -4469,8 +4562,104 @@ export function EvidenceWorkbench({
                           {Math.round(activeJobProgress)}%
                         </p>
                       </div>
+                      {activeDuplicateReport ? (
+                        <div className="rounded-[12px] border border-[var(--state-warning)]/20 bg-[var(--state-warning-soft)]/65 px-3 py-2">
+                          <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                            Exact duplicates skipped
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+                            {activeDuplicateReport.skippedDuplicateFiles}
+                          </p>
+                        </div>
+                      ) : null}
+                      {activeSystemArchiveReport ? (
+                        <div className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2">
+                          <p className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--muted)]">
+                            .DS_Store archived
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold text-[var(--foreground)]">
+                            {activeSystemArchiveReport.autoArchivedFiles}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
+                  {activeDuplicateReport || activeSystemArchiveReport ? (
+                    <div className="mt-3 rounded-[14px] border border-[var(--state-warning)]/20 bg-[var(--state-warning-soft)]/55 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                        Intake report
+                      </p>
+                      {duplicateReportSummary ? (
+                        <p className="mt-1 text-[12px] leading-5 text-[var(--foreground)]">
+                          {duplicateReportSummary}
+                        </p>
+                      ) : null}
+                      {systemArchiveReportSummary ? (
+                        <p className="mt-1 text-[12px] leading-5 text-[var(--foreground)]">
+                          {systemArchiveReportSummary}
+                        </p>
+                      ) : null}
+                      {activeDuplicateReport ? (
+                        <>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {activeDuplicateReport.groups.slice(0, 4).map((group) => (
+                              <div
+                                key={`${group.checksum}:${group.keptRelativePath}`}
+                                className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2"
+                              >
+                                <p
+                                  className="truncate text-[11px] font-semibold text-[var(--foreground)]"
+                                  title={group.keptRelativePath}
+                                >
+                                  Kept {getPathLeafName(group.keptRelativePath)}
+                                </p>
+                                <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                                  Skipped {group.duplicateRelativePaths.length} exact duplicate
+                                  {group.duplicateRelativePaths.length === 1 ? "" : "s"}.
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          {activeDuplicateReport.groups.length > 4 ? (
+                            <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                              {activeDuplicateReport.groups.length - 4} more duplicate group
+                              {activeDuplicateReport.groups.length - 4 === 1 ? "" : "s"} were
+                              skipped in this workspace.
+                            </p>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {activeSystemArchiveReport ? (
+                        <>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {activeSystemArchiveReport.files.slice(0, 4).map((file) => (
+                              <div
+                                key={file.relativePath}
+                                className="rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-3 py-2"
+                              >
+                                <p
+                                  className="truncate text-[11px] font-semibold text-[var(--foreground)]"
+                                  title={file.relativePath}
+                                >
+                                  Archived {getPathLeafName(file.relativePath)}
+                                </p>
+                                <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                                  {file.reason}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          {activeSystemArchiveReport.files.length > 4 ? (
+                            <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                              {activeSystemArchiveReport.files.length - 4} more system file
+                              {activeSystemArchiveReport.files.length - 4 === 1 ? "" : "s"} were
+                              auto-archived in this workspace.
+                            </p>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-3 overflow-hidden rounded-[14px] border border-[var(--border-secondary)]">
                     <div className="max-h-[25rem] overflow-auto">
                       <table className="min-w-full text-left text-[12px]">
@@ -6382,6 +6571,12 @@ export function EvidenceWorkbench({
                           {activeJob.candidateName ? `${activeJob.candidateName} • ` : ""}
                           {activeJob.processedFiles}/{activeJob.totalFiles} processed
                           {activeJob.failedFiles ? `, ${activeJob.failedFiles} failed` : ""}
+                          {activeDuplicateReport
+                            ? `, ${activeDuplicateReport.skippedDuplicateFiles} duplicates skipped`
+                            : ""}
+                          {activeSystemArchiveReport
+                            ? `, ${activeSystemArchiveReport.autoArchivedFiles} .DS_Store archived`
+                            : ""}
                         </p>
                       </div>
                       <span
@@ -6402,6 +6597,16 @@ export function EvidenceWorkbench({
                       Current folder view. Only this workspace backend is shown in the review
                       surface.
                     </p>
+                    {duplicateReportSummary ? (
+                      <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
+                        {duplicateReportSummary}
+                      </p>
+                    ) : null}
+                    {systemArchiveReportSummary ? (
+                      <p className="mt-2 text-[10px] leading-5 text-[var(--muted)]">
+                        {systemArchiveReportSummary}
+                      </p>
+                    ) : null}
                   </div>
 
                   <label className="block">

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { eventBundleCandidateJsonSchema, eventBundleCandidateSchema } from "@/lib/event-bundle-schema";
 import { normalizePrimaryDate } from "@/lib/date";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
+import { buildFolderContext } from "@/lib/folder-context";
 import { clearJobCancellationRequest, getJob, isJobCancellationRequested } from "@/lib/jobs";
 import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
@@ -19,7 +20,7 @@ interface EventBundleStateFile {
 }
 
 const EVENT_BUNDLES_FILE = "event-bundles.json";
-const EVENT_BUNDLE_VERSION = 13;
+const EVENT_BUNDLE_VERSION = 14;
 const AUXILIARY_BUNDLE_MERGE_THRESHOLD = 5;
 
 declare global {
@@ -176,10 +177,17 @@ function buildWorkspaceDocumentDigest(documents: StoredDocument[]) {
         !getFilenameReviewDisposition(document.fileName),
     )
     .map((document) => {
+      const folderContext = buildFolderContext(document.relativePath, document.folderLabel);
+
       return {
         id: document.id,
         fileName: document.fileName,
         relativePath: document.relativePath,
+        rootFolder: folderContext.rootFolder,
+        folderPath: folderContext.folderPath,
+        folderSegments: folderContext.folderSegments,
+        folderHints: folderContext.folderHints,
+        leafFolder: folderContext.leafFolder,
         documentType: document.summary?.documentType || document.extension || "File",
         title: document.summary?.title || document.fileName,
         shortSummary: document.summary?.shortSummary || "Summary unavailable.",
@@ -649,6 +657,7 @@ async function generateEventBundles(
             type: "input_text",
             text: [
               `Workspace job ID: ${jobId}`,
+              "Original upload-folder names and nested folder labels are preserved in the document digest below. Treat them as organizational hints when they align with the summaries, but do not copy raw paths as final bundle names.",
               "Completed evidence documents:",
               JSON.stringify(documentDigest, null, 2),
             ].join("\n\n"),

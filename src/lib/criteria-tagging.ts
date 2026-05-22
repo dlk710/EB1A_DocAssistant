@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { tagDocumentCriteria } from "@/lib/ai";
+import { buildFolderContextText } from "@/lib/folder-context";
 import {
   clearJobCancellationRequest,
   getJob,
@@ -20,7 +21,7 @@ interface CriteriaTaggingStateFile {
 }
 
 const CRITERIA_TAGGING_FILE = "criteria-tagging.json";
-const CRITERIA_TAGGING_VERSION = 2;
+const CRITERIA_TAGGING_VERSION = 3;
 
 declare global {
   var __eb1aActiveTaggingJobs: Set<string> | undefined;
@@ -265,6 +266,10 @@ async function runWorkspaceCriteriaTaggingJob(
             bundle.eventType,
             bundle.shortSummary,
             bundle.detailedSummary,
+            buildFolderContextText(
+              document.relativePath,
+              document.folderLabel,
+            ),
           ]
             .filter(Boolean)
             .join(" ")

@@ -67,11 +67,13 @@ The client review page emphasizes:
 - routine items
 - category bands
 - archive and cleanup bands
-- four working modes:
+- five working modes:
   - `Inbox`
   - `Table`
+  - `Routing`
   - `Workbench`
   - `By category`
+- a folder-first routing matrix so a reviewer can scan proposed event names, proposed bundle names, proposed criteria, decision basis, and current placement before applying changes
 - permanent `FILE` and `BUNDLE` badges plus explicit button labels so a reviewer can immediately tell whether an action affects one evidence file or a whole bundle
 - the staged review order:
   - file decision

@@ -9,6 +9,7 @@ import {
 } from "@/lib/criteria-tagging-schema";
 import { normalizePrimaryDate } from "@/lib/date";
 import { documentSummaryJsonSchema, documentSummarySchema } from "@/lib/document-schema";
+import { buildFolderContextText } from "@/lib/folder-context";
 import type { PreparedDocumentInput } from "@/lib/file-processing";
 import { sanitizeDocument } from "@/lib/library";
 import { getOpenAiContext } from "@/lib/openai";
@@ -428,10 +429,15 @@ export async function tagDocumentCriteria(input: {
 }) {
   const { client, settings } = getOpenAiContext();
   const candidateLabel = input.document.candidateName.trim() || "the candidate";
+  const folderContext = buildFolderContextText(
+    input.document.relativePath,
+    input.document.folderLabel,
+  );
   const promptInstructions = fillPromptTemplate(settings.taggingPrompt, {
     candidateName: candidateLabel,
     criteriaCatalog: EB1A_CRITERIA_CATALOG,
     bundleContext: input.bundleContext,
+    folderContext,
     documentSummary: [
       input.document.summary?.title ?? input.document.fileName,
       input.document.summary?.shortSummary ?? "",
@@ -471,6 +477,7 @@ export async function tagDocumentCriteria(input: {
               {
                 fileName: input.document.fileName,
                 relativePath: input.document.relativePath,
+                folderContext,
                 documentType: input.document.summary?.documentType ?? input.document.extension,
                 title: input.document.summary?.title ?? input.document.fileName,
                 shortSummary: input.document.summary?.shortSummary ?? "",

@@ -8,6 +8,7 @@ import {
   eb1aClassificationCandidateSchema,
 } from "@/lib/eb1a-classification-schema";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
+import { buildFolderContext, normalizeFolderSegment } from "@/lib/folder-context";
 import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
 import { createOutputPackage } from "@/lib/output-package";
@@ -34,7 +35,7 @@ interface Eb1aClassificationStateFile {
 }
 
 const EB1A_CLASSIFICATION_FILE = "eb1a-classification.json";
-const EB1A_CLASSIFICATION_VERSION = 2;
+const EB1A_CLASSIFICATION_VERSION = 3;
 
 declare global {
   var __eb1aActiveCriterionJobs: Set<string> | undefined;
@@ -184,6 +185,40 @@ function buildBundleDigest(
   const documentLookup = new Map(documents.map((document) => [document.id, document]));
 
   return bundles.map((bundle) => ({
+    ...(() => {
+      const evidenceDocuments = bundle.evidenceDocumentIds
+        .map((documentId) => documentLookup.get(documentId))
+        .filter((document): document is StoredDocument => Boolean(document));
+      const folderHints = Array.from(
+        new Map(
+          evidenceDocuments.flatMap((document) => {
+            const context = buildFolderContext(document.relativePath, document.folderLabel);
+            return context.folderHints.map((hint) => [normalizeFolderSegment(hint), hint] as const);
+          }),
+        ).values(),
+      ).slice(0, 8);
+
+      return {
+        folderHints,
+        evidenceDocuments: evidenceDocuments.map((document) => {
+          const context = buildFolderContext(document.relativePath, document.folderLabel);
+
+          return {
+            id: document.id,
+            title: document.summary?.title || document.fileName,
+            documentType: document.summary?.documentType || document.extension,
+            primaryDate: document.summary?.primaryDate ?? null,
+            relativePath: document.relativePath,
+            rootFolder: context.rootFolder,
+            folderPath: context.folderPath,
+            folderSegments: context.folderSegments,
+            folderHints: context.folderHints,
+            tags: document.summary?.tags ?? [],
+            organizations: document.summary?.organizations ?? [],
+          };
+        }),
+      };
+    })(),
     id: bundle.id,
     name: bundle.name,
     shortSummary: bundle.shortSummary,
@@ -196,17 +231,6 @@ function buildBundleDigest(
     people: bundle.people,
     keywords: bundle.keywords,
     evidenceCount: bundle.evidenceDocumentIds.length,
-    evidenceDocuments: bundle.evidenceDocumentIds
-      .map((documentId) => documentLookup.get(documentId))
-      .filter((document): document is StoredDocument => Boolean(document))
-      .map((document) => ({
-        id: document.id,
-        title: document.summary?.title || document.fileName,
-        documentType: document.summary?.documentType || document.extension,
-        primaryDate: document.summary?.primaryDate ?? null,
-        tags: document.summary?.tags ?? [],
-        organizations: document.summary?.organizations ?? [],
-      })),
   }));
 }
 
@@ -482,6 +506,7 @@ async function generateEb1aClassification(
                 criteriaCatalog,
               }),
               `Candidate context: ${candidateLabel}.`,
+              "Original upload-folder names and dossier folder labels are preserved in the bundle metadata. Use them as organizational hints when they reinforce the bundle summaries, but do not let raw path text override the evidence itself.",
               "Ignore any filename-routing concepts such as archive or delete because those bundles are already handled before this AI pass.",
               "Return strict JSON only.",
               "Each bundle must appear at most once in the output decisions array.",

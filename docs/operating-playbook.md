@@ -135,7 +135,8 @@ Verify:
 - evidence rows expose visible `Assign criterion` and `Actions` controls in addition to right-click
 - bundle cards in the human-review queue can be reassigned directly into a criterion
 - review cards, table rows, and workbench entries expose permanent `FILE` and `BUNDLE` badges with explicit action wording
-- the review page supports `Inbox`, `Table`, `Workbench`, and `By category` without breaking existing actions
+- the review page supports `Inbox`, `Table`, `Routing`, `Workbench`, and `By category` without breaking existing actions
+- `Routing` shows a folder-first matrix with proposed event, bundle, criterion, decision basis, current placement, and source folder context
 - review actions can be staged locally and applied in one pass through `Accept all staged changes`
 - the review flow still honors the sequence `file -> bundle -> criterion`
 

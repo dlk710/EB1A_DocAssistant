@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import mammoth from "mammoth";
 import { PDFParse } from "pdf-parse";
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS } from "@/lib/constants";
+import { buildFolderContextText } from "@/lib/folder-context";
 import { extractQuickLookPreviewText } from "@/lib/preview";
 import type { StoredDocument } from "@/lib/types";
 
@@ -33,6 +34,7 @@ function buildTextPrompt(fileName: string, relativePath: string, text: string) {
   return [
     `File name: ${fileName}`,
     `Relative path: ${relativePath}`,
+    buildFolderContextText(relativePath),
     "",
     "Extracted content:",
     sampleText(text),
@@ -60,6 +62,7 @@ export async function prepareDocumentInput(
       promptBody: [
         `File name: ${document.fileName}`,
         `Relative path: ${document.relativePath}`,
+        buildFolderContextText(document.relativePath),
         "",
         "Review this evidence image and extract what it appears to show.",
         dataUrl,
@@ -160,6 +163,7 @@ export async function prepareDocumentInput(
     promptBody: [
       `File name: ${document.fileName}`,
       `Relative path: ${document.relativePath}`,
+      buildFolderContextText(document.relativePath),
       `Extension: ${document.extension || "unknown"}`,
       `Mime type: ${document.mimeType || "unknown"}`,
       "",

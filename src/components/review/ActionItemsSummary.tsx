@@ -12,8 +12,10 @@ import { WorkflowDocumentCard } from "@/components/review/WorkflowDocumentCard";
 import type { ReviewWorkspaceBundleOption, ReviewWorkspaceContext } from "@/components/review/RowContextMenu";
 import type {
   ReviewBundleDecisionItem,
+  ReviewBundleDocumentContext,
   ReviewBundleFitGroup,
   ReviewCategoryBandData,
+  ReviewRoutingMatrixItem,
 } from "@/components/review/workflow-types";
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import type { EvidenceReviewStatus } from "@/lib/types";
@@ -34,6 +36,7 @@ interface ActionItemsSummaryProps {
   otherBundleGroups: ReviewBundleFitGroup[];
   criterionReviewQueue: ReviewBundleDecisionItem[];
   otherCriterionQueue: ReviewBundleDecisionItem[];
+  routingRows: ReviewRoutingMatrixItem[];
   archiveSamples: string[];
   archiveReviewHref: string | null;
   strategyHref: string;
@@ -49,6 +52,11 @@ interface PreviewState {
 interface ReasoningState {
   title: string;
   reasoning: string;
+}
+
+interface BundleInspectorState {
+  bundleName: string;
+  documents: ReviewBundleDocumentContext[];
 }
 
 interface ToastState {
@@ -146,11 +154,20 @@ type CriterionStagedChange =
       kind: "archive";
     };
 
-type ReviewMode = "inbox" | "table" | "workbench" | "by-category";
+type ReviewMode = "inbox" | "table" | "routing" | "workbench" | "by-category";
 type ReviewStageFilter = "all" | "file" | "bundle" | "criterion";
 type WorkbenchGroupBy = "stage" | "bundle" | "workspace";
-type TableSortKey = "name" | "type" | "summary" | "workspace" | "stage" | "bundle" | "confidence";
+type TableSortKey =
+  | "name"
+  | "type"
+  | "summary"
+  | "workspace"
+  | "stage"
+  | "criterion"
+  | "bundle"
+  | "confidence";
 type TableSortDirection = "asc" | "desc";
+type RoutingFilter = "all" | "human-review" | "archive" | "routed";
 
 type ReviewFocusEntry =
   | {
@@ -508,7 +525,7 @@ function compareStrings(left: string, right: string, direction: TableSortDirecti
 }
 
 function parseReviewMode(value: string | null): ReviewMode {
-  return value === "inbox" || value === "table" || value === "workbench" || value === "by-category"
+  return value === "inbox" || value === "table" || value === "routing" || value === "workbench" || value === "by-category"
     ? value
     : "by-category";
 }
@@ -531,12 +548,88 @@ function getFocusCriterionLabel(entry: ReviewFocusEntry) {
   return null;
 }
 
+function getCriterionNameFromCode(code: string | null) {
+  if (!code) {
+    return null;
+  }
+
+  return (
+    EB1A_CRITERIA_DEFINITIONS.find((criterion) => criterion.code === code)?.name ?? null
+  );
+}
+
+function getFocusSuggestedCriterionLabel(entry: ReviewFocusEntry) {
+  if (entry.kind !== "criterion") {
+    return null;
+  }
+
+  return (
+    entry.item.criterionHint ??
+    getCriterionNameFromCode(resolveExistingCriterionCode(entry.item))
+  );
+}
+
+function getFocusSuggestedCriterionCode(entry: ReviewFocusEntry) {
+  if (entry.kind !== "criterion") {
+    return null;
+  }
+
+  return resolveExistingCriterionCode(entry.item);
+}
+
+function getFocusBundleDocuments(entry: ReviewFocusEntry) {
+  if (entry.kind !== "criterion") {
+    return [];
+  }
+
+  return entry.item.bundleDocuments;
+}
+
 function getFocusPreviewHref(entry: ReviewFocusEntry) {
   return entry.kind === "criterion" ? null : entry.item.previewHref;
 }
 
 function getFocusSourceHref(entry: ReviewFocusEntry) {
   return entry.kind === "criterion" ? null : entry.item.sourceHref;
+}
+
+function formatRoutingDecisionBasis(value: string) {
+  return value
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function formatReviewStatus(value: EvidenceReviewStatus) {
+  if (value === "kept") {
+    return "Kept";
+  }
+
+  if (value === "pending") {
+    return "Pending";
+  }
+
+  if (value === "reference") {
+    return "Reference";
+  }
+
+  return "Archived";
+}
+
+function reviewStatusBadgeClass(value: EvidenceReviewStatus) {
+  if (value === "kept") {
+    return "rounded-full bg-[var(--brand-soft)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]";
+  }
+
+  if (value === "pending") {
+    return "rounded-full bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]";
+  }
+
+  if (value === "reference") {
+    return "rounded-full border border-[var(--border-primary)] bg-white px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]";
+  }
+
+  return "rounded-full bg-[var(--state-danger-soft)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--state-danger)]";
 }
 
 export function ActionItemsSummary({
@@ -553,6 +646,7 @@ export function ActionItemsSummary({
   otherBundleGroups,
   criterionReviewQueue,
   otherCriterionQueue,
+  routingRows,
   archiveSamples,
   archiveReviewHref,
   strategyHref,
@@ -577,6 +671,7 @@ export function ActionItemsSummary({
         otherBundleGroups,
         criterionReviewQueue,
         otherCriterionQueue,
+        routingRows,
         archiveSamples,
         archiveReviewHref,
         strategyHref,
@@ -597,6 +692,7 @@ export function ActionItemsSummary({
       otherBundleGroups,
       otherCriterionQueue,
       readyBands,
+      routingRows,
       strategyHref,
       totalTagged,
       workspaceContexts,
@@ -617,6 +713,7 @@ export function ActionItemsSummary({
       otherBundleGroups,
       criterionReviewQueue,
       otherCriterionQueue,
+      routingRows,
       archiveSamples,
       archiveReviewHref,
       strategyHref,
@@ -632,6 +729,7 @@ export function ActionItemsSummary({
   >({});
   const [awaitingServerRefresh, setAwaitingServerRefresh] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [bundleInspector, setBundleInspector] = useState<BundleInspectorState | null>(null);
   const [reasoning, setReasoning] = useState<ReasoningState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -644,6 +742,8 @@ export function ActionItemsSummary({
   const [tableStageFilter, setTableStageFilter] = useState<ReviewStageFilter>("all");
   const [tableSortKey, setTableSortKey] = useState<TableSortKey | null>(null);
   const [tableSortDirection, setTableSortDirection] = useState<TableSortDirection>("desc");
+  const [routingSearch, setRoutingSearch] = useState("");
+  const [routingFilter, setRoutingFilter] = useState<RoutingFilter>("all");
   const [workbenchGroupBy, setWorkbenchGroupBy] = useState<WorkbenchGroupBy>("stage");
   const [selectedFocusKey, setSelectedFocusKey] = useState<string | null>(null);
   const [awaitingServerStateKey, setAwaitingServerStateKey] = useState<string | null>(null);
@@ -714,6 +814,78 @@ export function ActionItemsSummary({
   const heldLaterCount = referenceCount + otherBundleCount + otherCriterionCount;
   const resolvedCount = Math.max(totalTagged - unresolvedCount, 0);
   const progressPercent = totalTagged > 0 ? Math.min((resolvedCount / totalTagged) * 100, 100) : 0;
+  const routingHumanReviewCount = useMemo(
+    () => routingRows.filter((row) => row.needsHumanReview).length,
+    [routingRows],
+  );
+  const routingArchiveCount = useMemo(
+    () => routingRows.filter((row) => row.proposedCriterionName === "Archive").length,
+    [routingRows],
+  );
+  const routingUniqueBundleCount = useMemo(
+    () => new Set(routingRows.map((row) => row.proposedBundleName)).size,
+    [routingRows],
+  );
+  const routingUniqueEventCount = useMemo(
+    () => new Set(routingRows.map((row) => row.proposedEventName)).size,
+    [routingRows],
+  );
+
+  const filteredRoutingRows = useMemo(() => {
+    const normalizedSearch = routingSearch.trim().toLowerCase();
+
+    return routingRows
+      .filter((row) => {
+        if (routingFilter === "human-review" && !row.needsHumanReview) {
+          return false;
+        }
+
+        if (routingFilter === "archive" && row.proposedCriterionName !== "Archive") {
+          return false;
+        }
+
+        if (
+          routingFilter === "routed" &&
+          (row.needsHumanReview || row.proposedCriterionName === "Archive")
+        ) {
+          return false;
+        }
+
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        const haystack = [
+          row.proposedEventName,
+          row.proposedBundleName,
+          row.proposedCriterionName,
+          row.fileName,
+          row.relativePath,
+          row.topFolder,
+          row.subfolderPath,
+          row.workspaceLabel,
+          row.reviewNotes,
+          row.currentBundleName ?? "",
+          row.currentCriterionName ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(normalizedSearch);
+      })
+      .sort((left, right) => {
+        const reviewOrder = Number(right.needsHumanReview) - Number(left.needsHumanReview);
+        if (reviewOrder !== 0) {
+          return reviewOrder;
+        }
+
+        return (
+          left.proposedCriterionName.localeCompare(right.proposedCriterionName) ||
+          left.proposedBundleName.localeCompare(right.proposedBundleName) ||
+          left.relativePath.localeCompare(right.relativePath)
+        );
+      });
+  }, [routingFilter, routingRows, routingSearch]);
 
   const focusEntries = useMemo<ReviewFocusEntry[]>(
     () => [
@@ -832,6 +1004,12 @@ export function ActionItemsSummary({
           return compareStrings(
             getFocusStageLabel(left),
             getFocusStageLabel(right),
+            tableSortDirection,
+          );
+        case "criterion":
+          return compareStrings(
+            getFocusSuggestedCriterionLabel(left) ?? "zzz",
+            getFocusSuggestedCriterionLabel(right) ?? "zzz",
             tableSortDirection,
           );
         case "bundle":
@@ -1351,6 +1529,21 @@ export function ActionItemsSummary({
       title: item.title,
       previewHref: item.previewHref,
       sourceHref: item.sourceHref,
+    });
+  }
+
+  function handleBundleDocumentQuickPeek(document: ReviewBundleDocumentContext) {
+    setPreview({
+      title: document.title,
+      previewHref: document.previewHref,
+      sourceHref: document.sourceHref,
+    });
+  }
+
+  function handleInspectBundle(item: ReviewBundleDecisionItem) {
+    setBundleInspector({
+      bundleName: item.bundleName,
+      documents: item.bundleDocuments,
     });
   }
 
@@ -2054,6 +2247,10 @@ export function ActionItemsSummary({
     item: ReviewBundleDecisionItem,
     source: CriterionPickerState["source"] = "criterion",
   ) {
+    const suggestedCriterionCode = resolveExistingCriterionCode(item);
+    const suggestedCriterionName =
+      item.criterionHint ?? getCriterionNameFromCode(suggestedCriterionCode);
+
     return (
       <>
         <button
@@ -2061,10 +2258,14 @@ export function ActionItemsSummary({
           onClick={() =>
             source === "criterion" ? handleAcceptCriterion(item) : handleReturnFromOtherCriterion(item)
           }
-          disabled={source === "criterion" ? !resolveExistingCriterionCode(item) : false}
+          disabled={source === "criterion" ? !suggestedCriterionCode : false}
           className="setu-primary-button inline-flex items-center rounded-[8px] px-3 py-2 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {source === "criterion" ? "Accept bundle criterion" : "Return bundle to queue"}
+          {source === "criterion"
+            ? suggestedCriterionName
+              ? `Accept as ${suggestedCriterionName}`
+              : "Assign criterion first"
+            : "Return bundle to queue"}
         </button>
         <button
           type="button"
@@ -2087,6 +2288,13 @@ export function ActionItemsSummary({
         >
           Archive bundle
         </button>
+        <button
+          type="button"
+          onClick={() => handleInspectBundle(item)}
+          className={documentActionButtonClass()}
+        >
+          Inspect files
+        </button>
         <Link href={item.denseReviewHref} className={documentActionButtonClass()}>
           Dense workbench
         </Link>
@@ -2106,9 +2314,120 @@ export function ActionItemsSummary({
     return renderCriterionActionButtons(entry.item);
   }
 
+  function renderSuggestedCriterionCell(entry: ReviewFocusEntry) {
+    const suggestedCriterionLabel = getFocusSuggestedCriterionLabel(entry);
+    const suggestedCriterionCode = getFocusSuggestedCriterionCode(entry);
+
+    if (entry.kind === "criterion") {
+      if (suggestedCriterionLabel && suggestedCriterionCode) {
+        return (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => handleAssignCriterion(entry.item, suggestedCriterionCode, "criterion")}
+              className="inline-flex items-center rounded-[999px] border border-[var(--brand)]/25 bg-[var(--brand-soft)] px-3 py-1.5 text-[10px] font-semibold text-[var(--brand-deep)] transition hover:border-[var(--brand-deep)] hover:bg-[var(--paper-primary)]"
+            >
+              Assign {suggestedCriterionLabel}
+            </button>
+            <p className="text-[10px] text-[var(--muted)]">AI suggestion</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-2">
+          <span className="inline-flex items-center rounded-[999px] border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-3 py-1.5 text-[10px] font-semibold text-[var(--muted)]">
+            No AI suggestion
+          </span>
+          <p className="text-[10px] text-[var(--muted)]">Use manual assign</p>
+        </div>
+      );
+    }
+
+    return (
+      <span className="text-[11px] text-[var(--muted)]">
+        {getFocusCriterionLabel(entry) ?? "—"}
+      </span>
+    );
+  }
+
+  function renderBundleDocumentContextList(
+    documents: ReviewBundleDocumentContext[],
+    options?: { limit?: number; compact?: boolean },
+  ) {
+    const limit = options?.limit ?? documents.length;
+    const compact = options?.compact ?? false;
+    const visibleDocuments = documents.slice(0, limit);
+    const hiddenCount = documents.length - visibleDocuments.length;
+
+    if (!visibleDocuments.length) {
+      return (
+        <p className="text-[11px] leading-5 text-[var(--muted)]">
+          No file-level summaries are available for this bundle yet.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {visibleDocuments.map((document) => (
+          <div
+            key={document.id}
+            className={`rounded-[12px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] ${
+              compact ? "px-3 py-2.5" : "px-3 py-3"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-[var(--foreground)]">{document.title}</p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">{document.fileName}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-[var(--border-primary)] bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.12em] text-[var(--muted)]">
+                  {Math.round(document.confidence * 100)}%
+                </span>
+                {document.currentCriterionName ? (
+                  <span className="rounded-full border border-[var(--border-primary)] bg-white px-2 py-1 text-[9px] font-semibold tracking-[0.12em] text-[var(--muted)]">
+                    {document.currentCriterionName}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] leading-5 text-[var(--foreground)]/82">
+              {document.shortSummary || "No AI summary is available yet for this file."}
+            </p>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => handleBundleDocumentQuickPeek(document)}
+                className={documentActionButtonClass()}
+              >
+                Quick peek
+              </button>
+              <a
+                href={document.sourceHref}
+                target="_blank"
+                rel="noreferrer"
+                className={documentActionButtonClass()}
+              >
+                Open original
+              </a>
+            </div>
+          </div>
+        ))}
+        {hiddenCount > 0 ? (
+          <p className="text-[10px] text-[var(--muted)]">
+            +{hiddenCount} more file{hiddenCount === 1 ? "" : "s"} in this bundle.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderFocusDetail(entry: ReviewFocusEntry, compact = false) {
     const previewHref = getFocusPreviewHref(entry);
     const sourceHref = getFocusSourceHref(entry);
+    const bundleDocuments = getFocusBundleDocuments(entry);
 
     return (
       <div className={`grid gap-3 ${compact ? "lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]" : "xl:grid-cols-[minmax(0,1.35fr)_320px]"}`}>
@@ -2196,6 +2515,29 @@ export function ActionItemsSummary({
             </div>
           </div>
 
+          {entry.kind === "criterion" ? (
+            <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                  Files in this bundle
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleInspectBundle(entry.item)}
+                  className={documentActionButtonClass()}
+                >
+                  Inspect all
+                </button>
+              </div>
+              <div className="mt-3">
+                {renderBundleDocumentContextList(bundleDocuments, {
+                  limit: compact ? 2 : 3,
+                  compact,
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-[16px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
               Actions
@@ -2236,6 +2578,9 @@ export function ActionItemsSummary({
             </button>
             <button type="button" onClick={() => updateReviewMode("table")} className={reviewModeButtonClass(reviewMode === "table")}>
               Table
+            </button>
+            <button type="button" onClick={() => updateReviewMode("routing")} className={reviewModeButtonClass(reviewMode === "routing")}>
+              Routing
             </button>
             <button type="button" onClick={() => updateReviewMode("workbench")} className={reviewModeButtonClass(reviewMode === "workbench")}>
               Workbench
@@ -2460,6 +2805,7 @@ export function ActionItemsSummary({
                     <th className="px-4 py-3">{renderTableSortHeader("AI summary", "summary")}</th>
                     <th className="px-4 py-3">{renderTableSortHeader("Workspace", "workspace")}</th>
                     <th className="px-4 py-3">{renderTableSortHeader("Stage", "stage")}</th>
+                    <th className="px-4 py-3">{renderTableSortHeader("Suggested criterion", "criterion")}</th>
                     <th className="px-4 py-3">{renderTableSortHeader("Bundle", "bundle")}</th>
                     <th className="px-4 py-3">{renderTableSortHeader("Confidence", "confidence")}</th>
                     <th className="px-4 py-3">Actions</th>
@@ -2501,6 +2847,7 @@ export function ActionItemsSummary({
                             {getFocusStageLabel(entry)}
                           </span>
                         </td>
+                        <td className="px-4 py-4">{renderSuggestedCriterionCell(entry)}</td>
                         <td className="px-4 py-4 text-[11px] text-[var(--muted)]">
                           {getFocusBundleLabel(entry) ?? "Unassigned"}
                         </td>
@@ -2514,8 +2861,221 @@ export function ActionItemsSummary({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="px-4 py-5 text-[12px] text-[var(--muted)]">
+                      <td colSpan={9} className="px-4 py-5 text-[12px] text-[var(--muted)]">
                         No open items match the current filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reviewMode === "routing" ? (
+        <div className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-4">
+            <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                Total files
+              </p>
+              <p className="mt-2 font-mono text-[28px] font-semibold text-[var(--foreground)]">
+                {routingRows.length}
+              </p>
+              <p className="text-[11px] leading-5 text-[var(--muted)]">
+                All files from the current review workspaces, including archive-system files.
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                Human review
+              </p>
+              <p className="mt-2 font-mono text-[28px] font-semibold text-[var(--foreground)]">
+                {routingHumanReviewCount}
+              </p>
+              <p className="text-[11px] leading-5 text-[var(--muted)]">
+                Files where folder and summary cues were still not strong enough to route confidently.
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                Proposed bundles
+              </p>
+              <p className="mt-2 font-mono text-[28px] font-semibold text-[var(--foreground)]">
+                {routingUniqueBundleCount}
+              </p>
+              <p className="text-[11px] leading-5 text-[var(--muted)]">
+                Unique bundle names from the folder-first pass.
+              </p>
+            </div>
+            <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                Event names
+              </p>
+              <p className="mt-2 font-mono text-[28px] font-semibold text-[var(--foreground)]">
+                {routingUniqueEventCount}
+              </p>
+              <p className="text-[11px] leading-5 text-[var(--muted)]">
+                Proposed event labels preserved from folder, subfolder, filename, and document summary hints.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-tertiary)] px-4 py-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "all", label: "All files", count: routingRows.length },
+                  { key: "routed", label: "Routed", count: routingRows.length - routingHumanReviewCount - routingArchiveCount },
+                  { key: "human-review", label: "Human review", count: routingHumanReviewCount },
+                  { key: "archive", label: "Archive", count: routingArchiveCount },
+                ].map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setRoutingFilter(filter.key as RoutingFilter)}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                      routingFilter === filter.key
+                        ? "border-[var(--brand-charcoal)] bg-[var(--brand-charcoal)] text-white"
+                        : "border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)]"
+                    }`}
+                  >
+                    {filter.label} · {filter.count}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={routingSearch}
+                onChange={(event) => setRoutingSearch(event.target.value)}
+                placeholder="Search event, bundle, criterion, folder, or filename"
+                className="w-full rounded-[10px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2 text-[11px] text-[var(--foreground)] outline-none xl:ml-auto xl:max-w-[360px]"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)]">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead className="bg-[var(--paper-tertiary)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Event name</th>
+                    <th className="px-4 py-3">Bundle name</th>
+                    <th className="px-4 py-3">Criteria classification</th>
+                    <th className="px-4 py-3">Human review</th>
+                    <th className="px-4 py-3">Confidence</th>
+                    <th className="px-4 py-3">Decision basis</th>
+                    <th className="px-4 py-3">Current placement</th>
+                    <th className="px-4 py-3">Source folder</th>
+                    <th className="px-4 py-3">File</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRoutingRows.length ? (
+                    filteredRoutingRows.map((row) => (
+                      <tr key={row.id} className="border-t border-[var(--border-secondary)] align-top">
+                        <td className="px-4 py-4">
+                          <p className="text-[12px] font-semibold text-[var(--foreground)]">
+                            {row.proposedEventName}
+                          </p>
+                          <p className="mt-1 text-[10px] text-[var(--muted)]">{row.workspaceLabel}</p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                            {row.proposedBundleName}
+                          </p>
+                          {row.currentBundleName ? (
+                            <p className="mt-1 text-[10px] text-[var(--muted)]">
+                              Current: {row.currentBundleName}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]">
+                            {row.proposedCriterionName}
+                          </span>
+                          {row.currentCriterionName ? (
+                            <p className="mt-2 text-[10px] text-[var(--muted)]">
+                              Current: {row.currentCriterionName}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${
+                              row.needsHumanReview
+                                ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
+                                : "bg-[var(--brand-soft)] text-[var(--brand-deep)]"
+                            }`}
+                          >
+                            {row.needsHumanReview ? "Yes" : "No"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-[11px] font-semibold text-[var(--foreground)]">
+                          {row.confidence}%
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                            {formatRoutingDecisionBasis(row.decisionBasis)}
+                          </p>
+                          <p className="mt-1 max-w-[240px] text-[10px] leading-5 text-[var(--muted)]">
+                            {row.reviewNotes}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={reviewStatusBadgeClass(row.currentReviewStatus)}>
+                            {formatReviewStatus(row.currentReviewStatus)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-[11px] text-[var(--muted)]">
+                          <p>{row.topFolder}</p>
+                          {row.subfolderPath ? (
+                            <p className="mt-1 text-[10px]">{row.subfolderPath}</p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[11px] font-semibold text-[var(--foreground)]">
+                            {row.fileName}
+                          </p>
+                          <p className="mt-1 max-w-[300px] text-[10px] leading-5 text-[var(--muted)]">
+                            {row.relativePath}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreview({
+                                  title: row.title,
+                                  previewHref: row.previewHref,
+                                  sourceHref: row.sourceHref,
+                                })
+                              }
+                              className={documentActionButtonClass()}
+                            >
+                              Quick peek
+                            </button>
+                            <a
+                              href={row.sourceHref}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={documentActionButtonClass()}
+                            >
+                              Open original
+                            </a>
+                            <Link href={row.denseReviewHref} className={documentActionButtonClass()}>
+                              Dense workbench
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-5 text-[12px] text-[var(--muted)]">
+                        No routing rows match the current filters.
                       </td>
                     </tr>
                   )}
@@ -2804,6 +3364,8 @@ export function ActionItemsSummary({
                     item={item}
                     stageLabel="Criterion review"
                     helperText="Accept the current criterion, move the bundle into the right criterion, or park it in OTHER for later."
+                    onInspectBundle={handleInspectBundle}
+                    onQuickPeekDocument={handleBundleDocumentQuickPeek}
                     onContextMenu={(nextItem, event) => {
                       event.preventDefault();
                       openBundleActionMenu(nextItem, "criterion", event.currentTarget);
@@ -2924,6 +3486,8 @@ export function ActionItemsSummary({
                       item={item}
                       stageLabel="OTHER"
                       helperText="This bundle stays in the OTHER placeholder until you are ready to classify it confidently."
+                      onInspectBundle={handleInspectBundle}
+                      onQuickPeekDocument={handleBundleDocumentQuickPeek}
                       onContextMenu={(nextItem, event) => {
                         event.preventDefault();
                         openBundleActionMenu(nextItem, "other-criterion", event.currentTarget);
@@ -3067,6 +3631,37 @@ export function ActionItemsSummary({
         items={bundleActionMenuItems}
         onClose={() => setBundleActionMenuState(null)}
       />
+
+      {bundleInspector ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--brand-charcoal)]/45 px-4 py-6">
+          <div className="setu-panel flex h-[88vh] w-full max-w-[1080px] flex-col rounded-[22px]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-secondary)] px-4 py-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                  Bundle context
+                </p>
+                <p className="mt-1 text-[14px] font-semibold text-[var(--foreground)]">
+                  {bundleInspector.bundleName}
+                </p>
+                <p className="mt-1 text-[11px] text-[var(--muted)]">
+                  {bundleInspector.documents.length} file
+                  {bundleInspector.documents.length === 1 ? "" : "s"} in this bundle
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBundleInspector(null)}
+                className="setu-ghost-button inline-flex items-center rounded-[8px] px-3 py-2 text-[11px] font-semibold"
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+              {renderBundleDocumentContextList(bundleInspector.documents)}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {preview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--brand-charcoal)]/45 px-4 py-6">

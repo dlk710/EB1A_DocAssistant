@@ -8,6 +8,7 @@ import type {
   ReviewBundleDecisionItem,
   ReviewBundleFitGroup,
   ReviewCategoryBandData,
+  ReviewRoutingMatrixItem,
 } from "@/components/review/workflow-types";
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import {
@@ -18,6 +19,7 @@ import {
   updateClient,
 } from "@/lib/clients";
 import { buildLibrarySnapshot } from "@/lib/library";
+import { buildDocumentRoutingSuggestion } from "@/lib/review-routing";
 import { ensureClientTimelineEvent } from "@/lib/timeline";
 import type { ClientDocument, ClientStatus, LibrarySnapshot } from "@/lib/types";
 
@@ -46,6 +48,99 @@ function dominantCriterionTag(document: ClientDocument) {
   const pool = primary.length ? primary : document.criteriaTags;
 
   return [...pool].sort((left, right) => right.confidence - left.confidence)[0] ?? null;
+}
+
+function addCriterionScore(
+  scores: Map<string, number>,
+  criterionCode: string,
+  amount: number,
+) {
+  scores.set(criterionCode, (scores.get(criterionCode) ?? 0) + amount);
+}
+
+function deriveBundleCriterionSuggestion(input: {
+  bundleName: string;
+  shortSummary: string;
+  detailedSummary: string;
+  eventType: string;
+  documents: ClientDocument[];
+}) {
+  const scores = new Map<string, number>();
+
+  input.documents.forEach((document) => {
+    const primaryTags = document.criteriaTags.filter((tag) => tag.role === "primary");
+    const tags = primaryTags.length ? primaryTags : document.criteriaTags;
+
+    tags.forEach((tag) => {
+      addCriterionScore(scores, tag.code, tag.confidence * (tag.role === "primary" ? 1.2 : 0.85));
+    });
+  });
+
+  const bundleText = [
+    input.bundleName,
+    input.shortSummary,
+    input.detailedSummary,
+    input.eventType,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    /(critical role|leading role|leadership role|principal architect|product architect|director role|key role|led the strategy|led the architecture|instrumental in architecting)/i.test(
+      bundleText,
+    )
+  ) {
+    addCriterionScore(scores, "08", 1.35);
+  }
+
+  if (
+    /(original contribution|original contributions|innovative|innovation|foundational work|novel|transformational|platform development|technical leadership)/i.test(
+      bundleText,
+    )
+  ) {
+    addCriterionScore(scores, "05", 1.15);
+  }
+
+  if (/(peer review|peer reviewer|judge|judging|reviewer for|manuscript review|editorial review)/i.test(bundleText)) {
+    addCriterionScore(scores, "04", 1.35);
+  }
+
+  if (/(conference paper|conference presentation|authored|publication|published|book chapter|white paper|journal article)/i.test(bundleText)) {
+    addCriterionScore(scores, "06", 1.1);
+  }
+
+  if (/(salary|compensation|w-2|income verification|pay statement|earnings)/i.test(bundleText)) {
+    addCriterionScore(scores, "09", 1.2);
+  }
+
+  if (/(award|winner|honor|recognition)/i.test(bundleText) && !/(judge|judging)/i.test(bundleText)) {
+    addCriterionScore(scores, "01", 0.8);
+  }
+
+  const ranked = [...scores.entries()].sort((left, right) => right[1] - left[1]);
+  const [best, second] = ranked;
+
+  if (!best) {
+    return null;
+  }
+
+  const [bestCode, bestScore] = best;
+  const secondScore = second?.[1] ?? 0;
+
+  if (bestScore < 0.95 || bestScore - secondScore < 0.2) {
+    return null;
+  }
+
+  const criterion = EB1A_CRITERIA_DEFINITIONS.find((entry) => entry.code === bestCode);
+
+  if (!criterion) {
+    return null;
+  }
+
+  return {
+    code: criterion.code,
+    name: criterion.name,
+  };
 }
 
 function buildWorkspaceContext(snapshot: LibrarySnapshot): ReviewWorkspaceContext | null {
@@ -261,6 +356,7 @@ function buildReviewQueues(
   criterionReviewQueue: ReviewBundleDecisionItem[];
   otherCriterionQueue: ReviewBundleDecisionItem[];
   readyBands: ReviewCategoryBandData[];
+  routingRows: ReviewRoutingMatrixItem[];
   unresolvedFileCount: number;
   unresolvedBundleCount: number;
   unresolvedCriterionCount: number;
@@ -273,6 +369,7 @@ function buildReviewQueues(
   const otherBundleGroups = new Map<string, ReviewBundleFitGroup>();
   const criterionReviewQueue: ReviewBundleDecisionItem[] = [];
   const otherCriterionQueue: ReviewBundleDecisionItem[] = [];
+  const routingRows: ReviewRoutingMatrixItem[] = [];
   const readyCategoryMap = new Map<string, ReviewCategoryBandData>();
   let readyCount = 0;
 
@@ -281,6 +378,7 @@ function buildReviewQueues(
       (bundle) => bundle.bundleKind === "standard",
     );
     const bundleLookup = new Map(standardBundles.map((bundle) => [bundle.id, bundle]));
+    const documentLookup = new Map(snapshot.documents.map((document) => [document.id, document]));
     const classificationLookup = new Map(
       (snapshot.eb1aClassification?.decisions ?? []).map((decision) => [decision.bundleId, decision]),
     );
@@ -342,6 +440,30 @@ function buildReviewQueues(
         currentBundleId: currentSubBundle?.id ?? currentTopLevelBundle?.id ?? null,
         currentBundleName,
         currentParentBundleId: currentSubBundle?.parentBundleId ?? null,
+      });
+      const routingSuggestion = buildDocumentRoutingSuggestion(document);
+      routingRows.push({
+        id: document.id,
+        jobId: document.jobId,
+        title,
+        fileName: document.fileName,
+        relativePath: document.relativePath,
+        workspaceLabel: snapshot.activeJob?.folderLabel ?? document.folderLabel,
+        topFolder: routingSuggestion.topFolder,
+        subfolderPath: routingSuggestion.subfolderPath,
+        proposedEventName: routingSuggestion.eventName,
+        proposedBundleName: routingSuggestion.bundleName,
+        proposedCriterionName: routingSuggestion.criteriaClassification,
+        decisionBasis: routingSuggestion.decisionBasis,
+        confidence: routingSuggestion.confidence,
+        needsHumanReview: routingSuggestion.needsHumanReview,
+        reviewNotes: routingSuggestion.reviewNotes,
+        currentReviewStatus: document.reviewStatus,
+        currentBundleName,
+        currentCriterionName: criterion?.name ?? null,
+        previewHref: reviewItem.previewHref,
+        sourceHref: reviewItem.sourceHref,
+        denseReviewHref: reviewItem.denseReviewHref,
       });
 
       if (document.reviewStatus === "archived") {
@@ -419,6 +541,18 @@ function buildReviewQueues(
 
       const decision = classificationLookup.get(bundle.id);
       const criterionDecision = bundleCriterionDecisions[bundle.id] ?? null;
+      const suggestedCriterion =
+        !decision?.primaryCriterionCode
+          ? deriveBundleCriterionSuggestion({
+              bundleName: bundle.name,
+              shortSummary: bundle.shortSummary,
+              detailedSummary: bundle.detailedSummary,
+              eventType: bundle.eventType,
+              documents: membership.acceptedItems
+                .map((item) => documentLookup.get(item.id))
+                .filter((document): document is ClientDocument => Boolean(document)),
+            })
+          : null;
       const bundleItem: ReviewBundleDecisionItem = {
         id: bundle.id,
         jobId: bundle.jobId,
@@ -429,11 +563,21 @@ function buildReviewQueues(
           decision?.rationale ??
           "Setu needs a human criterion call on this bundle.",
         denseReviewHref: snapshot.activeJobId ? `/review/${snapshot.activeJobId}` : "/",
-        criterionHint: decision?.primaryCriterionName ?? null,
-        criterionCode: decision?.primaryCriterionCode ?? null,
+        criterionHint: decision?.primaryCriterionName ?? suggestedCriterion?.name ?? null,
+        criterionCode: decision?.primaryCriterionCode ?? suggestedCriterion?.code ?? null,
         documentCount: membership.acceptedItems.length,
         documentIds: membership.acceptedItems.map((item) => item.id),
         documentTitles: membership.acceptedItems.map((item) => item.title),
+        bundleDocuments: membership.acceptedItems.map((item) => ({
+          id: item.id,
+          title: item.title,
+          fileName: item.fileName,
+          shortSummary: item.shortSummary,
+          previewHref: item.previewHref,
+          sourceHref: item.sourceHref,
+          confidence: item.confidence,
+          currentCriterionName: item.currentCriterionName,
+        })),
         bucketCode: decision?.bucketCode ?? null,
       };
 
@@ -496,6 +640,18 @@ function buildReviewQueues(
     readyBands: Array.from(readyCategoryMap.values()).sort((left, right) =>
       left.legalCode.localeCompare(right.legalCode),
     ),
+    routingRows: routingRows.sort((left, right) => {
+      const reviewOrder = Number(right.needsHumanReview) - Number(left.needsHumanReview);
+      if (reviewOrder !== 0) {
+        return reviewOrder;
+      }
+
+      return (
+        left.proposedCriterionName.localeCompare(right.proposedCriterionName) ||
+        left.proposedBundleName.localeCompare(right.proposedBundleName) ||
+        left.relativePath.localeCompare(right.relativePath)
+      );
+    }),
     unresolvedFileCount: fileDecisionItems.length,
     unresolvedBundleCount: Array.from(bundleReviewGroups.values()).reduce(
       (sum, group) => sum + group.items.length,
@@ -699,7 +855,7 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
                     Human review
                   </h1>
                   <p className="mt-2 max-w-4xl text-[12px] leading-6 text-[var(--muted)]">
-                    A real case can carry hundreds of files. Setu gives you four review modes so
+                    A real case can carry hundreds of files. Setu gives you five review modes so
                     you can triage quickly, inspect in detail, and still preserve the file → bundle
                     → criterion sequence without losing held-later work.
                   </p>
@@ -734,8 +890,9 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
               bundleReviewGroups={reviewQueues.bundleReviewGroups}
               otherBundleGroups={reviewQueues.otherBundleGroups}
               criterionReviewQueue={reviewQueues.criterionReviewQueue}
-              otherCriterionQueue={reviewQueues.otherCriterionQueue}
-              archiveSamples={reviewQueues.archiveItems.slice(0, 4)}
+        otherCriterionQueue={reviewQueues.otherCriterionQueue}
+        routingRows={reviewQueues.routingRows}
+        archiveSamples={reviewQueues.archiveItems.slice(0, 4)}
               archiveReviewHref={denseWorkbenchHref}
               strategyHref={strategyHref}
               denseWorkbenchHref={denseWorkbenchHref}

@@ -300,11 +300,13 @@ Setu has two review-oriented layers.
 The client review page is action-oriented and groups work by:
 
 - actionable items still requiring human review
-- four working modes:
+- five working modes:
   - `Inbox` for one-item-at-a-time triage
   - `Table` for scanning and acting across the open queue
+  - `Routing` for validating folder-first event, bundle, and criterion suggestions at a glance
   - `Workbench` for master-detail inspection
   - `By category` for criterion- and queue-oriented cleanup
+- a routing matrix that preserves top-folder, subfolder, filename, and summary cues so reviewers can compare proposed event names, proposed bundle names, proposed criteria, and current placement in one view
 - category bands
 - a dedicated Reference band for documents held aside without counting toward coverage
 - a dedicated `OTHER` placeholder band for bundles or files that should stay in scope but be revisited later

@@ -13,6 +13,18 @@ export const DEFAULT_SUMMARY_PROMPT_TEMPLATE = [
   "You review a single evidence file in a candidate evidence workspace.",
   "The candidate at the center of this review is {{candidateName}}.",
   "Write every summary from the candidate's point of view: explain what the file says about the candidate, the candidate's work, the candidate's participation, or the candidate's recognition.",
+  "Original upload-folder names and nested folder names are organizational hints. Preserve them when they clearly describe a project, dossier, event, or work stream, but do not treat folder text as a proven fact if the document content conflicts.",
+  "Treat this as evidence preparation, not EB1A categorization.",
+  "shortSummary should be crisp and easy to scan in a dashboard.",
+  "detailedSummary should explain what the document is and what it appears to prove.",
+  "evidenceValue should explain why the document may matter in the broader evidence record without giving legal advice.",
+  "recommendedUse should suggest how the evidence may be organized, grouped, or referenced in later review steps.",
+].join(" ");
+
+export const PRE_FOLDER_AWARE_SUMMARY_PROMPT_TEMPLATE = [
+  "You review a single evidence file in a candidate evidence workspace.",
+  "The candidate at the center of this review is {{candidateName}}.",
+  "Write every summary from the candidate's point of view: explain what the file says about the candidate, the candidate's work, the candidate's participation, or the candidate's recognition.",
   "Treat this as evidence preparation, not EB1A categorization.",
   "shortSummary should be crisp and easy to scan in a dashboard.",
   "detailedSummary should explain what the document is and what it appears to prove.",
@@ -40,6 +52,23 @@ export const LEGACY_BUNDLING_PROMPT_TEMPLATE = [
 ].join(" ");
 
 export const DEFAULT_BUNDLING_PROMPT_TEMPLATE = [
+  "You organize evidence documents into real-world events or work streams.",
+  "An event can be a project, speaking event, judging assignment, authorship effort, book, award, leadership role, press mention, email thread, or other relevant real-world grouping.",
+  "Original upload-folder names and nested folder labels are important organizational hints. Use them to keep related files together when they align with the evidence summaries.",
+  "Preserve meaningful folder labels as bundle anchors when they clearly represent a real project, product, event, dossier, or work stream, but never return raw folder paths as final bundle names.",
+  "Bundle invitations, confirmations, thank-you notes, certificates, recommendation letters, screenshots, and other evidence that clearly belong to the same underlying event.",
+  "Photographs, badges, screenshots, attendee lists, and other supporting visuals should be merged into the same underlying event when the organizations, people, dates, or subject matter align.",
+  "Do not create a separate generic Photograph or Image bundle if the file is clearly supporting an event already represented elsewhere.",
+  "Each completed document must belong to exactly one event bundle.",
+  "Use the most specific, human-readable bundle name possible.",
+  "Bundle names must be short labels, ideally two to six words.",
+  "Do not include year or month in the bundle name because the system adds that prefix automatically.",
+  "Do not categorize or reason in EB1A terms.",
+  "If a document does not clearly belong with others, create a single-document event.",
+  "Return strict JSON only.",
+].join(" ");
+
+export const PRE_FOLDER_AWARE_BUNDLING_PROMPT_TEMPLATE = [
   "You organize evidence documents into real-world events or work streams.",
   "An event can be a project, speaking event, judging assignment, authorship effort, book, award, leadership role, press mention, email thread, or other relevant real-world grouping.",
   "Bundle invitations, confirmations, thank-you notes, certificates, recommendation letters, screenshots, and other evidence that clearly belong to the same underlying event.",
@@ -93,6 +122,20 @@ export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
   "You classify event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
   "The candidate at the center of this review is {{candidateName}}.",
   "You are classifying bundle-level events, not isolated files.",
+  "Original upload-folder and dossier names are organizational hints. Consider them when they align with the bundle evidence, especially for recommendation-letter, judging, authorship, critical role, and original contribution folders.",
+  "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",
+  "Choose one primary criterion when the bundle clearly fits.",
+  "Use secondary criteria sparingly and only when they are genuinely plausible.",
+  "If a bundle is too ambiguous, too weak, or not clearly appropriate for any criterion, leave the primary criterion empty and explain why it should go to human review.",
+  "Do not force uncertain evidence into a legal bucket just to avoid unclassified review.",
+  "Write rationale for a case-prep reviewer, not legal advice.",
+  "suggestedExhibitTitle should be concise and human-readable for downstream folder organization.",
+].join(" ");
+
+export const PRE_FOLDER_AWARE_CLASSIFICATION_PROMPT_TEMPLATE = [
+  "You classify event bundles in a candidate evidence workspace into U.S. EB1A criteria.",
+  "The candidate at the center of this review is {{candidateName}}.",
+  "You are classifying bundle-level events, not isolated files.",
   "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",
   "Choose one primary criterion when the bundle clearly fits.",
   "Use secondary criteria sparingly and only when they are genuinely plausible.",
@@ -103,6 +146,18 @@ export const DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = [
 ].join(" ");
 
 export const DEFAULT_TAGGING_PROMPT_TEMPLATE = [
+  "You review a single evidence file after event bundling and EB1A bundle classification.",
+  "The candidate at the center of this review is {{candidateName}}.",
+  "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",
+  "The event bundle context is: {{bundleContext}}.",
+  "The original folder context is: {{folderContext}}.",
+  "The document summary context is: {{documentSummary}}.",
+  "Tag only the criteria that are genuinely supported by this one document, even if the parent bundle supports more.",
+  "Be conservative, avoid inflating evidence across multiple criteria, and prefer pending review when support is weak or ambiguous.",
+  "Return a concise keep/pending/archive suggestion based on how usable this one file is in petition drafting.",
+].join(" ");
+
+export const PRE_FOLDER_AWARE_TAGGING_PROMPT_TEMPLATE = [
   "You review a single evidence file after event bundling and EB1A bundle classification.",
   "The candidate at the center of this review is {{candidateName}}.",
   "Use the criterion catalog exactly as provided: {{criteriaCatalog}}.",

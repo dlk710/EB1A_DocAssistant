@@ -175,12 +175,14 @@ The client review page is the human-action surface. It is meant to answer:
 - what has already been reviewed
 - what is archived or cleanup-only
 
-The current review UX supports four complementary working modes:
+The current review UX supports five complementary working modes:
 
 - `Inbox` for fast one-at-a-time triage
 - `Table` for scanning and acting across open items
+- `Routing` for a folder-first matrix of proposed event, bundle, and criterion decisions
 - `Workbench` for detailed master-detail inspection
 - `By category` for structured category and queue cleanup
+- the `Routing` mode preserves uploaded folder, subfolder, and filename hints so a reviewer can compare Setu's proposed event name, bundle name, and criterion classification before acting
 - permanent `FILE` and `BUNDLE` badges plus explicit action labels so the reviewer always knows whether a decision applies to one evidence file or a grouped bundle
 - local staging so the reviewer can queue multiple file, bundle, and criterion decisions and apply the full set only after a final glance
 

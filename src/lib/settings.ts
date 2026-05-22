@@ -13,6 +13,10 @@ import {
   LEGACY_BUNDLING_PROMPT_TEMPLATE,
   LEGACY_CLASSIFICATION_PROMPT_TEMPLATE,
   LEGACY_SUMMARY_PROMPT_TEMPLATE,
+  PRE_FOLDER_AWARE_BUNDLING_PROMPT_TEMPLATE,
+  PRE_FOLDER_AWARE_CLASSIFICATION_PROMPT_TEMPLATE,
+  PRE_FOLDER_AWARE_SUMMARY_PROMPT_TEMPLATE,
+  PRE_FOLDER_AWARE_TAGGING_PROMPT_TEMPLATE,
   PHASED_CLASSIFICATION_PROMPT_TEMPLATE,
 } from "@/lib/prompt-library";
 import { debugQdrantStoragePath } from "@/lib/qdrant";
@@ -82,18 +86,25 @@ function readPersistedSettings() {
 export function getRuntimeSettings(): RuntimeSettings {
   const persisted = readPersistedSettings();
   const normalizedSummaryPrompt =
-    persisted.summaryPrompt?.trim() === LEGACY_SUMMARY_PROMPT_TEMPLATE
+    persisted.summaryPrompt?.trim() === LEGACY_SUMMARY_PROMPT_TEMPLATE ||
+    persisted.summaryPrompt?.trim() === PRE_FOLDER_AWARE_SUMMARY_PROMPT_TEMPLATE
       ? DEFAULT_SUMMARY_PROMPT_TEMPLATE
       : persisted.summaryPrompt?.trim();
   const normalizedBundlingPrompt =
-    persisted.bundlingPrompt?.trim() === LEGACY_BUNDLING_PROMPT_TEMPLATE
+    persisted.bundlingPrompt?.trim() === LEGACY_BUNDLING_PROMPT_TEMPLATE ||
+    persisted.bundlingPrompt?.trim() === PRE_FOLDER_AWARE_BUNDLING_PROMPT_TEMPLATE
       ? DEFAULT_BUNDLING_PROMPT_TEMPLATE
       : persisted.bundlingPrompt?.trim();
   const normalizedClassificationPrompt =
     persisted.classificationPrompt?.trim() === LEGACY_CLASSIFICATION_PROMPT_TEMPLATE ||
-    persisted.classificationPrompt?.trim() === PHASED_CLASSIFICATION_PROMPT_TEMPLATE
+    persisted.classificationPrompt?.trim() === PHASED_CLASSIFICATION_PROMPT_TEMPLATE ||
+    persisted.classificationPrompt?.trim() === PRE_FOLDER_AWARE_CLASSIFICATION_PROMPT_TEMPLATE
       ? DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
       : persisted.classificationPrompt?.trim();
+  const normalizedTaggingPrompt =
+    persisted.taggingPrompt?.trim() === PRE_FOLDER_AWARE_TAGGING_PROMPT_TEMPLATE
+      ? DEFAULT_TAGGING_PROMPT_TEMPLATE
+      : persisted.taggingPrompt?.trim();
 
   return {
     candidateName:
@@ -111,7 +122,7 @@ export function getRuntimeSettings(): RuntimeSettings {
       process.env.EB1A_CLASSIFICATION_PROMPT ||
       DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
     taggingPrompt:
-      persisted.taggingPrompt?.trim() ||
+      normalizedTaggingPrompt ||
       process.env.EB1A_TAGGING_PROMPT ||
       DEFAULT_TAGGING_PROMPT_TEMPLATE,
     triagePrompt:

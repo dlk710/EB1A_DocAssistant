@@ -48,6 +48,7 @@ The live app at `http://localhost:3001` currently supports:
 - client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders
+- folder-first routing suggestions that preserve uploaded folder, subfolder, and filename context during review
 - criterion drafting queue and three-column drafting workspace
 - style profiles with a curated default exemplar pack
 - draft fact-check and generic-prose checks
@@ -144,14 +145,16 @@ The client home is the operational summary for one client. It shows:
 The client review page is action-oriented. It emphasizes:
 
 - items that still require human judgment
-- four review modes:
+- five review modes:
   - `Inbox`
   - `Table`
+  - `Routing`
   - `Workbench`
   - `By category`
 - category bands and archive bands
 - human-review queue behavior
 - quick actions and quick peek
+- a routing matrix view that shows proposed event name, proposed bundle name, proposed criterion, decision basis, current placement, and source folder hints at a glance
 - permanent `FILE` and `BUNDLE` badges on review cards, table rows, and workbench entries so reviewers can immediately tell whether an action affects one evidence file or a grouped bundle
 - explicit action copy that names the target unit, for example `Keep file`, `Move file to bundle`, `Assign bundle to criterion`, and `Archive bundle`
 - the staged sequence:

@@ -8,6 +8,7 @@ import {
   applyCitationContractToTriage,
 } from "@/lib/chat-citation";
 import { classifyChatMode } from "@/lib/chat-classifier";
+import { deriveDocumentDisposition, hasEnabledCriterionTag } from "@/lib/criterion-tags";
 import {
   briefDraftJsonSchema,
   briefDraftSchema,
@@ -277,7 +278,7 @@ async function retrieveCriterionDocuments(input: {
     reviewSets.reviewableDocuments.map((document) => [document.id, document]),
   );
   const criterionTagged = reviewSets.reviewableDocuments.filter((document) =>
-    document.criteriaTags.some((tag) => tag.code === input.criterionCode),
+    hasEnabledCriterionTag(document, input.criterionCode),
   );
   const pinnedDocuments = input.pinnedDocIds
     .map((docId) => reviewableById.get(docId) ?? null)
@@ -297,7 +298,7 @@ async function retrieveCriterionDocuments(input: {
     .filter(
       (document) =>
         reviewableById.has(document.id) &&
-        document.criteriaTags.some((tag) => tag.code === input.criterionCode),
+        hasEnabledCriterionTag(document, input.criterionCode),
     );
 
   return {
@@ -554,8 +555,8 @@ export async function generateClientBriefDraft(input: {
         costUsd: totalCostUsd,
         reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile${attempt > 1 ? ` after ${attempt} drafting attempts` : ""}.`,
         pendingDisclosure:
-          retrieval.documents.some((document) => document.reviewStatus === "pending")
-            ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
+          retrieval.documents.some((document) => deriveDocumentDisposition(document) === "untouched")
+            ? `This draft used ${retrieval.documents.filter((document) => deriveDocumentDisposition(document) === "untouched").length} untouched documents that have not yet been fully reviewed.`
             : null,
         documentLookup,
         draftVersionSeed: draftVersionFromBriefDraft(enrichedDraft, documentLookup, {
@@ -603,8 +604,8 @@ export async function generateClientBriefDraft(input: {
     costUsd: totalCostUsd,
     reasoning: `Retrieved ${retrieval.documents.length} criterion-scoped documents for ${criterion.name}, plus ${pinnedDocIds.length} pinned exhibit(s), and applied the ${profile.displayName} style profile. Setu fell back to a conservative evidence-led draft after stricter attempts triggered fact-check drift warnings${lastDraftError ? ` (${lastDraftError.message})` : ""}.`,
     pendingDisclosure:
-      retrieval.documents.some((document) => document.reviewStatus === "pending")
-        ? `This draft used ${retrieval.documents.filter((document) => document.reviewStatus === "pending").length} pending documents that have not yet been fully reviewed.`
+      retrieval.documents.some((document) => deriveDocumentDisposition(document) === "untouched")
+        ? `This draft used ${retrieval.documents.filter((document) => deriveDocumentDisposition(document) === "untouched").length} untouched documents that have not yet been fully reviewed.`
         : null,
     documentLookup,
     draftVersionSeed: draftVersionFromBriefDraft(enrichedFallback, documentLookup, {
@@ -711,7 +712,7 @@ async function retrieveClientDocumentsByMeaning(
       }
 
       excludedReason[document.id] =
-        document.reviewStatus === "archived"
+        deriveDocumentDisposition(document) === "archived"
           ? "Archived documents are excluded from chat retrieval."
           : "Document is not eligible for review retrieval.";
       return false;
@@ -735,7 +736,11 @@ export async function generateClientStrategyMemo(clientId: string, snapshotInput
   const { settings } = getOpenAiContext();
   const reviewSets = collectClientReviewSets(snapshot);
 
-  if (!reviewSets.documents.some((document) => document.criteriaTags.length > 0)) {
+  if (
+    !reviewSets.documents.some((document) =>
+      document.criteriaTags.some((tag) => tag.state === "enabled"),
+    )
+  ) {
     const memo = deterministicNoEvidenceMemo(snapshot);
     saveLatestStrategyMemo(clientId, memo);
     return {
@@ -794,7 +799,7 @@ export async function generateClientStrategyMemo(clientId: string, snapshotInput
         reasoning: `Coverage spans ${reviewSets.keptDocuments.length} kept and ${reviewSets.pendingDocuments.length} pending documents across ${snapshot.clientWorkspaces.length} workspaces.`,
         pendingDisclosure:
           reviewSets.pendingDocuments.length > 0
-            ? `Considered ${reviewSets.pendingDocuments.length} pending docs across the client while forming this memo.`
+            ? `Considered ${reviewSets.pendingDocuments.length} untouched docs across the client while forming this memo.`
             : null,
         snapshot,
       };
@@ -829,7 +834,7 @@ export async function generateClientStressTest(input: {
   const focusDocuments =
     primaryCodes.length > 0
       ? reviewSets.reviewableDocuments.filter((document) =>
-          document.criteriaTags.some((tag) => primaryCodes.includes(tag.code)),
+          primaryCodes.some((criterionCode) => hasEnabledCriterionTag(document, criterionCode)),
         )
       : reviewSets.reviewableDocuments;
 

@@ -7,6 +7,9 @@ import {
 import { compareIsoDatesDescending } from "@/lib/date";
 import { ensureStorageRoots } from "@/lib/state-store";
 import type {
+  CriterionTagOrigin,
+  CriterionTagState,
+  DocumentDisposition,
   DocumentMetadata,
   DocumentSummaryPayload,
   DocumentUsage,
@@ -76,17 +79,44 @@ function parseCriteriaTags(value: unknown) {
     }
 
     accumulator.push({
+      id: typeof record.id === "string" ? record.id : undefined,
+      documentId:
+        typeof record.documentId === "string" ? record.documentId : undefined,
+      workspaceId:
+        typeof record.workspaceId === "string" ? record.workspaceId : undefined,
       code,
+      criterionCode:
+        typeof record.criterionCode === "string" ? record.criterionCode : undefined,
       legalCode: String(record.legalCode ?? ""),
       name,
       role: record.role === "supporting" ? "supporting" : "primary",
       source: record.source === "manual" ? "manual" : "ai",
+      origin:
+        record.origin === "attorney"
+          ? ("attorney" satisfies CriterionTagOrigin)
+          : record.origin === "ai"
+            ? ("ai" satisfies CriterionTagOrigin)
+            : undefined,
+      state:
+        record.state === "enabled" || record.state === "disabled" || record.state === "suggested"
+          ? (record.state satisfies CriterionTagState)
+          : undefined,
       confidence:
         typeof record.confidence === "number"
           ? Math.max(0, Math.min(1, record.confidence))
           : 0,
+      aiConfidence:
+        record.aiConfidence === null
+          ? null
+          : typeof record.aiConfidence === "number"
+            ? Math.max(0, Math.min(1, record.aiConfidence))
+            : undefined,
       reasoning: String(record.reasoning ?? ""),
       taggedAt: String(record.taggedAt ?? new Date(0).toISOString()),
+      createdAt:
+        typeof record.createdAt === "string" ? record.createdAt : undefined,
+      updatedAt:
+        typeof record.updatedAt === "string" ? record.updatedAt : undefined,
     });
 
     return accumulator;
@@ -99,6 +129,19 @@ function parseReviewStatus(value: unknown): EvidenceReviewStatus {
   }
 
   return "kept";
+}
+
+function parseDisposition(value: unknown): DocumentDisposition | undefined {
+  if (
+    value === "untouched" ||
+    value === "tagged" ||
+    value === "reference" ||
+    value === "archived"
+  ) {
+    return value;
+  }
+
+  return undefined;
 }
 
 function payloadToDocument(payload: Record<string, unknown>, pointId: string | number): StoredDocument {
@@ -125,6 +168,7 @@ function payloadToDocument(payload: Record<string, unknown>, pointId: string | n
     metadata: parseMetadata(payload.metadata),
     usage: parseUsage(payload.usage),
     criteriaTags: parseCriteriaTags(payload.criteriaTags),
+    disposition: parseDisposition(payload.disposition),
     reviewStatus: parseReviewStatus(payload.reviewStatus),
     reviewStatusSource:
       payload.reviewStatusSource === "manual"
@@ -165,6 +209,7 @@ function documentToPayload(document: StoredDocument) {
     metadata: document.metadata,
     usage: document.usage,
     criteriaTags: document.criteriaTags,
+    disposition: document.disposition,
     reviewStatus: document.reviewStatus,
     reviewStatusSource: document.reviewStatusSource,
     reviewStatusReason: document.reviewStatusReason,

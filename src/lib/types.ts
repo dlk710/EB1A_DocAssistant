@@ -48,6 +48,9 @@ export type ReviewBucketKind =
 export type EvidenceReviewStatus = "kept" | "pending" | "reference" | "archived";
 export type CriterionTagRole = "primary" | "supporting";
 export type CriterionTagSource = "ai" | "manual";
+export type CriterionTagState = "suggested" | "enabled" | "disabled";
+export type CriterionTagOrigin = "ai" | "attorney";
+export type DocumentDisposition = "untouched" | "tagged" | "reference" | "archived";
 export type PetitionType = "EB-1A";
 export type ClientStatus =
   | "onboarding"
@@ -119,14 +122,23 @@ export interface ClientTimelineEvent {
 }
 
 export interface EvidenceCriterionTag {
+  id?: string;
+  documentId?: string;
+  workspaceId?: string;
   code: string;
+  criterionCode?: string;
   legalCode: string;
   name: string;
   role: CriterionTagRole;
   source: CriterionTagSource;
+  origin?: CriterionTagOrigin;
+  state?: CriterionTagState;
   confidence: number;
+  aiConfidence?: number | null;
   reasoning: string;
   taggedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface DocumentSummaryPayload {
@@ -206,6 +218,7 @@ export interface StoredDocument {
   metadata: DocumentMetadata | null;
   usage: DocumentUsage | null;
   criteriaTags: EvidenceCriterionTag[];
+  disposition?: DocumentDisposition;
   reviewStatus: EvidenceReviewStatus;
   reviewStatusSource: "ai" | "manual" | "rule";
   reviewStatusReason: string | null;

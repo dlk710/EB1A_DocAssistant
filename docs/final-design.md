@@ -279,15 +279,19 @@ Completed event bundles are assigned into:
 
 The tagging pass works at the evidence-file level and produces:
 
-- criterion tags
+- criterion tags with independent state
 - role
   - `primary`
   - `supporting`
+- tag state
+  - `suggested`
+  - `enabled`
+  - `disabled`
 - AI confidence
 - rationale
-- default review state
-  - `kept`
-  - `pending`
+- document disposition
+  - `untouched`
+  - `tagged`
   - `reference`
   - `archived`
 
@@ -297,44 +301,19 @@ Setu has two review-oriented layers.
 
 ### Client review
 
-The client review page is action-oriented and groups work by:
+The client review page is now the Evidence Grid:
 
-- actionable items still requiring human review
-- five working modes:
-  - `Inbox` for one-item-at-a-time triage
-  - `Table` for scanning and acting across the open queue
-  - `Routing` for validating folder-first event, bundle, and criterion suggestions at a glance
-  - `Workbench` for master-detail inspection
-  - `By category` for criterion- and queue-oriented cleanup
-- a routing matrix that preserves top-folder, subfolder, filename, and summary cues so reviewers can compare proposed event names, proposed bundle names, proposed criteria, and current placement in one view
-- category bands
-- a dedicated Reference band for documents held aside without counting toward coverage
-- a dedicated `OTHER` placeholder band for bundles or files that should stay in scope but be revisited later
-- permanent `FILE` and `BUNDLE` badges plus explicit action labels so the scope of every review action is visible in the UI
-- local staging with a final `Accept all staged changes` step so reviewers can queue multiple decisions before persisting them
-- archive and cleanup bands
-- routine evidence that is already stabilized
+- one row per document
+- one clickable column per criterion
+- visible off, suggested, supporting, and primary states in every criterion cell
+- document-level `Reference` and `Archive` toggles
+- quick peek side panel for summary, active tags, preview text, and source metadata
+- autosave with an explicit `Save` button
+- filters for workspace, bundle, criterion, disposition, AI-unsure, and search
+- bulk actions for tagging, disposition changes, and bundle moves
+- a compact fixed-width layout that keeps the full review row visible without left-right scrolling at standard laptop widths
 
-The workflow order stays explicit:
-
-- file decision first
-- bundle fit second
-- criterion fit third
-
-Each decision row on `/clients/<clientId>/review` supports visible `Assign criterion` and `Actions` triggers, plus a right-click context menu, for:
-
-- keep as primary
-- keep as supporting
-- move to Reference
-- move to Archive
-- reassign criterion
-- move to bundle
-- Quick peek
-- AI reasoning
-
-Bundles in the human-review queue also expose a direct `Assign criterion` action so whole bundles can be routed into the correct criterion without reclassifying every evidence file one by one.
-
-This page is designed for incremental work across multiple sessions.
+Bundles remain available, but only as convenience groupings and filters. Criterion ownership now lives on independent document-level tags rather than on the bundle itself.
 
 ### Dense workspace review
 
@@ -532,7 +511,7 @@ Lifecycle validation should additionally confirm:
 - `/` redirects to `/clients`
 - `/clients` renders all clients
 - `/clients/<clientId>` renders client home
-- `/clients/<clientId>/review` renders the action-oriented review surface
+- `/clients/<clientId>/review` renders the Evidence Grid review surface
 - `/clients/<clientId>/strategy` renders coverage, memo, stress-test, and Ask Setu
 - `/clients/<clientId>/lock` renders stable exhibit staging
 - `/clients/<clientId>/drafting` renders the criterion queue

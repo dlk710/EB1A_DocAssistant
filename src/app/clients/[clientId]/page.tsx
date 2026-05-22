@@ -8,6 +8,7 @@ import { PipelineStrip } from "@/components/client-home/PipelineStrip";
 import { SpendCard } from "@/components/client-home/SpendCard";
 import { StageTile } from "@/components/client-home/StageTile";
 import { TimelineCard } from "@/components/client-home/TimelineCard";
+import { deriveDocumentDisposition, normalizeCriterionTags } from "@/lib/criterion-tags";
 import { buildWorkspaceCoverage } from "@/lib/coverage";
 import {
   getClient,
@@ -74,8 +75,10 @@ function isWorkspaceReady(snapshot: LibrarySnapshot) {
 
 function isDecisionDocument(document: ClientDocument) {
   return (
-    document.reviewStatus === "pending" ||
-    document.criteriaTags.some((tag) => tag.confidence < 0.65)
+    deriveDocumentDisposition(document) === "untouched" ||
+    normalizeCriterionTags(document).some(
+      (tag) => tag.state === "suggested" || (tag.aiConfidence ?? tag.confidence) < 0.65,
+    )
   );
 }
 
@@ -294,12 +297,14 @@ export default async function ClientHomePage({ params }: ClientHomePageProps) {
   const readyWorkspaceCount = snapshots.filter((snapshot) => isWorkspaceReady(snapshot)).length;
   const routineDocumentCount = allDocuments.filter(
     (document) =>
-      document.criteriaTags.length > 0 &&
-      document.reviewStatus === "kept" &&
-      !document.criteriaTags.some((tag) => tag.confidence < 0.65),
+      deriveDocumentDisposition(document) === "tagged" &&
+      normalizeCriterionTags(document).some((tag) => tag.state === "enabled") &&
+      !normalizeCriterionTags(document).some(
+        (tag) => tag.state === "suggested" || (tag.aiConfidence ?? tag.confidence) < 0.65,
+      ),
   ).length;
   const archivedDocumentCount = allDocuments.filter(
-    (document) => document.reviewStatus === "archived",
+    (document) => deriveDocumentDisposition(document) === "archived",
   ).length;
   const openDecisionCount = allDocuments.filter((document) => isDecisionDocument(document)).length;
   const totalDocuments = allDocuments.length;

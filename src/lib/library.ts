@@ -1,5 +1,6 @@
 import { buildClientCoverage, buildWorkspaceCoverage } from "@/lib/coverage";
 import { ensureClientsHydrated, getClient, listClients } from "@/lib/clients";
+import { normalizeStoredDocument } from "@/lib/criterion-tags";
 import { ensureWorkspaceCriteriaTagging } from "@/lib/criteria-tagging";
 import { ensureWorkspaceEb1aClassification } from "@/lib/eb1a-classification";
 import { ensureWorkspaceEventBundles } from "@/lib/event-bundles";
@@ -7,7 +8,11 @@ import {
   applyWorkspaceManualOverrides,
   getWorkspaceManualOverrideState,
 } from "@/lib/manual-overrides";
-import { ensureQdrantCollection, getDocumentsForJobs, getJobDocuments } from "@/lib/qdrant";
+import {
+  ensureQdrantCollection,
+  getDocumentsForJobs,
+  setDocumentPayload,
+} from "@/lib/qdrant";
 import { getWorkspaceReviewState } from "@/lib/review-state";
 import { getPublicSettings, getRuntimeSettings } from "@/lib/settings";
 import { readStateFile } from "@/lib/state-store";
@@ -95,6 +100,25 @@ function readWorkspaceTaggingState(jobId: string) {
   return file.workspaces[jobId] ?? null;
 }
 
+async function normalizeDocumentsOnRead(documents: StoredDocument[]) {
+  const normalized = documents.map((document) => normalizeStoredDocument(document));
+  const changed = normalized.filter((entry) => entry.changed);
+
+  if (changed.length > 0) {
+    await Promise.all(
+      changed.map(({ document }) =>
+        setDocumentPayload(document.id, {
+          criteriaTags: document.criteriaTags,
+          disposition: document.disposition,
+          reviewStatus: document.reviewStatus,
+        }),
+      ),
+    );
+  }
+
+  return normalized.map((entry) => entry.document);
+}
+
 export async function buildLibrarySnapshot(input?: {
   jobId?: string | null;
   clientId?: string | null;
@@ -111,7 +135,10 @@ export async function buildLibrarySnapshot(input?: {
   const activeClient = activeClientId ? getClient(activeClientId) : null;
   const clientJobIds = jobs.map((job) => job.id);
   const clientDocumentsRaw = clientJobIds.length ? await getDocumentsForJobs(clientJobIds) : [];
-  const documents = activeJob ? await getJobDocuments(activeJob.id) : [];
+  const normalizedClientDocuments = await normalizeDocumentsOnRead(clientDocumentsRaw);
+  const documents = activeJob
+    ? normalizedClientDocuments.filter((document) => document.jobId === activeJob.id)
+    : [];
   const rawEventBundles = activeJob
     ? ensureWorkspaceEventBundles(activeJob.id, documents)
     : null;
@@ -152,7 +179,9 @@ export async function buildLibrarySnapshot(input?: {
       : null;
   const reviewState = activeJob ? getWorkspaceReviewState(activeJob.id) : null;
   const clientWorkspaces: ClientWorkspace[] = jobs.map((job) => {
-    const clientJobDocuments = clientDocumentsRaw.filter((document) => document.jobId === job.id);
+    const clientJobDocuments = normalizedClientDocuments.filter(
+      (document) => document.jobId === job.id,
+    );
     const bundleState = readWorkspaceEventBundleState(job.id);
     const classificationState = readWorkspaceClassificationState(job.id);
     const taggingState = readWorkspaceTaggingState(job.id);
@@ -193,16 +222,16 @@ export async function buildLibrarySnapshot(input?: {
     activeJobId: activeJob?.id ?? null,
     activeJob,
     overview: buildOverviewFromDocuments(documents),
-    clientOverview: buildOverviewFromDocuments(clientDocumentsRaw),
+    clientOverview: buildOverviewFromDocuments(normalizedClientDocuments),
     jobs,
     clientWorkspaces,
     documents: documents.map(sanitizeDocument),
-    clientDocuments: clientDocumentsRaw.map(sanitizeDocument),
+    clientDocuments: normalizedClientDocuments.map(sanitizeDocument),
     eventBundles: effectiveStates.eventBundles,
     eb1aClassification: effectiveStates.classification,
     criteriaTagging,
     coverage: buildWorkspaceCoverage(documents),
-    clientCoverage: buildClientCoverage(clientDocumentsRaw),
+    clientCoverage: buildClientCoverage(normalizedClientDocuments),
     manualOverrides: effectiveStates.overrideState,
     reviewState,
     settings: {

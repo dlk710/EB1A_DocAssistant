@@ -1,8 +1,12 @@
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
+import {
+  deriveDocumentDisposition,
+  normalizeCriterionTags,
+} from "@/lib/criterion-tags";
 import type { ClientDocument, StoredDocument, WorkspaceCoverage } from "@/lib/types";
 
-function isKeptDocument(document: ClientDocument | StoredDocument) {
-  return document.reviewStatus === "kept";
+function isCountableDocument(document: ClientDocument | StoredDocument) {
+  return deriveDocumentDisposition(document) === "tagged";
 }
 
 export function buildWorkspaceCoverage(
@@ -11,15 +15,41 @@ export function buildWorkspaceCoverage(
   const criteria = EB1A_CRITERIA_DEFINITIONS.map((criterion) => {
     const matchingDocuments = documents.filter(
       (document) =>
-        isKeptDocument(document) &&
-        document.criteriaTags.some((tag) => tag.code === criterion.code),
+        isCountableDocument(document) &&
+        normalizeCriterionTags({
+          id: document.id,
+          jobId: document.jobId,
+          updatedAt: document.updatedAt,
+          reviewStatus: document.reviewStatus,
+          disposition: document.disposition,
+          criteriaTags: document.criteriaTags,
+        }).some((tag) => tag.code === criterion.code && tag.state === "enabled"),
     );
     const primaryCount = matchingDocuments.filter((document) =>
-      document.criteriaTags.some((tag) => tag.code === criterion.code && tag.role === "primary"),
+      normalizeCriterionTags({
+        id: document.id,
+        jobId: document.jobId,
+        updatedAt: document.updatedAt,
+        reviewStatus: document.reviewStatus,
+        disposition: document.disposition,
+        criteriaTags: document.criteriaTags,
+      }).some(
+        (tag) => tag.code === criterion.code && tag.role === "primary" && tag.state === "enabled",
+      ),
     ).length;
     const supportingCount = matchingDocuments.filter((document) =>
-      document.criteriaTags.some(
-        (tag) => tag.code === criterion.code && tag.role === "supporting",
+      normalizeCriterionTags({
+        id: document.id,
+        jobId: document.jobId,
+        updatedAt: document.updatedAt,
+        reviewStatus: document.reviewStatus,
+        disposition: document.disposition,
+        criteriaTags: document.criteriaTags,
+      }).some(
+        (tag) =>
+          tag.code === criterion.code &&
+          tag.role === "supporting" &&
+          tag.state === "enabled",
       ),
     ).length;
     const state =

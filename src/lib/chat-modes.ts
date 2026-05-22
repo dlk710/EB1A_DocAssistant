@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  deriveDocumentDisposition,
+  hasEnabledCriterionTag,
+  normalizeCriterionTags,
+} from "@/lib/criterion-tags";
 import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
 import type {
   BriefDraft,
@@ -488,18 +493,18 @@ export function buildCoverageBlock(snapshot: LibrarySnapshot) {
 
 export function buildKeptDocsBlock(documents: ClientDocument[]) {
   return documents
-    .filter((document) => document.reviewStatus === "kept")
+    .filter((document) => deriveDocumentDisposition(document) === "tagged")
     .slice(0, 80)
     .map(
       (document) =>
-        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."} :: workspace ${document.folderLabel} :: criteria ${document.criteriaTags.map((tag) => `${tag.legalCode} ${tag.role}`).join(", ") || "none"}`,
+        `[doc:${document.id}] ${document.summary?.title || document.fileName} :: ${document.summary?.shortSummary || "Summary pending."} :: workspace ${document.folderLabel} :: criteria ${normalizeCriterionTags(document).filter((tag) => tag.state === "enabled").map((tag) => `${tag.legalCode} ${tag.role}`).join(", ") || "none"}`,
     )
     .join("\n");
 }
 
 export function buildPendingDocsBlock(documents: ClientDocument[]) {
   return documents
-    .filter((document) => document.reviewStatus === "pending")
+    .filter((document) => deriveDocumentDisposition(document) === "untouched")
     .slice(0, 40)
     .map(
       (document) =>
@@ -509,9 +514,9 @@ export function buildPendingDocsBlock(documents: ClientDocument[]) {
 }
 
 export function buildPendingDisclosure(documents: ClientDocument[]) {
-  const kept = documents.filter((document) => document.reviewStatus === "kept").length;
-  const pending = documents.filter((document) => document.reviewStatus === "pending").length;
-  const archived = documents.filter((document) => document.reviewStatus === "archived").length;
+  const kept = documents.filter((document) => deriveDocumentDisposition(document) === "tagged").length;
+  const pending = documents.filter((document) => deriveDocumentDisposition(document) === "untouched").length;
+  const archived = documents.filter((document) => deriveDocumentDisposition(document) === "archived").length;
 
   return `This analysis considered ${kept} kept documents, ${pending} pending documents (not yet reviewed), and excluded ${archived} archived documents. Pending documents are flagged inline; revisit this analysis after final review if the count is significant.`;
 }
@@ -625,9 +630,7 @@ export function normalizeStressTestReport(report: StressTestReport, documents: C
           }
 
           const matchingCriterionDocs = documents
-            .filter((document) =>
-              document.criteriaTags.some((tag) => tag.code === challenge.criterionCode),
-            )
+            .filter((document) => hasEnabledCriterionTag(document, challenge.criterionCode))
             .slice(0, 3)
             .map((document) => document.id);
 
@@ -658,15 +661,17 @@ export function normalizeBriefDraft(draft: BriefDraft, documents: ClientDocument
 
 export function collectClientReviewSets(snapshot: LibrarySnapshot) {
   const documents = snapshot.clientDocuments.length ? snapshot.clientDocuments : snapshot.documents;
-  const keptDocuments = documents.filter((document) => document.reviewStatus === "kept");
-  const pendingDocuments = documents.filter((document) => document.reviewStatus === "pending");
-  const archivedDocuments = documents.filter((document) => document.reviewStatus === "archived");
+  const keptDocuments = documents.filter((document) => deriveDocumentDisposition(document) === "tagged");
+  const pendingDocuments = documents.filter((document) => deriveDocumentDisposition(document) === "untouched");
+  const archivedDocuments = documents.filter((document) => deriveDocumentDisposition(document) === "archived");
+  const referenceDocuments = documents.filter((document) => deriveDocumentDisposition(document) === "reference");
 
   return {
     documents,
     keptDocuments,
     pendingDocuments,
     archivedDocuments,
+    referenceDocuments,
     reviewableDocuments: [...keptDocuments, ...pendingDocuments],
     workspaceIds: [...new Set(documents.map((document) => document.jobId))],
   };

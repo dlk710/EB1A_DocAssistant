@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { tagDocumentCriteria } from "@/lib/ai";
+import { normalizeCriterionTags } from "@/lib/criterion-tags";
 import { buildFolderContextText } from "@/lib/folder-context";
 import {
   clearJobCancellationRequest,
@@ -21,7 +22,7 @@ interface CriteriaTaggingStateFile {
 }
 
 const CRITERIA_TAGGING_FILE = "criteria-tagging.json";
-const CRITERIA_TAGGING_VERSION = 3;
+const CRITERIA_TAGGING_VERSION = 4;
 
 declare global {
   var __eb1aActiveTaggingJobs: Set<string> | undefined;
@@ -32,6 +33,32 @@ globalThis.__eb1aActiveTaggingJobs = activeTaggingJobs;
 
 function roundUsd(value: number) {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function buildSuggestedTags(document: StoredDocument, tags: StoredDocument["criteriaTags"]) {
+  const now = new Date().toISOString();
+  const existingStableTags = normalizeCriterionTags(document).filter(
+    (tag) => tag.origin === "attorney" || tag.state === "enabled" || tag.state === "disabled",
+  );
+  const suggestedTags = tags.map((tag) => ({
+    ...tag,
+    id: tag.id ?? `${document.id}:${tag.code}`,
+    documentId: document.id,
+    workspaceId: document.jobId,
+    criterionCode: tag.code,
+    origin: "ai" as const,
+    state: "suggested" as const,
+    aiConfidence: tag.confidence,
+    createdAt: tag.createdAt ?? tag.taggedAt ?? now,
+    updatedAt: now,
+  }));
+
+  return normalizeCriterionTags({
+    ...document,
+    criteriaTags: [...existingStableTags, ...suggestedTags],
+    reviewStatus: "pending",
+    disposition: "untouched",
+  });
 }
 
 function readCriteriaTaggingStateFile() {
@@ -286,10 +313,12 @@ async function runWorkspaceCriteriaTaggingJob(
         });
         totalCostUsd += result.usage.totalCostUsd ?? 0;
         completedCount += 1;
+        const nextCriteriaTags = buildSuggestedTags(document, result.criteriaTags);
 
         await setDocumentPayload(document.id, {
-          criteriaTags: result.criteriaTags,
-          reviewStatus: result.reviewStatus,
+          criteriaTags: nextCriteriaTags,
+          disposition: "untouched",
+          reviewStatus: "pending",
           reviewStatusSource: "ai",
           reviewStatusReason: result.reviewStatusReason,
         });
@@ -297,6 +326,7 @@ async function runWorkspaceCriteriaTaggingJob(
         failedDocumentIds.push(document.id);
         await setDocumentPayload(document.id, {
           criteriaTags: [],
+          disposition: "untouched",
           reviewStatus: "pending",
           reviewStatusSource: "ai",
           reviewStatusReason: "Criteria tagging could not be completed automatically for this file.",

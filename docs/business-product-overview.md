@@ -87,8 +87,8 @@ Setu is currently a multi-pass evidence workbench wrapped in a client lifecycle 
 - document summarization
 - event bundling
 - bundle-level EB1A classification
-- document-level tagging
-- human review inbox behavior
+- document-level multi-tag criteria suggestions
+- evidence-grid review behavior
 - manual overrides
 - evidence preview
 - output packaging
@@ -175,22 +175,22 @@ The client review page is the human-action surface. It is meant to answer:
 - what has already been reviewed
 - what is archived or cleanup-only
 
-The current review UX supports five complementary working modes:
+The current review UX is a single Evidence Grid:
 
-- `Inbox` for fast one-at-a-time triage
-- `Table` for scanning and acting across open items
-- `Routing` for a folder-first matrix of proposed event, bundle, and criterion decisions
-- `Workbench` for detailed master-detail inspection
-- `By category` for structured category and queue cleanup
-- the `Routing` mode preserves uploaded folder, subfolder, and filename hints so a reviewer can compare Setu's proposed event name, bundle name, and criterion classification before acting
-- permanent `FILE` and `BUNDLE` badges plus explicit action labels so the reviewer always knows whether a decision applies to one evidence file or a grouped bundle
-- local staging so the reviewer can queue multiple file, bundle, and criterion decisions and apply the full set only after a final glance
+- one row per document and one criterion column per legal bucket
+- visible criterion-cell states for off, suggested, supporting, and primary
+- document-level `Reference` and `Archive` toggles
+- quick peek for summary, tags, preview text, and source metadata
+- filters for workspace, bundle, criterion, disposition, AI-unsure, and search
+- bulk actions for tagging, disposition changes, and bundle moves
+- autosave with explicit save-state feedback
+- bundle grouping preserved only as a convenience filter and review hint, not as the owner of criterion classification
 
 The human-review sequence is intentionally staged:
 
-- decide whether the file is kept or archived
-- confirm whether the kept file belongs in the right bundle
-- confirm whether the bundle belongs in the right criterion
+- decide whether the document remains `tagged`, moves to `reference`, or moves to `archived`
+- confirm or correct AI-suggested criterion tags
+- use bundle context as a convenience grouping when acting across related evidence
 
 When the reviewer is not ready to make a final bundle or criterion call, Setu exposes an `OTHER` placeholder so the item stays visible without blocking the rest of the case.
 

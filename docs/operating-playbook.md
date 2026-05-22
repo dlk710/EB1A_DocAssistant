@@ -129,16 +129,15 @@ Verify:
 - a `Keep`, `Reference`, or `Archive` action immediately removes the item from pending queues
 - the count persists correctly after reload
 - quick peek still works
-- context menus remain inside the viewport
-- Reference items render in their own band and do not count toward coverage
-- `OTHER` items render in their own placeholder band and do not count toward coverage
-- evidence rows expose visible `Assign criterion` and `Actions` controls in addition to right-click
-- bundle cards in the human-review queue can be reassigned directly into a criterion
-- review cards, table rows, and workbench entries expose permanent `FILE` and `BUNDLE` badges with explicit action wording
-- the review page supports `Inbox`, `Table`, `Routing`, `Workbench`, and `By category` without breaking existing actions
-- `Routing` shows a folder-first matrix with proposed event, bundle, criterion, decision basis, current placement, and source folder context
-- review actions can be staged locally and applied in one pass through `Accept all staged changes`
-- the review flow still honors the sequence `file -> bundle -> criterion`
+- every criterion cell remains visibly clickable in the off state
+- suggested tags confirm cleanly to enabled tags
+- `Reference` and `Archive` toggles are mutually exclusive
+- autosave reflects real persistence through `Unsaved`, `Saving`, and `Saved`
+- quick peek can step through adjacent documents and close with `Escape`
+- filtering by workspace, bundle, criterion, disposition, AI-unsure, and search narrows the grid correctly
+- bulk tag, disposition, and bundle-move actions operate only on the selected rows
+- enabled tags on `tagged` documents affect coverage; `reference` and `archived` documents do not
+- the review table fits within the main panel without left-right scrolling at standard laptop width
 
 ### Pipeline behavior
 

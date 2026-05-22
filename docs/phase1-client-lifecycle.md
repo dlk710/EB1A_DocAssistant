@@ -43,7 +43,7 @@ A workspace still remains the processing unit and is still keyed by `jobId`, but
 - `/clients/<clientId>`
   - client home with lifecycle status and recent activity
 - `/clients/<clientId>/review`
-  - action-oriented review surface
+  - Evidence Grid review surface
 - `/?view=workspace&clientId=<clientId>`
   - existing dense intake/dashboard surface
 - `/review/<jobId>`
@@ -65,21 +65,13 @@ The client review page emphasizes:
 
 - actionable items
 - routine items
-- category bands
-- archive and cleanup bands
-- five working modes:
-  - `Inbox`
-  - `Table`
-  - `Routing`
-  - `Workbench`
-  - `By category`
-- a folder-first routing matrix so a reviewer can scan proposed event names, proposed bundle names, proposed criteria, decision basis, and current placement before applying changes
-- permanent `FILE` and `BUNDLE` badges plus explicit button labels so a reviewer can immediately tell whether an action affects one evidence file or a whole bundle
-- the staged review order:
-  - file decision
-  - bundle review
-  - criterion review
-- local staging with `Accept all staged changes`, so reviewers can queue multiple changes, glance across the full review surface, and then persist the whole set in one pass
+- a single Evidence Grid with one row per document
+- visible criterion slots that cycle through off, supporting, primary, and disabled while preserving AI-suggested state
+- document-level `Reference` and `Archive` toggles
+- quick peek side panel for summary, preview text, and source metadata
+- filters and bulk actions for high-volume review
+- local autosave plus an explicit `Save` button
+- fixed-width grid formatting so the full review row remains visible without left-right scrolling
 - an `OTHER` placeholder for evidence or bundles that should stay visible for later correction
 
 The most important behavioral rule is:
@@ -118,7 +110,7 @@ At minimum, Phase 1 changes should verify:
 - `/` redirects to `/clients`
 - `/clients` renders the portfolio
 - client home renders stage, blocker, coverage, spend, and timeline
-- client review renders action-oriented review
+- client review renders the Evidence Grid
 - dense workspace surface remains reachable
 - pending review actions update counts immediately and persist after reload
 

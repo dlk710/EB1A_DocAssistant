@@ -40,11 +40,11 @@ The live app at `http://localhost:3001` currently supports:
 - Qdrant-backed semantic retrieval
 - AI event bundling
 - AI EB1A bundle classification
-- AI document-level criteria tagging
-- human review states: `kept`, `pending`, `reference`, `archived`
+- AI document-level multi-tag criteria suggestions
+- document dispositions: `untouched`, `tagged`, `reference`, `archived`
+- criterion-tag states: `suggested`, `enabled`, `disabled`
 - manual overrides for evidence, event bundles, and criteria placement
-- human-review action bands with visible `Assign criterion` / `Actions` controls plus right-click shortcuts
-- staged human-review changes with a final `Accept all staged changes` apply step across file, bundle, and criterion decisions
+- client review Evidence Grid with visible criterion slots, quick peek, filters, autosave, and bulk actions
 - client-wide strategy workspace with Ask Setu in `Triage`, `Strategy`, `Stress-test`, and `Draft`
 - client-scoped strategy memo and stress-test artifacts
 - lock and unlock flow with stable exhibits, pinboards, and draft placeholders
@@ -71,7 +71,7 @@ The current surface is client-first:
 - `/clients/<clientId>`
   - client home with lifecycle summary, blockers, coverage, spend, and timeline
 - `/clients/<clientId>/review`
-  - action-oriented review page for that client
+  - Evidence Grid review page for that client
 - `/clients/<clientId>/strategy`
   - coverage, strategy memo, stress-test, and Ask Setu
 - `/clients/<clientId>/lock`
@@ -142,27 +142,25 @@ The client home is the operational summary for one client. It shows:
 
 ### Client review page
 
-The client review page is action-oriented. It emphasizes:
+The client review page is now a single Evidence Grid. It emphasizes:
 
 - items that still require human judgment
-- five review modes:
-  - `Inbox`
-  - `Table`
-  - `Routing`
-  - `Workbench`
-  - `By category`
-- category bands and archive bands
-- human-review queue behavior
-- quick actions and quick peek
-- a routing matrix view that shows proposed event name, proposed bundle name, proposed criterion, decision basis, current placement, and source folder hints at a glance
-- permanent `FILE` and `BUNDLE` badges on review cards, table rows, and workbench entries so reviewers can immediately tell whether an action affects one evidence file or a grouped bundle
-- explicit action copy that names the target unit, for example `Keep file`, `Move file to bundle`, `Assign bundle to criterion`, and `Archive bundle`
-- the staged sequence:
-  - keep or archive the file
-  - confirm the right bundle
-  - confirm the right criterion
-- local staging so a reviewer can queue multiple file, bundle, and criterion decisions, then apply them together once the overall review looks right
-- an `OTHER` placeholder bucket for evidence or bundles that should stay visible but be revisited later
+- one row per document and one clickable column per criterion
+- visible off, suggested, supporting, and primary tag states in every criterion cell
+- document-level `Reference` and `Archive` toggles
+- quick peek side panel with summary, current tags, preview text, and source metadata
+- autosave with `Unsaved`, `Saving`, and `Saved` feedback plus an explicit `Save` button
+- filters for workspace, bundle, criterion, disposition, AI-unsure, and search
+- bulk actions for multi-select tagging, disposition changes, and bundle moves
+- bundle grouping preserved as a convenience filter, not as the owner of criterion classification
+- a compact fixed-width layout so the full grid stays visible without left-right scrolling at standard laptop widths
+
+The review model is now:
+
+- AI proposes criterion tags per document
+- the attorney enables, disables, or re-roles those tags
+- coverage only counts enabled tags on documents whose disposition remains `tagged`
+- the dense `/review/<jobId>` surface remains available separately for deeper retrieval-heavy workspace work
 
 ### Strategy stage
 

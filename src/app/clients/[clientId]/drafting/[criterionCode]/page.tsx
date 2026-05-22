@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { DraftingWorkspace } from "@/components/drafting/DraftingWorkspace";
+import { deriveDocumentDisposition, hasEnabledCriterionTag } from "@/lib/criterion-tags";
 import { getClient } from "@/lib/clients";
 import { extractCandidateEndorsementQuotes } from "@/lib/endorsement-quotes";
 import { buildLibrarySnapshot } from "@/lib/library";
@@ -104,7 +105,8 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
   const suggestedDocuments = snapshot.clientDocuments
     .filter(
       (document) =>
-        document.criteriaTags.some((tag) => tag.code === criterionCode) &&
+        hasEnabledCriterionTag(document, criterionCode) &&
+        deriveDocumentDisposition(document) === "tagged" &&
         !pinboardEntries.some((entry) => entry.documentId === document.id),
     )
     .slice(0, 10)
@@ -117,7 +119,11 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
   const rawDocuments = await getDocumentsForJobs(snapshot.clientWorkspaces.map((workspace) => workspace.id));
   const criterionDocIds = new Set(
     snapshot.clientDocuments
-      .filter((document) => document.criteriaTags.some((tag) => tag.code === criterionCode))
+      .filter(
+        (document) =>
+          hasEnabledCriterionTag(document, criterionCode) &&
+          deriveDocumentDisposition(document) === "tagged",
+      )
       .map((document) => document.id),
   );
   pinboardEntries.forEach((entry) => criterionDocIds.add(entry.documentId));

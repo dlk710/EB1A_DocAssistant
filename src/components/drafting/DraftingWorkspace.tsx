@@ -1,19 +1,20 @@
 "use client";
-
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatDock } from "@/components/chat/ChatDock";
 import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { CriterionTabStrip } from "@/components/drafting/CriterionTabStrip";
-import { DraftPane } from "@/components/drafting/DraftPane";
 import { DraftToolbar } from "@/components/drafting/DraftToolbar";
 import { FactCheckBanner } from "@/components/drafting/FactCheckBanner";
 import { GenericProseBanner } from "@/components/drafting/GenericProseBanner";
 import { Pinboard } from "@/components/drafting/Pinboard";
 import { StrategyNotesCard } from "@/components/drafting/StrategyNotesCard";
+import { SubsectionPane } from "@/components/drafting/SubsectionPane";
+import { SubsectionTree } from "@/components/drafting/SubsectionTree";
 import { VersionCompareModal } from "@/components/drafting/VersionCompareModal";
 import { runGenericProseCheck } from "@/lib/draft-prose-check";
-import type { CriterionDraft, DraftParagraph } from "@/lib/types";
+import { findSubsection, listSubsections, updateSubsection } from "@/lib/subsection-drafts";
+import type { CriterionDraft, DraftParagraph, EndorsementQuote } from "@/lib/types";
 
 interface CriterionTabView {
   criterionCode: string;
@@ -39,8 +40,13 @@ interface SuggestedDocument {
   fileName: string;
 }
 
-function latestVersion(draft: CriterionDraft | null) {
-  return draft?.versions.at(-1) ?? null;
+function firstFocusableSubsection(draft: CriterionDraft) {
+  const subsections = listSubsections(draft.root);
+  return (
+    subsections.find((node) => node.level === 2)?.id ??
+    subsections.find((node) => node.level === 1)?.id ??
+    draft.root.id
+  );
 }
 
 export function DraftingWorkspace(props: {
@@ -56,6 +62,7 @@ export function DraftingWorkspace(props: {
   strategyRationale: string;
   narrativeSpine: string;
   anchorExhibits: string[];
+  quoteSuggestionsBySubsection: Record<string, EndorsementQuote[]>;
 }) {
   const [draft, setDraft] = useState<CriterionDraft>(props.draft);
   const [pinboardEntries, setPinboardEntries] = useState(props.pinboardEntries);
@@ -65,35 +72,104 @@ export function DraftingWorkspace(props: {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [focusedSubsectionId, setFocusedSubsectionId] = useState(() => firstFocusableSubsection(props.draft));
+  const [criterionKind, setCriterionKind] = useState<CriterionDraft["kind"]>(props.draft.kind);
+  const [standardCriterionInvoked, setStandardCriterionInvoked] = useState(
+    props.draft.standardCriterionInvoked ?? "",
+  );
+  const [comparableEvidenceRationale, setComparableEvidenceRationale] = useState(
+    props.draft.comparableEvidenceRationale ?? "",
+  );
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentVersion = useMemo(() => latestVersion(draft), [draft]);
-  const previousVersion = useMemo(() => (draft.versions.length > 1 ? draft.versions[draft.versions.length - 2] : null), [draft]);
-  const visibleParagraphs: DraftParagraph[] = useMemo(
-    () => currentVersion?.paragraphs ?? [],
-    [currentVersion],
+  const activeSubsectionId = useMemo(
+    () => findSubsection(draft.root, focusedSubsectionId)?.id ?? firstFocusableSubsection(draft),
+    [draft, focusedSubsectionId],
   );
-  const allApproved = props.tabs.every((tab) => tab.status === "approved");
+  const currentSubsection = useMemo(
+    () => findSubsection(draft.root, activeSubsectionId),
+    [activeSubsectionId, draft.root],
+  );
+  const currentVersion = useMemo(() => currentSubsection?.versions.at(-1) ?? null, [currentSubsection]);
+  const previousVersion = useMemo(
+    () =>
+      currentSubsection && currentSubsection.versions.length > 1
+        ? currentSubsection.versions[currentSubsection.versions.length - 2]
+        : null,
+    [currentSubsection],
+  );
+  const visibleParagraphs: DraftParagraph[] = useMemo(
+    () => currentSubsection?.paragraphs ?? [],
+    [currentSubsection],
+  );
+  const allApproved = props.tabs.every((tab) =>
+    tab.criterionCode === props.criterionCode ? draft.status === "approved" : tab.status === "approved",
+  );
+  const quoteSuggestions = currentSubsection
+    ? props.quoteSuggestionsBySubsection[currentSubsection.id] ?? []
+    : [];
 
-  function updateParagraphText(paragraphId: string, text: string) {
+  function updateCurrentSubsection(
+    updater: (subsection: NonNullable<typeof currentSubsection>) => NonNullable<typeof currentSubsection>,
+  ) {
+    if (!currentSubsection) {
+      return;
+    }
+
     setDraft((current) => ({
       ...current,
-      versions: current.versions.map((version) =>
-        version.version === currentVersion?.version
-          ? {
-              ...version,
-              paragraphs: version.paragraphs.map((paragraph) =>
-                paragraph.id === paragraphId ? { ...paragraph, text } : paragraph,
-              ),
-            }
-          : version,
-      ),
+      kind: criterionKind,
+      standardCriterionInvoked,
+      comparableEvidenceRationale,
+      root: updateSubsection(current.root, currentSubsection.id, (subsection) => updater(subsection)),
     }));
     setDirty(true);
   }
 
+  function updateParagraphText(paragraphId: string, text: string) {
+    updateCurrentSubsection((subsection) => ({
+      ...subsection,
+      paragraphs: subsection.paragraphs.map((paragraph) =>
+        paragraph.id === paragraphId ? { ...paragraph, text } : paragraph,
+      ),
+    }));
+  }
+
+  function addParagraph() {
+    updateCurrentSubsection((subsection) => ({
+      ...subsection,
+      paragraphs: [
+        ...subsection.paragraphs,
+        {
+          id: globalThis.crypto.randomUUID(),
+          text: "",
+          exhibitRefs: [],
+          citations: [],
+          factCheckStatus: "pending",
+        },
+      ],
+    }));
+  }
+
+  function acceptQuote(quote: EndorsementQuote) {
+    updateCurrentSubsection((subsection) => ({
+      ...subsection,
+      endorsementQuotes: subsection.endorsementQuotes.some((entry) => entry.id === quote.id)
+        ? subsection.endorsementQuotes
+        : [...subsection.endorsementQuotes, quote],
+      gapNotes: [],
+    }));
+  }
+
+  function removeQuote(quoteId: string) {
+    updateCurrentSubsection((subsection) => ({
+      ...subsection,
+      endorsementQuotes: subsection.endorsementQuotes.filter((quote) => quote.id !== quoteId),
+    }));
+  }
+
   useEffect(() => {
-    if (!dirty || !currentVersion) {
+    if (!dirty || !currentSubsection) {
       return;
     }
 
@@ -112,10 +188,14 @@ export function DraftingWorkspace(props: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              versionNumber: currentVersion.version,
-              paragraphs: currentVersion.paragraphs,
-              authorNotes: currentVersion.authorNotes,
-              source: currentVersion.source === "ai" ? "ai-edited" : currentVersion.source,
+              subsectionId: currentSubsection.id,
+              versionNumber: currentVersion?.version,
+              paragraphs: currentSubsection.paragraphs,
+              endorsementQuotes: currentSubsection.endorsementQuotes,
+              source: currentVersion?.source === "ai" ? "ai-edited" : "manual",
+              criterionKind,
+              standardCriterionInvoked,
+              comparableEvidenceRationale,
             }),
           },
         );
@@ -137,7 +217,16 @@ export function DraftingWorkspace(props: {
         clearTimeout(saveTimer.current);
       }
     };
-  }, [dirty, currentVersion, props.clientId, props.criterionCode]);
+  }, [
+    dirty,
+    comparableEvidenceRationale,
+    criterionKind,
+    currentSubsection,
+    currentVersion,
+    props.clientId,
+    props.criterionCode,
+    standardCriterionInvoked,
+  ]);
 
   async function updatePinboard(action: { type: "reorder"; documentIds: string[] } | { type: "add"; documentId: string }) {
     const response = await fetch(
@@ -177,6 +266,9 @@ export function DraftingWorkspace(props: {
   }
 
   async function regenerateDraft() {
+    if (!currentSubsection) {
+      return;
+    }
     setIsGenerating(true);
     setErrorMessage(null);
     try {
@@ -185,23 +277,32 @@ export function DraftingWorkspace(props: {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          subsectionId: currentSubsection.id,
+          criterionKind,
+          standardCriterionInvoked,
+          comparableEvidenceRationale,
+        }),
       });
       const payload = (await response.json()) as { draft?: CriterionDraft; error?: string };
       if (!response.ok || !payload.draft) {
-        throw new Error(payload.error || "Unable to regenerate this draft.");
+        throw new Error(payload.error || "Unable to regenerate this subsection.");
       }
       setDraft(payload.draft);
       setDirty(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to regenerate this draft.");
+      setErrorMessage(error instanceof Error ? error.message : "Unable to regenerate this subsection.");
     } finally {
       setIsGenerating(false);
     }
   }
 
   async function approveCurrentDraft() {
-    if (!currentVersion) {
+    if (!currentSubsection) {
+      return;
+    }
+    const version = currentSubsection.versions.at(-1)?.version;
+    if (!version) {
       return;
     }
     setIsApproving(true);
@@ -215,18 +316,19 @@ export function DraftingWorkspace(props: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            version: currentVersion.version,
+            subsectionId: currentSubsection.id,
+            version,
           }),
         },
       );
       const payload = (await response.json()) as { draft?: CriterionDraft; error?: string };
       if (!response.ok || !payload.draft) {
-        throw new Error(payload.error || "Unable to approve this draft.");
+        throw new Error(payload.error || "Unable to approve this subsection.");
       }
       setDraft(payload.draft);
       setDirty(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to approve this draft.");
+      setErrorMessage(error instanceof Error ? error.message : "Unable to approve this subsection.");
     } finally {
       setIsApproving(false);
     }
@@ -239,7 +341,7 @@ export function DraftingWorkspace(props: {
 
   return (
     <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
-      <div className="mx-auto max-w-[1600px]">
+      <div className="mx-auto max-w-[1680px]">
         <header className="setu-topbar rounded-[18px] px-4 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="setu-brand-block">
@@ -251,7 +353,7 @@ export function DraftingWorkspace(props: {
                 </span>
               </div>
               <p className="setu-brand-tagline">
-                Build the criterion argument with grounded exhibits, style exemplars, and Ask Setu Draft mode.
+                Build the criterion argument as a recursive tree with evidence-led subsections and verbatim endorsement quotes.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -290,13 +392,93 @@ export function DraftingWorkspace(props: {
             </div>
           ) : null}
 
-          <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
-            <div className="space-y-4">
+          <DraftToolbar
+            versionNumbers={currentSubsection?.versions.map((version) => version.version) ?? []}
+            currentVersion={currentSubsection?.versions.at(-1)?.version ?? null}
+            isSaving={isSaving}
+            isGenerating={isGenerating}
+            isApproving={isApproving}
+            onOpenCompare={() => setCompareOpen(true)}
+            onRegenerate={() => void regenerateDraft()}
+            onApprove={() => void approveCurrentDraft()}
+          />
+
+          <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+            <aside className="space-y-4">
+              <SubsectionTree
+                root={draft.root}
+                activeSubsectionId={activeSubsectionId}
+                onSelectSubsection={setFocusedSubsectionId}
+              />
+              <StrategyNotesCard
+                legalCode={props.criterionLegalCode}
+                criterionName={props.criterionName}
+                rationale={props.strategyRationale}
+                narrativeSpine={props.narrativeSpine}
+                anchorExhibits={props.anchorExhibits}
+              />
+            </aside>
+
+            <main className="space-y-4">
+              <FactCheckBanner paragraphs={visibleParagraphs} />
+              <GenericProseBanner message={proseWarning} />
+              <SubsectionPane
+                subsection={currentSubsection}
+                quoteSuggestions={quoteSuggestions}
+                onChangeParagraph={updateParagraphText}
+                onAddParagraph={addParagraph}
+                onAcceptQuote={acceptQuote}
+                onRemoveQuote={removeQuote}
+              />
+            </main>
+
+            <aside className="space-y-4">
+              <section className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                  Criterion mode
+                </p>
+                <div className="mt-3 space-y-3">
+                  <select
+                    value={criterionKind}
+                    onChange={(event) => {
+                      setCriterionKind(event.target.value as CriterionDraft["kind"]);
+                      setDirty(true);
+                    }}
+                    className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2 text-[12px] text-[var(--foreground)]"
+                  >
+                    <option value="standard">Standard evidence</option>
+                    <option value="comparable-evidence">Comparable evidence</option>
+                  </select>
+                  {criterionKind === "comparable-evidence" ? (
+                    <div className="space-y-3">
+                      <input
+                        value={standardCriterionInvoked}
+                        onChange={(event) => {
+                          setStandardCriterionInvoked(event.target.value);
+                          setDirty(true);
+                        }}
+                        placeholder="Standard criterion invoked"
+                        className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2 text-[12px] text-[var(--foreground)]"
+                      />
+                      <textarea
+                        value={comparableEvidenceRationale}
+                        onChange={(event) => {
+                          setComparableEvidenceRationale(event.target.value);
+                          setDirty(true);
+                        }}
+                        placeholder="Why the standard criterion does not naturally apply and why this evidence is comparable."
+                        className="min-h-[120px] w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2 text-[12px] leading-6 text-[var(--foreground)]"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
               <Pinboard
                 entries={pinboardEntries}
                 suggestedDocuments={props.suggestedDocuments}
                 onAddDocument={(documentId) => void updatePinboard({ type: "add", documentId })}
-                onMoveEntry={(documentId, direction) => {
+                onMoveEntry={(documentId: string, direction: -1 | 1) => {
                   const currentIndex = pinboardEntries.findIndex((entry) => entry.documentId === documentId);
                   if (currentIndex === -1) {
                     return;
@@ -306,41 +488,15 @@ export function DraftingWorkspace(props: {
                     return;
                   }
                   const nextEntries = [...pinboardEntries];
-                  const [moved] = nextEntries.splice(currentIndex, 1);
-                  nextEntries.splice(nextIndex, 0, moved);
-                  setPinboardEntries(nextEntries);
+                  const [target] = nextEntries.splice(currentIndex, 1);
+                  nextEntries.splice(nextIndex, 0, target);
                   void updatePinboard({
                     type: "reorder",
                     documentIds: nextEntries.map((entry) => entry.documentId),
                   });
                 }}
               />
-              <StrategyNotesCard
-                legalCode={props.criterionLegalCode}
-                criterionName={props.criterionName}
-                rationale={props.strategyRationale}
-                narrativeSpine={props.narrativeSpine}
-                anchorExhibits={props.anchorExhibits}
-              />
-            </div>
 
-            <div className="space-y-4">
-              <DraftToolbar
-                versionNumbers={draft.versions.map((version) => version.version)}
-                currentVersion={currentVersion?.version ?? null}
-                isSaving={isSaving}
-                isGenerating={isGenerating}
-                isApproving={isApproving}
-                onOpenCompare={() => setCompareOpen(true)}
-                onRegenerate={() => void regenerateDraft()}
-                onApprove={() => void approveCurrentDraft()}
-              />
-              <FactCheckBanner paragraphs={visibleParagraphs} />
-              <GenericProseBanner message={proseWarning} />
-              <DraftPane paragraphs={visibleParagraphs} onChangeParagraph={updateParagraphText} />
-            </div>
-
-            <div>
               <ChatDock
                 clientId={props.clientId}
                 candidateName={props.clientName}
@@ -348,19 +504,22 @@ export function DraftingWorkspace(props: {
                 variant="panel"
                 initialMode="draft"
                 criterionCode={props.criterionCode}
+                focusedSubsectionId={currentSubsection?.id ?? null}
+                focusedSubsectionTitle={currentSubsection?.title ?? null}
+                focusedSubsectionSupportsClaim={currentSubsection?.supportsClaim ?? null}
                 draftEnabled
               />
-            </div>
+            </aside>
           </div>
         </div>
-      </div>
 
-      <VersionCompareModal
-        open={compareOpen}
-        leftVersion={previousVersion ?? currentVersion}
-        rightVersion={currentVersion}
-        onClose={() => setCompareOpen(false)}
-      />
+        <VersionCompareModal
+          open={compareOpen}
+          leftVersion={previousVersion}
+          rightVersion={currentVersion}
+          onClose={() => setCompareOpen(false)}
+        />
+      </div>
     </div>
   );
 }

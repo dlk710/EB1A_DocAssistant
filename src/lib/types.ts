@@ -683,8 +683,11 @@ export interface ChatArtifactRecord {
 export interface ExhibitAssignment {
   documentId: string;
   workspaceId: string;
-  exhibitNumber: number;
+  exhibitNumber: string;
   exhibitLabel: string;
+  criterionCode?: string;
+  anchoredToSubsectionId?: string;
+  bindingClaim?: string;
   order: number;
 }
 
@@ -712,6 +715,11 @@ export interface LockedDocumentSnapshot {
   updatedAt: string;
 }
 
+export interface ExhibitNumberingScheme {
+  kind: "flat" | "letter-grouped" | "section-grouped";
+  letterMap?: Record<string, string>;
+}
+
 export interface LockedCaseStrategy {
   version: number;
   clientId: string;
@@ -724,6 +732,7 @@ export interface LockedCaseStrategy {
   supporting: LockedCriterionEntry[];
   declined: LockedDeclinedCriterion[];
   documentsSnapshot: LockedDocumentSnapshot[];
+  exhibitNumberingScheme: ExhibitNumberingScheme;
   totalExhibits: number;
 }
 
@@ -776,13 +785,56 @@ export interface DraftVersion {
   costUsd: number;
 }
 
+export interface EndorsementQuote {
+  id: string;
+  expertName: string;
+  expertTitleAtLetter: string;
+  expertCurrentRole: string | null;
+  expertAffiliation: string;
+  sourceExhibitNumber: string;
+  sourceDocId: string;
+  quoteText: string;
+  anchoredToSubsectionId: string;
+  supportsClaim: string;
+  isIndependent: boolean | null;
+}
+
+export interface SubsectionVersion {
+  version: number;
+  createdAt: string;
+  source: "ai" | "manual" | "ai-edited";
+  paragraphs: DraftParagraph[];
+  endorsementQuotes: EndorsementQuote[];
+  wordCount: number;
+  costUsd: number;
+}
+
+export interface SubsectionDraft {
+  id: string;
+  parentId: string | null;
+  title: string;
+  level: number;
+  paragraphs: DraftParagraph[];
+  endorsementQuotes: EndorsementQuote[];
+  children: SubsectionDraft[];
+  status: "in-progress" | "approved" | "out-of-date";
+  versions: SubsectionVersion[];
+  latestApprovedVersion: number | null;
+  gapNotes?: string[];
+  supportsClaim?: string;
+}
+
 export interface CriterionDraft {
-  id?: string;
+  id: string;
   clientId: string;
   criterionCode: string;
+  kind: "standard" | "comparable-evidence";
+  standardCriterionInvoked?: string;
+  comparableEvidenceRationale?: string;
   createdAt: string;
   updatedAt: string;
   status: "in-progress" | "approved" | "out-of-date";
+  root: SubsectionDraft;
   versions: DraftVersion[];
   latestApprovedVersion?: number | null;
   outOfDate?: boolean;

@@ -193,12 +193,15 @@ The lock page commits the case theory into durable downstream structure:
 The drafting stage is the criterion-level production-writing layer. It adds:
 
 - a drafting queue across all locked criteria
-- a three-column workspace with pinboard, draft pane, and criterion-scoped Ask Setu
-- versioned AI and human draft history
-- draft approval per criterion
+- a recursive drafting workspace with a subsection tree, focused draft pane, and subsection-scoped Ask Setu
+- per-subsection AI and human version history inside a criterion-level draft record
+- endorsement-quote extraction and acceptance from recommendation letters
+- draft approval per subsection, with criterion approval rolling up only when the full tree is approved
+- comparable-evidence mode with recorded invoked criterion and rationale
 - subtle-drift warnings from the fact-check pass
 - generic-prose warnings for common AI phrases
 - style-profile-driven Draft generation
+- lock-time exhibit numbering schemes with configurable letter maps
 
 ### Synthesis stage
 

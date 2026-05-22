@@ -1,10 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { DraftingWorkspace } from "@/components/drafting/DraftingWorkspace";
 import { getClient } from "@/lib/clients";
+import { extractCandidateEndorsementQuotes } from "@/lib/endorsement-quotes";
 import { buildLibrarySnapshot } from "@/lib/library";
 import { ensureCriterionDraft, listCriterionDrafts } from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
 import { getCriterionPinboard } from "@/lib/pinboards";
+import { getDocumentsForJobs } from "@/lib/qdrant";
+import { listSubsections } from "@/lib/subsection-drafts";
 
 interface CriterionDraftingPageProps {
   params: Promise<{
@@ -59,13 +62,34 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
     notFound();
   }
 
-  const draft = ensureCriterionDraft(clientId, criterionCode);
   const snapshot = await buildLibrarySnapshot({ clientId });
   const pinboard = getCriterionPinboard(clientId, criterionCode);
-  const draftByCode = new Map(listCriterionDrafts(clientId).map((entry) => [entry.criterionCode, entry]));
   const documentLookup = new Map(snapshot.clientDocuments.map((document) => [document.id, document]));
+  const pinboardEntries = (pinboard?.entries ?? []).map((entry) => {
+    const document = documentLookup.get(entry.documentId);
+    return {
+      ...entry,
+      title: document?.summary?.title || document?.fileName || entry.documentId,
+      fileName: document?.fileName || entry.documentId,
+    };
+  });
+
+  const sectionUnits = pinboardEntries.length
+    ? pinboardEntries.map((entry, index) => `${criterionEntry.criterionName} unit ${index + 1} · ${entry.exhibitLabel}`)
+    : [`${criterionEntry.criterionName} unit 1`];
+  const draft = ensureCriterionDraft(clientId, criterionCode, {
+    sectionUnits,
+  });
+
+  const draftByCode = new Map(listCriterionDrafts(clientId).map((entry) => [entry.criterionCode, entry]));
   const tabs = [...lockedStrategy.primary, ...lockedStrategy.supporting].map((entry) => {
-    const currentDraft = draftByCode.get(entry.criterionCode) ?? ensureCriterionDraft(clientId, entry.criterionCode);
+    const currentDraft =
+      draftByCode.get(entry.criterionCode) ??
+      ensureCriterionDraft(clientId, entry.criterionCode, {
+        sectionUnits: entry.anchorExhibits.map(
+          (assignment, index) => `${entry.criterionName} unit ${index + 1} · ${assignment.exhibitLabel}`,
+        ),
+      });
     const status = tabStatus(currentDraft);
     return {
       criterionCode: entry.criterionCode,
@@ -74,15 +98,6 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
       href: `/clients/${clientId}/drafting/${entry.criterionCode}`,
       active: entry.criterionCode === criterionCode,
       ...status,
-    };
-  });
-
-  const pinboardEntries = (pinboard?.entries ?? []).map((entry) => {
-    const document = documentLookup.get(entry.documentId);
-    return {
-      ...entry,
-      title: document?.summary?.title || document?.fileName || entry.documentId,
-      fileName: document?.fileName || entry.documentId,
     };
   });
 
@@ -99,6 +114,34 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
       fileName: document.fileName,
     }));
 
+  const rawDocuments = await getDocumentsForJobs(snapshot.clientWorkspaces.map((workspace) => workspace.id));
+  const criterionDocIds = new Set(
+    snapshot.clientDocuments
+      .filter((document) => document.criteriaTags.some((tag) => tag.code === criterionCode))
+      .map((document) => document.id),
+  );
+  pinboardEntries.forEach((entry) => criterionDocIds.add(entry.documentId));
+  const criterionDocuments = rawDocuments.filter((document) => criterionDocIds.has(document.id));
+  const exhibitLookup = new Map(
+    [...criterionEntry.anchorExhibits, ...pinboardEntries].map((entry) => [
+      entry.documentId,
+      entry.exhibitLabel,
+    ]),
+  );
+  const quoteSuggestionsBySubsection = Object.fromEntries(
+    await Promise.all(
+      listSubsections(draft!.root).map(async (subsection) => [
+        subsection.id,
+        await extractCandidateEndorsementQuotes({
+          documents: criterionDocuments,
+          subsectionId: subsection.id,
+          supportsClaim: subsection.supportsClaim || subsection.title,
+          exhibitLookup,
+        }),
+      ]),
+    ),
+  );
+
   return (
     <DraftingWorkspace
       clientId={clientId}
@@ -113,6 +156,7 @@ export default async function CriterionDraftingPage({ params }: CriterionDraftin
       strategyRationale={criterionEntry.rationale}
       narrativeSpine={lockedStrategy.narrativeSpine}
       anchorExhibits={criterionEntry.anchorExhibits.map((assignment) => assignment.exhibitLabel)}
+      quoteSuggestionsBySubsection={quoteSuggestionsBySubsection}
     />
   );
 }

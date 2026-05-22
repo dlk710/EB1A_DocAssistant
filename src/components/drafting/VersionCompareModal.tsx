@@ -1,11 +1,11 @@
 "use client";
 
-import type { DraftVersion, SynthesisVersion } from "@/lib/types";
+import type { DraftVersion, SubsectionVersion, SynthesisVersion } from "@/lib/types";
 
 export function VersionCompareModal(props: {
   open: boolean;
-  leftVersion: DraftVersion | SynthesisVersion | null;
-  rightVersion: DraftVersion | SynthesisVersion | null;
+  leftVersion: DraftVersion | SubsectionVersion | SynthesisVersion | null;
+  rightVersion: DraftVersion | SubsectionVersion | SynthesisVersion | null;
   onClose: () => void;
 }) {
   if (!props.open || !props.leftVersion || !props.rightVersion) {

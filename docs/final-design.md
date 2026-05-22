@@ -407,9 +407,17 @@ Each version stores:
 
 The drafting workspace is a three-column surface:
 
-- left: pinboard + locked strategy notes
-- middle: editable draft on paper-like surface
-- right: criterion-scoped Ask Setu
+- left: subsection tree + locked strategy notes
+- middle: focused subsection draft on a paper-like surface
+- right: subsection-scoped Ask Setu plus endorsement-quote acceptance flow
+
+Phase 3A deepens the drafting structure:
+
+- each criterion draft is a recursive `SubsectionDraft` tree
+- endorsement quotes are stored as verbatim, source-bound objects attached to sub-claims
+- generation, versioning, and approval happen per subsection
+- comparable evidence is modeled explicitly on the draft record
+- exhibit numbering is chosen at lock time and rendered through a single numbering function
 
 ### Style profiles
 

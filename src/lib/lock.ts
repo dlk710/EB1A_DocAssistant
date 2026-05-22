@@ -1,13 +1,21 @@
 import path from "node:path";
-import { EB1A_CRITERIA_DEFINITIONS } from "@/lib/constants";
-import { ensureClientTimelineEvent } from "@/lib/timeline";
-import { ensureClientStorage, readAbsoluteStateFile, writeAbsoluteStateFile } from "@/lib/state-store";
+import { EB1A_CRITERIA_DEFINITIONS, getCriterionDisplayName } from "@/lib/constants";
+import { buildDefaultLetterMap, renderExhibitLabel, renderExhibitNumber } from "@/lib/exhibit-numbering";
 import { updateClient } from "@/lib/clients";
+import {
+  ensureCriterionDraft,
+  getCriterionDraft,
+  listCriterionDrafts,
+  markCriterionDraftOutOfDate,
+} from "@/lib/drafts";
 import { getCriterionPinboard, upsertCriterionPinboard } from "@/lib/pinboards";
+import { ensureClientStorage, readAbsoluteStateFile, writeAbsoluteStateFile } from "@/lib/state-store";
+import { ensureClientTimelineEvent } from "@/lib/timeline";
 import type {
   ClientDocument,
   CriterionDraft,
   ExhibitAssignment,
+  ExhibitNumberingScheme,
   LockedCaseStrategy,
   LockedCriterionEntry,
   LockedDeclinedCriterion,
@@ -23,10 +31,6 @@ function getLockHistoryDirectory(clientId: string) {
   return path.join(ensureClientStorage(clientId), "locked-strategy-history");
 }
 
-function getCriterionDraftPath(clientId: string, criterionCode: string) {
-  return path.join(ensureClientStorage(clientId), "drafts", `${criterionCode}.json`);
-}
-
 function criterionMeta(code: string) {
   return (
     EB1A_CRITERIA_DEFINITIONS.find((criterion) => criterion.code === code) ?? {
@@ -37,92 +41,75 @@ function criterionMeta(code: string) {
   );
 }
 
-function buildExhibitAssignments(
-  recommendations: StrategyMemo["recommendedMix"]["primary"],
-  documents: ClientDocument[],
-  startingNumber: number,
-) {
-  const documentLookup = new Map(documents.map((document) => [document.id, document]));
-  let nextNumber = startingNumber;
-
-  const entries: LockedCriterionEntry[] = recommendations.map((recommendation) => {
-    const meta = criterionMeta(recommendation.criterionCode);
-    const anchorDocIds = [...new Set(recommendation.anchorDocIds)].filter((docId) =>
-      documentLookup.has(docId),
-    );
-
-    const anchorExhibits: ExhibitAssignment[] = anchorDocIds.map((documentId, index) => {
-      const document = documentLookup.get(documentId)!;
-      const exhibitLabel =
-        anchorDocIds.length > 1
-          ? `Ex. ${nextNumber}${String.fromCharCode(65 + index)}`
-          : `Ex. ${nextNumber}`;
-
-      return {
-        documentId,
-        workspaceId: document.jobId,
-        exhibitNumber: nextNumber,
-        exhibitLabel,
-        order: index,
-      };
-    });
-
-    nextNumber += 1;
-
-    return {
-      criterionCode: recommendation.criterionCode,
-      legalCode: meta.legalCode,
-      criterionName: meta.name,
-      role: "primary",
-      rationale: recommendation.rationale,
-      anchorDocIds,
-      anchorExhibits,
-    };
-  });
-
+function buildDefaultNumberingScheme(strategyMemo: StrategyMemo): ExhibitNumberingScheme {
   return {
-    entries,
-    nextNumber,
+    kind: "letter-grouped",
+    letterMap: buildDefaultLetterMap([
+      ...strategyMemo.recommendedMix.primary.map((entry) => entry.criterionCode),
+      ...strategyMemo.recommendedMix.supporting.map((entry) => entry.criterionCode),
+    ]),
   };
 }
 
-function buildSupportingAssignments(
-  recommendations: StrategyMemo["recommendedMix"]["supporting"],
+function buildCriterionAssignments(
+  recommendations: Array<StrategyMemo["recommendedMix"]["primary"][number]>,
   documents: ClientDocument[],
-  startingNumber: number,
+  scheme: ExhibitNumberingScheme,
+  criterionOffset: number,
+  role: LockedCriterionEntry["role"],
 ) {
   const documentLookup = new Map(documents.map((document) => [document.id, document]));
-  let nextNumber = startingNumber;
 
-  const entries: LockedCriterionEntry[] = recommendations.map((recommendation) => {
+  const entries: LockedCriterionEntry[] = recommendations.map((recommendation, criterionIndex) => {
     const meta = criterionMeta(recommendation.criterionCode);
     const anchorDocIds = [...new Set(recommendation.anchorDocIds)].filter((docId) =>
       documentLookup.has(docId),
     );
+    const criterionPosition = criterionOffset + criterionIndex;
 
     const anchorExhibits: ExhibitAssignment[] = anchorDocIds.map((documentId, index) => {
       const document = documentLookup.get(documentId)!;
-      const exhibitLabel =
-        anchorDocIds.length > 1
-          ? `Ex. ${nextNumber}${String.fromCharCode(65 + index)}`
-          : `Ex. ${nextNumber}`;
+      const position =
+        scheme.kind === "flat"
+          ? recommendations
+              .slice(0, criterionIndex)
+              .reduce((sum, entry) => sum + entry.anchorDocIds.length, criterionOffset) + index
+          : criterionPosition;
+
+      const exhibitNumber = renderExhibitNumber(
+        scheme,
+        {
+          criterionCode: recommendation.criterionCode,
+          order: index,
+        },
+        position,
+      );
+      const exhibitLabel = renderExhibitLabel(
+        scheme,
+        {
+          criterionCode: recommendation.criterionCode,
+          order: index,
+        },
+        position,
+      );
 
       return {
         documentId,
         workspaceId: document.jobId,
-        exhibitNumber: nextNumber,
+        exhibitNumber,
         exhibitLabel,
+        criterionCode: recommendation.criterionCode,
+        anchoredToSubsectionId: undefined,
+        bindingClaim: meta.name,
         order: index,
       };
     });
-
-    nextNumber += 1;
 
     return {
       criterionCode: recommendation.criterionCode,
       legalCode: meta.legalCode,
       criterionName: meta.name,
-      role: "supporting",
+      role,
       rationale: recommendation.rationale,
       anchorDocIds,
       anchorExhibits,
@@ -131,7 +118,11 @@ function buildSupportingAssignments(
 
   return {
     entries,
-    nextNumber,
+    nextOffset:
+      criterionOffset +
+      (scheme.kind === "flat"
+        ? recommendations.reduce((sum, entry) => sum + entry.anchorDocIds.length, 0)
+        : recommendations.length),
   };
 }
 
@@ -158,55 +149,6 @@ export function saveLockedStrategy(strategy: LockedCaseStrategy) {
   writeAbsoluteStateFile(getLockedStrategyPath(strategy.clientId), strategy);
 }
 
-export function getCriterionDraft(clientId: string, criterionCode: string) {
-  return readAbsoluteStateFile<CriterionDraft | null>(getCriterionDraftPath(clientId, criterionCode), null);
-}
-
-export function listCriterionDrafts(clientId: string, criterionCodes?: string[]) {
-  if (criterionCodes?.length) {
-    return criterionCodes
-      .map((criterionCode) => getCriterionDraft(clientId, criterionCode))
-      .filter((draft): draft is CriterionDraft => Boolean(draft));
-  }
-
-  const directory = path.join(ensureClientStorage(clientId), "drafts");
-  return readAbsoluteStateFile<string[]>(path.join(directory, "__index__.json"), [])
-    .map((criterionCode) => getCriterionDraft(clientId, criterionCode))
-    .filter((draft): draft is CriterionDraft => Boolean(draft));
-}
-
-function saveDraftIndex(clientId: string, criterionCodes: string[]) {
-  const directory = path.join(ensureClientStorage(clientId), "drafts");
-  writeAbsoluteStateFile(path.join(directory, "__index__.json"), [...new Set(criterionCodes)]);
-}
-
-export function saveCriterionDraft(draft: CriterionDraft) {
-  const existingCodes = listCriterionDrafts(draft.clientId).map((entry) => entry.criterionCode);
-  saveDraftIndex(draft.clientId, [...existingCodes, draft.criterionCode]);
-  writeAbsoluteStateFile(getCriterionDraftPath(draft.clientId, draft.criterionCode), draft);
-}
-
-function ensureDraftSkeletons(clientId: string, criterionCodes: string[]) {
-  criterionCodes.forEach((criterionCode) => {
-    const existing = getCriterionDraft(clientId, criterionCode);
-
-    if (existing) {
-      return;
-    }
-
-    const now = new Date().toISOString();
-    saveCriterionDraft({
-      clientId,
-      criterionCode,
-      createdAt: now,
-      updatedAt: now,
-      status: "in-progress",
-      outOfDate: false,
-      versions: [],
-    });
-  });
-}
-
 function createPinboards(clientId: string, lockedStrategy: LockedCaseStrategy) {
   [...lockedStrategy.primary, ...lockedStrategy.supporting].forEach((entry) => {
     const existing = getCriterionPinboard(clientId, entry.criterionCode);
@@ -225,6 +167,21 @@ function createPinboards(clientId: string, lockedStrategy: LockedCaseStrategy) {
   });
 }
 
+function ensureStructuredDraftSkeletons(clientId: string, lockedStrategy: LockedCaseStrategy) {
+  [...lockedStrategy.primary, ...lockedStrategy.supporting].forEach((entry) => {
+    const sectionUnits = entry.anchorExhibits.length
+      ? entry.anchorExhibits.map(
+          (assignment, index) => `${entry.criterionName} unit ${index + 1} · ${assignment.exhibitLabel}`,
+        )
+      : [`${getCriterionDisplayName(entry.criterionCode)} unit 1`];
+
+    ensureCriterionDraft(clientId, entry.criterionCode, {
+      kind: "standard",
+      sectionUnits,
+    });
+  });
+}
+
 export function lockClientStrategy(input: {
   clientId: string;
   memoArtifactId: string | null;
@@ -232,18 +189,26 @@ export function lockClientStrategy(input: {
   strategyMemo: StrategyMemo;
   clientDocuments: ClientDocument[];
   narrativeSpine: string;
+  exhibitNumberingScheme?: ExhibitNumberingScheme;
 }) {
   const now = new Date().toISOString();
   const existing = getLockedStrategy(input.clientId);
-  const primaryAssignments = buildExhibitAssignments(
+  const exhibitNumberingScheme =
+    input.exhibitNumberingScheme ?? buildDefaultNumberingScheme(input.strategyMemo);
+
+  const primaryAssignments = buildCriterionAssignments(
     input.strategyMemo.recommendedMix.primary,
     input.clientDocuments,
-    1,
+    exhibitNumberingScheme,
+    0,
+    "primary",
   );
-  const supportingAssignments = buildSupportingAssignments(
+  const supportingAssignments = buildCriterionAssignments(
     input.strategyMemo.recommendedMix.supporting,
     input.clientDocuments,
-    primaryAssignments.nextNumber,
+    exhibitNumberingScheme,
+    primaryAssignments.nextOffset,
+    "supporting",
   );
 
   const lockedStrategy: LockedCaseStrategy = {
@@ -263,6 +228,7 @@ export function lockClientStrategy(input: {
       reviewStatus: document.reviewStatus,
       updatedAt: document.updatedAt,
     })),
+    exhibitNumberingScheme,
     totalExhibits:
       primaryAssignments.entries.reduce((sum, entry) => sum + entry.anchorExhibits.length, 0) +
       supportingAssignments.entries.reduce((sum, entry) => sum + entry.anchorExhibits.length, 0),
@@ -270,10 +236,7 @@ export function lockClientStrategy(input: {
 
   saveLockedStrategy(lockedStrategy);
   createPinboards(input.clientId, lockedStrategy);
-  ensureDraftSkeletons(
-    input.clientId,
-    [...lockedStrategy.primary, ...lockedStrategy.supporting].map((entry) => entry.criterionCode),
-  );
+  ensureStructuredDraftSkeletons(input.clientId, lockedStrategy);
   updateClient(input.clientId, {
     status: "locked",
     lockedStrategyVersion: lockedStrategy.version,
@@ -289,6 +252,7 @@ export function lockClientStrategy(input: {
     metadata: {
       version: lockedStrategy.version,
       totalExhibits: lockedStrategy.totalExhibits,
+      numberingScheme: lockedStrategy.exhibitNumberingScheme.kind,
       primaryCriteria: lockedStrategy.primary.map((entry) => entry.criterionCode),
       supportingCriteria: lockedStrategy.supporting.map((entry) => entry.criterionCode),
     },
@@ -307,19 +271,16 @@ export function unlockClientStrategy(clientId: string) {
     };
   }
 
-  const historyPath = path.join(getLockHistoryDirectory(clientId), `${locked.updatedAt.replace(/[:.]/g, "-")}.json`);
+  const historyPath = path.join(
+    getLockHistoryDirectory(clientId),
+    `${locked.updatedAt.replace(/[:.]/g, "-")}.json`,
+  );
   writeAbsoluteStateFile(historyPath, locked);
 
   const affectedCodes = [...locked.primary, ...locked.supporting].map((entry) => entry.criterionCode);
-  const affectedDrafts = listCriterionDrafts(clientId, affectedCodes).map((draft) => {
-    const nextDraft: CriterionDraft = {
-      ...draft,
-      updatedAt: new Date().toISOString(),
-      outOfDate: true,
-    };
-    saveCriterionDraft(nextDraft);
-    return nextDraft;
-  });
+  const affectedDrafts = affectedCodes
+    .map((criterionCode) => markCriterionDraftOutOfDate(clientId, criterionCode))
+    .filter(Boolean) as CriterionDraft[];
 
   writeAbsoluteStateFile(getLockedStrategyPath(clientId), null);
   updateClient(clientId, {
@@ -344,3 +305,5 @@ export function unlockClientStrategy(clientId: string) {
     affectedDrafts,
   };
 }
+
+export { getCriterionDraft, listCriterionDrafts };

@@ -217,9 +217,23 @@ function buildApprovedDraftLookup(clientId: string, approvedDrafts: ApprovedDraf
         id: draft.draftId,
         clientId,
         criterionCode: draft.criterionCode,
+        kind: "standard",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         status: "approved",
+        root: {
+          id: `${draft.draftId}:root`,
+          parentId: null,
+          title: draft.criterionName,
+          level: 0,
+          paragraphs: draft.paragraphs,
+          endorsementQuotes: [],
+          children: [],
+          status: "approved",
+          versions: [],
+          latestApprovedVersion: draft.approvedVersion,
+          gapNotes: [],
+        },
         latestApprovedVersion: draft.approvedVersion,
         versions: [
           {

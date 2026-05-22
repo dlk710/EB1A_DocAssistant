@@ -1,5 +1,6 @@
 import type { StyleExemplar } from "@/lib/types";
 import { EB1A_CRITERIA_CATALOG } from "@/lib/constants";
+import { renderCriterionPromptTemplate } from "@/lib/criterion-prompts";
 import { fillPromptTemplate } from "@/lib/prompt-library";
 import type { ClientDocument, LibrarySnapshot, StrategyMemo } from "@/lib/types";
 import {
@@ -63,6 +64,12 @@ export function renderDraftPrompt(input: {
   candidateName: string;
   sectionKey: string;
   criterionCode: string;
+  criterionKind?: "standard" | "comparable-evidence";
+  standardCriterionInvoked?: string;
+  comparableEvidenceRationale?: string;
+  focusedSubsectionTitle?: string;
+  focusedSubsectionPath?: string;
+  focusedSubsectionSupportsClaim?: string;
   strategyMemo: StrategyMemo | null;
   documents: ClientDocument[];
   pinnedExhibitsBlock: string;
@@ -81,10 +88,24 @@ export function renderDraftPrompt(input: {
     candidateName: input.candidateName,
     sectionKey: input.sectionKey,
     criterionCode: input.criterionCode,
+    "petitioner.legalName": input.candidateName,
+    "petitioner.honorific": "the petitioner",
+    "petitioner.field":
+      input.strategyMemo?.leadArgument.narrativeSpine.split(".")[0] || "the petitioner's field",
     strategyMemoBlock: input.strategyMemo ? JSON.stringify(input.strategyMemo) : "None",
     evidenceBlock: buildRetrievedDocsBlock(input.documents),
     pinnedExhibitsBlock: input.pinnedExhibitsBlock,
     stylebookExemplars,
+    styleExemplars: stylebookExemplars,
+    criterionStructureBlock: renderCriterionPromptTemplate({
+      criterionCode: input.criterionCode,
+      kind: input.criterionKind || "standard",
+    }),
+    standardCriterionInvoked: input.standardCriterionInvoked || "",
+    comparableEvidenceRationale: input.comparableEvidenceRationale || "",
+    focusedSubsectionTitle: input.focusedSubsectionTitle || "",
+    focusedSubsectionPath: input.focusedSubsectionPath || "",
+    focusedSubsectionSupportsClaim: input.focusedSubsectionSupportsClaim || "",
     briefDraftSchema: JSON.stringify(briefDraftJsonSchema),
   });
 }

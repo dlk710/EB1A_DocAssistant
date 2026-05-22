@@ -30,6 +30,36 @@ export function LockWorkspace(props: {
     [props.pinnedArtifacts],
   );
   const strategyMemo = props.strategyMemo ?? pinnedMemo?.strategyMemo ?? null;
+  const criterionCodes = useMemo(
+    () =>
+      strategyMemo
+        ? [
+            ...strategyMemo.recommendedMix.primary.map((entry) => entry.criterionCode),
+            ...strategyMemo.recommendedMix.supporting.map((entry) => entry.criterionCode),
+          ]
+        : [],
+    [strategyMemo],
+  );
+  const [numberingKind, setNumberingKind] = useState<"flat" | "letter-grouped" | "section-grouped">(
+    "letter-grouped",
+  );
+  const defaultLetterMap = useMemo(
+    () =>
+      criterionCodes.reduce<Record<string, string>>((map, code, index) => {
+        map[code] = String.fromCharCode(65 + index);
+        return map;
+      }, {}),
+    [criterionCodes],
+  );
+  const [letterOverrides, setLetterOverrides] = useState<Record<string, string>>({});
+  const letterMap = useMemo(
+    () =>
+      criterionCodes.reduce<Record<string, string>>((map, code) => {
+        map[code] = letterOverrides[code] || defaultLetterMap[code] || "";
+        return map;
+      }, {}),
+    [criterionCodes, defaultLetterMap, letterOverrides],
+  );
 
   async function handleLock() {
     if (!strategyMemo) {
@@ -55,6 +85,10 @@ export function LockWorkspace(props: {
           confirmed: true,
           memoArtifactId: pinnedMemo?.id ?? null,
           narrativeSpine,
+          exhibitNumberingScheme: {
+            kind: numberingKind,
+            letterMap: numberingKind === "letter-grouped" ? letterMap : undefined,
+          },
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -135,7 +169,7 @@ export function LockWorkspace(props: {
                           anchorExhibits: entry.anchorDocIds.map((documentId, index) => ({
                             documentId,
                             workspaceId: "pending",
-                            exhibitNumber: index + 1,
+                            exhibitNumber: `${index + 1}`,
                             exhibitLabel:
                               entry.anchorDocIds.length > 1
                                 ? `Ex. ${index + 1}${String.fromCharCode(65 + index)}`
@@ -158,7 +192,7 @@ export function LockWorkspace(props: {
                           anchorExhibits: entry.anchorDocIds.map((documentId, index) => ({
                             documentId,
                             workspaceId: "pending",
-                            exhibitNumber: index + 1,
+                            exhibitNumber: `${index + 1}`,
                             exhibitLabel:
                               entry.anchorDocIds.length > 1
                                 ? `Ex. ${index + 1}${String.fromCharCode(65 + index)}`
@@ -212,6 +246,46 @@ export function LockWorkspace(props: {
                         0,
                       )}
                   </p>
+                </section>
+
+                <section className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                    Exhibit numbering
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    <select
+                      value={numberingKind}
+                      onChange={(event) =>
+                        setNumberingKind(
+                          event.target.value as "flat" | "letter-grouped" | "section-grouped",
+                        )
+                      }
+                      className="w-full rounded-[12px] border border-[var(--border-secondary)] bg-white px-3 py-2 text-[12px] text-[var(--foreground)]"
+                    >
+                      <option value="letter-grouped">Letter grouped</option>
+                      <option value="flat">Flat</option>
+                      <option value="section-grouped">Section grouped</option>
+                    </select>
+                    {numberingKind === "letter-grouped" ? (
+                      <div className="space-y-2">
+                        {criterionCodes.map((code) => (
+                          <label key={code} className="flex items-center justify-between gap-3 text-[11px] text-[var(--foreground)]">
+                            <span>{getCriterionDisplayName(code)}</span>
+                            <input
+                              value={letterMap[code] ?? ""}
+                              onChange={(event) =>
+                                setLetterOverrides((current) => ({
+                                  ...current,
+                                  [code]: event.target.value.toUpperCase().slice(0, 3),
+                                }))
+                              }
+                              className="w-16 rounded-[10px] border border-[var(--border-secondary)] bg-white px-2 py-1.5 text-center text-[11px]"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </section>
 
                 <NarrativeSpineCard value={narrativeSpine} onChange={setNarrativeSpine} />

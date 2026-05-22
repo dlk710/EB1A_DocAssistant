@@ -4,20 +4,31 @@ import crypto from "node:crypto";
 import { generateClientBriefDraft } from "@/lib/chat-service";
 import { countApproved } from "@/lib/approval";
 import { getClient, getDraftLifecycleStatus, updateClient } from "@/lib/clients";
-import { appendDraftVersion, ensureCriterionDraft, getCriterionDraft, saveDraftVersion } from "@/lib/drafts";
+import {
+  ensureCriterionDraft,
+  getCriterionDraft,
+  saveSubsectionVersion,
+  updateCriterionDraftMeta,
+} from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
+import { findSubsection } from "@/lib/subsection-drafts";
 
 const generateDraftSchema = z.object({
   authorNotes: z.string().max(4000).optional(),
   message: z.string().max(4000).optional(),
+  subsectionId: z.string().min(1).optional(),
+  criterionKind: z.enum(["standard", "comparable-evidence"]).optional(),
+  standardCriterionInvoked: z.string().max(20).optional(),
+  comparableEvidenceRationale: z.string().max(4000).optional(),
 });
 
 const saveDraftSchema = z.object({
   versionNumber: z.number().int().min(1).optional(),
+  subsectionId: z.string().min(1),
   paragraphs: z.array(
     z.object({
       id: z.string().optional(),
-      text: z.string().min(1).max(3000),
+      text: z.string().max(3000),
       exhibitRefs: z.array(z.string().min(1).max(80)),
       citations: z.array(
         z.object({
@@ -31,10 +42,28 @@ const saveDraftSchema = z.object({
       factCheckStatus: z.enum(["verified", "drift-detected", "uncited", "pending"]).optional(),
       factCheckNotes: z.string().max(1000).optional(),
     }),
-  ).min(1),
+  ),
+  endorsementQuotes: z.array(
+    z.object({
+      id: z.string().optional(),
+      expertName: z.string().min(1).max(200),
+      expertTitleAtLetter: z.string().min(1).max(200),
+      expertCurrentRole: z.string().max(200).nullable().optional(),
+      expertAffiliation: z.string().min(1).max(200),
+      sourceExhibitNumber: z.string().min(1).max(80),
+      sourceDocId: z.string().min(1),
+      quoteText: z.string().min(1).max(5000),
+      anchoredToSubsectionId: z.string().min(1).optional(),
+      supportsClaim: z.string().min(1).max(600),
+      isIndependent: z.boolean().nullable().optional(),
+    }),
+  ).optional(),
   authorNotes: z.string().max(4000).optional(),
   source: z.enum(["manual", "ai-edited"]).optional(),
   createNewVersion: z.boolean().optional(),
+  criterionKind: z.enum(["standard", "comparable-evidence"]).optional(),
+  standardCriterionInvoked: z.string().max(20).optional(),
+  comparableEvidenceRationale: z.string().max(4000).optional(),
 });
 
 export const runtime = "nodejs";
@@ -88,14 +117,53 @@ export async function POST(
   }
 
   try {
+    const currentDraft = ensureCriterionDraft(clientId, criterionCode, {
+      kind: parsed.data.criterionKind,
+      standardCriterionInvoked: parsed.data.standardCriterionInvoked,
+      comparableEvidenceRationale: parsed.data.comparableEvidenceRationale,
+    });
+    const subsectionId = parsed.data.subsectionId || currentDraft?.root.id;
+    const subsection = subsectionId ? findSubsection(currentDraft!.root, subsectionId) : null;
     const result = await generateClientBriefDraft({
       clientId,
       criterionCode,
-      message: parsed.data.message,
+      message:
+        parsed.data.message ||
+        (subsection
+          ? `Draft the subsection "${subsection.title}" and stay focused on this claim: ${subsection.supportsClaim || subsection.title}.`
+          : undefined),
+      criterionKind: parsed.data.criterionKind,
+      standardCriterionInvoked: parsed.data.standardCriterionInvoked,
+      comparableEvidenceRationale: parsed.data.comparableEvidenceRationale,
+      focusedSubsectionTitle: subsection?.title,
+      focusedSubsectionPath: subsection
+        ? [subsection.parentId ? currentDraft?.root.title : null, subsection.title]
+            .filter(Boolean)
+            .join(" / ")
+        : undefined,
+      focusedSubsectionSupportsClaim: subsection?.supportsClaim,
     });
-    const draft = appendDraftVersion(clientId, criterionCode, {
-      ...result.draftVersionSeed,
+    const preparedDraft = parsed.data.criterionKind
+      ? updateCriterionDraftMeta({
+          clientId,
+          criterionCode,
+          kind: parsed.data.criterionKind,
+          standardCriterionInvoked: parsed.data.standardCriterionInvoked,
+          comparableEvidenceRationale: parsed.data.comparableEvidenceRationale,
+        })
+      : currentDraft;
+
+    const refreshedSubsection =
+      subsectionId && preparedDraft ? findSubsection(preparedDraft.root, subsectionId) : null;
+    const draft = saveSubsectionVersion({
+      clientId,
+      criterionCode,
+      subsectionId: refreshedSubsection?.id || subsection?.id || preparedDraft?.root.id || currentDraft!.root.id,
+      paragraphs: result.draftVersionSeed.paragraphs,
+      source: "ai",
+      createNewVersion: true,
       authorNotes: parsed.data.authorNotes || result.draftVersionSeed.authorNotes,
+      costUsd: result.draftVersionSeed.costUsd,
     });
     syncClientDraftStatus(clientId);
     return Response.json({
@@ -129,14 +197,32 @@ export async function PATCH(
   if (!parsed.success) {
     return Response.json({ error: "Invalid draft save payload." }, { status: 400 });
   }
-  const draft = saveDraftVersion({
+  if (parsed.data.criterionKind) {
+    updateCriterionDraftMeta({
+      clientId,
+      criterionCode,
+      kind: parsed.data.criterionKind,
+      standardCriterionInvoked: parsed.data.standardCriterionInvoked,
+      comparableEvidenceRationale: parsed.data.comparableEvidenceRationale,
+    });
+  }
+  const draft = saveSubsectionVersion({
     clientId,
     criterionCode,
+    subsectionId: parsed.data.subsectionId,
     versionNumber: parsed.data.versionNumber,
     paragraphs: parsed.data.paragraphs.map((paragraph) => ({
       ...paragraph,
       id: paragraph.id || crypto.randomUUID(),
       factCheckStatus: paragraph.factCheckStatus || "pending",
+    })),
+    endorsementQuotes: parsed.data.endorsementQuotes?.map((quote) => ({
+      ...quote,
+      id: quote.id || crypto.randomUUID(),
+      expertCurrentRole: quote.expertCurrentRole ?? null,
+      anchoredToSubsectionId: quote.anchoredToSubsectionId || parsed.data.subsectionId,
+      isIndependent:
+        typeof quote.isIndependent === "boolean" ? quote.isIndependent : null,
     })),
     authorNotes: parsed.data.authorNotes,
     source: parsed.data.source,

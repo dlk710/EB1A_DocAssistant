@@ -43,7 +43,7 @@ export const LEGACY_BUNDLING_PROMPT_TEMPLATE = [
   "If the document digest includes structured bundle hints such as role prefixes, suggested bundle names, aliases, or bundle rationale, treat them as strong anchors.",
   "Structured Critical Role, Leading Role, and Original Contribution dossiers should anchor project-specific bundles rather than generic role bundles.",
   "When the digest provides a structured role prefix, preserve it in the bundle name using the exact forms CR, LR, or OC.",
-  "For example, prefer CR Smart Provider Finder, LR Smart Provider Finder, or OC Smart Provider Finder over generic titles.",
+  "For example, prefer CR <initiative>, LR <initiative>, or OC <initiative> over generic titles.",
   "If a structured dossier references multiple initiatives, choose the dominant initiative for that dossier's primary bundle instead of falling back to a generic role name.",
   "Supporting emails, screenshots, newsletters, badges, recommendation letters, and release notes should be merged into the same underlying bundle when the aliases, acronyms, organizations, dates, or subject matter clearly align.",
   "Do not categorize in EB1A terms.",
@@ -205,10 +205,15 @@ export const DEFAULT_STRESS_TEST_PROMPT_TEMPLATE = [
 export const DEFAULT_DRAFT_PROMPT_TEMPLATE = [
   "You are drafting petition prose for {{candidateName}}'s EB-1A petition.",
   "Section: criterion argument for {{criterionCode}}.",
+  "{{criterionStructureBlock}}",
   "Strategy memo (excerpted for this criterion): {{strategyMemoBlock}}.",
   "Available evidence (docs tagged for this criterion): {{evidenceBlock}}.",
   "{{stylebookExemplars}}",
   "Pinned exhibits for this criterion: {{pinnedExhibitsBlock}}.",
+  "Focused subsection path: {{focusedSubsectionPath}}.",
+  "Focused subsection title: {{focusedSubsectionTitle}}.",
+  "Focused claim: {{focusedSubsectionSupportsClaim}}.",
+  "Comparable evidence rationale, if invoked: {{comparableEvidenceRationale}}.",
   "Use this section frame: {{sectionKey}}.",
   "HARD RULES:",
   "Every paragraph must reference at least one exhibit.",
@@ -275,7 +280,7 @@ export function fillPromptTemplate(
   template: string,
   replacements: Record<string, string>,
 ) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key: string) => {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, key: string) => {
     return replacements[key] ?? "";
   });
 }

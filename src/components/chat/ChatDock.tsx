@@ -60,6 +60,9 @@ export function ChatDock(props: {
   variant?: "launcher" | "panel";
   initialMode?: ChatMode;
   criterionCode?: string | null;
+  focusedSubsectionId?: string | null;
+  focusedSubsectionTitle?: string | null;
+  focusedSubsectionSupportsClaim?: string | null;
   synthesisKind?: SynthesisSectionKind | null;
   draftEnabled?: boolean;
 }) {
@@ -183,6 +186,9 @@ export function ChatDock(props: {
           message: draftMessage.trim(),
           modeHint: mode,
           criterionCode: props.criterionCode,
+          focusedSubsectionId: props.focusedSubsectionId,
+          focusedSubsectionTitle: props.focusedSubsectionTitle,
+          focusedSubsectionSupportsClaim: props.focusedSubsectionSupportsClaim,
           synthesisKind: props.synthesisKind,
         }),
       });

@@ -49,7 +49,7 @@ export function DraftToolbar(props: {
           disabled={props.isApproving || props.currentVersion === null}
           className="setu-primary-button rounded-[10px] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40"
         >
-          {props.isApproving ? "Approving…" : "Mark as approved"}
+          {props.isApproving ? "Approving…" : "Approve subsection"}
         </button>
       </div>
     </div>

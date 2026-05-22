@@ -2,11 +2,12 @@ import { z } from "zod";
 import { notFound } from "next/navigation";
 import { countApproved } from "@/lib/approval";
 import { getClient, getDraftLifecycleStatus, updateClient } from "@/lib/clients";
-import { approveDraftVersion, getCriterionDraft } from "@/lib/drafts";
+import { approveSubsectionVersion, getCriterionDraft } from "@/lib/drafts";
 import { getLockedStrategy } from "@/lib/lock";
 
 const approveDraftSchema = z.object({
   version: z.number().int().min(1),
+  subsectionId: z.string().min(1).optional(),
 });
 
 export const runtime = "nodejs";
@@ -25,7 +26,13 @@ export async function POST(
     return Response.json({ error: "Invalid approval payload." }, { status: 400 });
   }
 
-  const draft = approveDraftVersion(clientId, criterionCode, parsed.data.version);
+  const currentDraft = getCriterionDraft(clientId, criterionCode);
+  const draft = approveSubsectionVersion(
+    clientId,
+    criterionCode,
+    parsed.data.subsectionId || currentDraft?.root.id || "",
+    parsed.data.version,
+  );
   if (!draft) {
     return Response.json({ error: "Draft not found." }, { status: 404 });
   }

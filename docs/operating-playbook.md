@@ -169,15 +169,17 @@ Verify:
 
 - `/clients/<clientId>/drafting` renders the criterion queue
 - `/clients/<clientId>/drafting/<criterionCode>` renders the three-column drafting workspace
-- generating a draft creates a new version with `source: "ai"`
-- manual edits persist to the current in-progress version
-- approving a draft sets `latestApprovedVersion` and updates the criterion status chip
-- Draft mode returns exhibit labels, citations, and fact-check status
+- generating a subsection draft creates a new version with `source: "ai"`
+- manual edits persist to the current in-progress subsection version
+- approving a subsection updates the tree state and only marks the criterion approved when all required nodes are approved
+- endorsement quotes can be accepted from candidate passages and remain bound to the subsection they support
+- Draft mode returns exhibit labels, citations, and focused subsection context
 - the default style profile loads with 5 curated exemplars
 - changing the active style profile changes the exemplar IDs used by Draft generation
 - subtle factual drift surfaces as a warning
 - significant drift triggers retry or conservative fallback
 - generic-prose warnings appear only when phrase thresholds are exceeded
+- lock-time exhibit numbering respects the selected scheme and custom letter map
 
 ### Phase 4: synthesis and stitching
 

@@ -229,10 +229,13 @@ The lock stage turns a strategic theory into durable drafting inputs:
 The drafting stage is the production-writing surface:
 
 - one queue across all locked criteria
-- one drafting workspace per criterion
-- version history and approval
-- style-profile-driven Draft mode
+- one drafting workspace per criterion with a recursive subsection tree
+- subsection-level generation, editing, version history, and approval
+- verbatim endorsement-quote extraction and acceptance for sub-claims
+- style-profile-driven Draft mode that follows the focused subsection
+- comparable-evidence drafting as a first-class mode
 - fact-check and generic-prose warnings before approval
+- attorney-selected exhibit numbering schemes locked before drafting begins
 
 ### Synthesis stage
 

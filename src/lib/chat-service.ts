@@ -404,6 +404,12 @@ export async function generateClientBriefDraft(input: {
   message?: string;
   snapshot?: LibrarySnapshot;
   sectionKey?: string;
+  criterionKind?: "standard" | "comparable-evidence";
+  standardCriterionInvoked?: string;
+  comparableEvidenceRationale?: string;
+  focusedSubsectionTitle?: string;
+  focusedSubsectionPath?: string;
+  focusedSubsectionSupportsClaim?: string;
 }) {
   const snapshot = input.snapshot ?? (await buildLibrarySnapshot({ clientId: input.clientId }));
   const readiness = getChatReadiness(snapshot);
@@ -479,6 +485,12 @@ export async function generateClientBriefDraft(input: {
                     input.sectionKey ||
                     "Open with the criterion standard, then make the claim, then develop it with 2-4 evidence-led paragraphs, and end with a concise criterion conclusion.",
                   criterionCode: input.criterionCode,
+                  criterionKind: input.criterionKind || "standard",
+                  standardCriterionInvoked: input.standardCriterionInvoked,
+                  comparableEvidenceRationale: input.comparableEvidenceRationale,
+                  focusedSubsectionTitle: input.focusedSubsectionTitle,
+                  focusedSubsectionPath: input.focusedSubsectionPath,
+                  focusedSubsectionSupportsClaim: input.focusedSubsectionSupportsClaim,
                   strategyMemo,
                   documents: retrieval.documents,
                   pinnedExhibitsBlock: buildPinnedExhibitsBlock(pinboard?.entries ?? [], documentLookup),
@@ -549,7 +561,7 @@ export async function generateClientBriefDraft(input: {
         draftVersionSeed: draftVersionFromBriefDraft(enrichedDraft, documentLookup, {
           source: "ai",
           costUsd: modelCostUsd,
-          authorNotes: buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo),
+          authorNotes: `${buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo)}${input.focusedSubsectionTitle ? `\n\nFocused subsection: ${input.focusedSubsectionTitle}` : ""}`,
         }),
       };
     } catch (error) {
@@ -598,7 +610,7 @@ export async function generateClientBriefDraft(input: {
     draftVersionSeed: draftVersionFromBriefDraft(enrichedFallback, documentLookup, {
       source: "ai",
       costUsd: totalCostUsd,
-      authorNotes: `${buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo)}\n\nFallback note: conservative draft used after stronger generations triggered fact-check drift warnings.`,
+      authorNotes: `${buildCriterionStrategyBlock(input.clientId, input.criterionCode, strategyMemo)}${input.focusedSubsectionTitle ? `\n\nFocused subsection: ${input.focusedSubsectionTitle}` : ""}\n\nFallback note: conservative draft used after stronger generations triggered fact-check drift warnings.`,
     }),
   };
 }
@@ -879,6 +891,9 @@ export async function runClientChatTurn(input: {
   modeHint?: ChatMode | null;
   sessionMode: ChatMode;
   criterionCode?: string | null;
+  focusedSubsectionId?: string | null;
+  focusedSubsectionTitle?: string | null;
+  focusedSubsectionSupportsClaim?: string | null;
   synthesisKind?: SynthesisSectionKind | null;
 }) {
   const snapshot = await buildLibrarySnapshot({ clientId: input.clientId });
@@ -1081,9 +1096,13 @@ export async function runClientChatTurn(input: {
     clientId: input.clientId,
     criterionCode: input.criterionCode,
     message: input.message,
+    focusedSubsectionTitle: input.focusedSubsectionTitle ?? undefined,
+    focusedSubsectionPath: input.focusedSubsectionTitle ?? undefined,
+    focusedSubsectionSupportsClaim: input.focusedSubsectionSupportsClaim ?? undefined,
     snapshot,
   });
   const criterion = criterionMeta(input.criterionCode);
+  const focusLabel = input.focusedSubsectionTitle ? ` · ${input.focusedSubsectionTitle}` : "";
   const turn: ChatTurn = {
     id: crypto.randomUUID(),
     sessionId: "",
@@ -1096,7 +1115,7 @@ export async function runClientChatTurn(input: {
       scope: "criterion",
     },
     response: {
-      text: `Draft prepared for ${criterion.name}. Review the paragraphs, fact-check flags, and exhibit references before approving.`,
+      text: `Draft prepared for ${criterion.name}${focusLabel}. Review the paragraphs, fact-check flags, and exhibit references before approving.`,
       artifact: draft.draft,
       citations: draft.citations,
       reasoning: draft.reasoning,

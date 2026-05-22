@@ -10,6 +10,12 @@ const lockInputSchema = z.object({
   memoArtifactId: z.string().uuid().nullable().optional(),
   stressTestArtifactId: z.string().uuid().nullable().optional(),
   narrativeSpine: z.string().min(1).max(4000).optional(),
+  exhibitNumberingScheme: z
+    .object({
+      kind: z.enum(["flat", "letter-grouped", "section-grouped"]),
+      letterMap: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
 });
 
 export const runtime = "nodejs";
@@ -75,6 +81,7 @@ export async function POST(
     strategyMemo,
     clientDocuments: snapshot.clientDocuments,
     narrativeSpine: parsed.data.narrativeSpine?.trim() || strategyMemo.leadArgument.narrativeSpine,
+    exhibitNumberingScheme: parsed.data.exhibitNumberingScheme,
   });
 
   return Response.json({

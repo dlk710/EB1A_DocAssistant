@@ -9,6 +9,9 @@ const turnInputSchema = z.object({
   message: z.string().min(1).max(4000),
   modeHint: z.enum(["triage", "strategy", "stress-test", "draft"]).optional(),
   criterionCode: z.string().min(1).max(8).optional(),
+  focusedSubsectionId: z.string().min(1).optional(),
+  focusedSubsectionTitle: z.string().min(1).max(300).optional(),
+  focusedSubsectionSupportsClaim: z.string().min(1).max(600).optional(),
   synthesisKind: z
     .enum(["statement-of-eligibility", "final-merits-determination"])
     .optional(),
@@ -36,6 +39,9 @@ export async function POST(request: Request) {
       modeHint: parsed.data.modeHint,
       sessionMode: existingSession.mode,
       criterionCode: parsed.data.criterionCode,
+      focusedSubsectionId: parsed.data.focusedSubsectionId,
+      focusedSubsectionTitle: parsed.data.focusedSubsectionTitle,
+      focusedSubsectionSupportsClaim: parsed.data.focusedSubsectionSupportsClaim,
       synthesisKind: parsed.data.synthesisKind,
     });
 

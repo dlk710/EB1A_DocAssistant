@@ -66,13 +66,14 @@ The client review page emphasizes:
 - actionable items
 - routine items
 - a single Evidence Grid with one row per document
-- visible criterion slots that cycle through off, supporting, primary, and disabled while preserving AI-suggested state
+- visible criterion slots that preserve AI-suggested supporting vs AI-suggested primary before the reviewer confirms them
 - document-level `Reference` and `Archive` toggles
 - quick peek side panel for summary, preview text, and source metadata
 - filters and bulk actions for high-volume review
 - local autosave plus an explicit `Save` button
 - fixed-width grid formatting so the full review row remains visible without left-right scrolling
 - an `OTHER` placeholder for evidence or bundles that should stay visible for later correction
+- a folder-first routing policy in workspace settings so new AI bundling, classification, and tagging can prefer uploaded folder structure before falling back to content
 
 The most important behavioral rule is:
 

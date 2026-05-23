@@ -146,7 +146,7 @@ The client review page is now a single Evidence Grid. It emphasizes:
 
 - items that still require human judgment
 - one row per document and one clickable column per criterion
-- visible off, suggested, supporting, and primary tag states in every criterion cell
+- visible off, suggested-supporting, suggested-primary, supporting, and primary tag states in every criterion cell
 - document-level `Reference` and `Archive` toggles
 - quick peek side panel with summary, current tags, preview text, and source metadata
 - autosave with `Unsaved`, `Saving`, and `Saved` feedback plus an explicit `Save` button
@@ -154,10 +154,12 @@ The client review page is now a single Evidence Grid. It emphasizes:
 - bulk actions for multi-select tagging, disposition changes, and bundle moves
 - bundle grouping preserved as a convenience filter, not as the owner of criterion classification
 - a compact fixed-width layout so the full grid stays visible without left-right scrolling at standard laptop widths
+- a workspace routing setting that can prefer uploaded folder structure first for bundling, classification, and tagging
 
 The review model is now:
 
 - AI proposes criterion tags per document
+- AI can suggest those tags as either `supporting` or `primary`
 - the attorney enables, disables, or re-roles those tags
 - coverage only counts enabled tags on documents whose disposition remains `tagged`
 - the dense `/review/<jobId>` surface remains available separately for deeper retrieval-heavy workspace work
@@ -239,6 +241,7 @@ Prompt Library is a large scrollable modal used to edit the active prompts for:
 - criteria tagging
 - Ask Setu chat modes where enabled
 - style profile selection for Draft mode
+- the routing policy that switches between `Prefer folder structure first` and `Balance folder and content`
 
 Only the active prompt text is stored. Prompt history is intentionally not stored.
 

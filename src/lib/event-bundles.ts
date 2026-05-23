@@ -2,7 +2,10 @@ import crypto from "node:crypto";
 import { eventBundleCandidateJsonSchema, eventBundleCandidateSchema } from "@/lib/event-bundle-schema";
 import { normalizePrimaryDate } from "@/lib/date";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
-import { buildFolderContext } from "@/lib/folder-context";
+import {
+  buildFolderContext,
+  getFolderSignalPolicyInstruction,
+} from "@/lib/folder-context";
 import { clearJobCancellationRequest, getJob, isJobCancellationRequested } from "@/lib/jobs";
 import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
@@ -20,7 +23,7 @@ interface EventBundleStateFile {
 }
 
 const EVENT_BUNDLES_FILE = "event-bundles.json";
-const EVENT_BUNDLE_VERSION = 14;
+const EVENT_BUNDLE_VERSION = 15;
 const AUXILIARY_BUNDLE_MERGE_THRESHOLD = 5;
 
 declare global {
@@ -115,6 +118,7 @@ function buildSyntheticBundleState(
   message: string,
 ): WorkspaceEventBundleState {
   const fingerprint = getDocumentsFingerprint(documents);
+  const { folderSignalPolicy } = getOpenAiContext().settings;
 
   return {
     version: EVENT_BUNDLE_VERSION,
@@ -122,6 +126,7 @@ function buildSyntheticBundleState(
     status: "idle",
     message,
     bundles: [],
+    folderSignalPolicy,
     sourceDocumentCount: fingerprint.sourceDocumentCount,
     sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
     totalCostUsd: 0,
@@ -136,6 +141,7 @@ function buildCanceledBundleState(
   message: string,
 ): WorkspaceEventBundleState {
   const fingerprint = getDocumentsFingerprint(documents);
+  const { folderSignalPolicy } = getOpenAiContext().settings;
 
   return {
     version: EVENT_BUNDLE_VERSION,
@@ -143,6 +149,7 @@ function buildCanceledBundleState(
     status: "canceled",
     message,
     bundles: [],
+    folderSignalPolicy,
     sourceDocumentCount: fingerprint.sourceDocumentCount,
     sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
     totalCostUsd: 0,
@@ -163,6 +170,7 @@ function isBundleStateCurrent(
 
   return (
     state.version === EVENT_BUNDLE_VERSION &&
+    state.folderSignalPolicy === getOpenAiContext().settings.folderSignalPolicy &&
     state.sourceDocumentCount === fingerprint.sourceDocumentCount &&
     state.sourceLatestDocumentUpdateAt === fingerprint.sourceLatestDocumentUpdateAt
   );
@@ -188,6 +196,7 @@ function buildWorkspaceDocumentDigest(documents: StoredDocument[]) {
         folderSegments: folderContext.folderSegments,
         folderHints: folderContext.folderHints,
         leafFolder: folderContext.leafFolder,
+        folderEvidenceStrength: folderContext.folderEvidenceStrength,
         documentType: document.summary?.documentType || document.extension || "File",
         title: document.summary?.title || document.fileName,
         shortSummary: document.summary?.shortSummary || "Summary unavailable.",
@@ -648,6 +657,10 @@ async function generateEventBundles(
               candidateName: settings.candidateName || "the candidate",
             }),
           },
+          {
+            type: "input_text",
+            text: getFolderSignalPolicyInstruction(settings.folderSignalPolicy),
+          },
         ],
       },
       {
@@ -657,7 +670,7 @@ async function generateEventBundles(
             type: "input_text",
             text: [
               `Workspace job ID: ${jobId}`,
-              "Original upload-folder names and nested folder labels are preserved in the document digest below. Treat them as organizational hints when they align with the summaries, but do not copy raw paths as final bundle names.",
+              "Original upload-folder names and nested folder labels are preserved in the document digest below. Each file also includes a folder-evidence strength hint so the model knows when it should trust folder structure first and when it should fall back to document content. Do not copy raw paths as final bundle names.",
               "Completed evidence documents:",
               JSON.stringify(documentDigest, null, 2),
             ].join("\n\n"),
@@ -703,6 +716,7 @@ async function runWorkspaceBundlingJob(
     status: "processing",
     message: "AI is grouping the workspace evidence into real-world events.",
     bundles: [],
+    folderSignalPolicy: getOpenAiContext().settings.folderSignalPolicy,
     sourceDocumentCount: fingerprint.sourceDocumentCount,
     sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
     totalCostUsd: 0,
@@ -745,6 +759,7 @@ async function runWorkspaceBundlingJob(
       status: "completed",
       message: result.message,
       bundles: result.bundles,
+      folderSignalPolicy: getOpenAiContext().settings.folderSignalPolicy,
       sourceDocumentCount: fingerprint.sourceDocumentCount,
       sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
       totalCostUsd: roundUsd(result.usage?.costUsd ?? 0),
@@ -758,6 +773,7 @@ async function runWorkspaceBundlingJob(
       status: "failed",
       message: "Event bundling could not be completed for this workspace.",
       bundles: [],
+      folderSignalPolicy: getOpenAiContext().settings.folderSignalPolicy,
       sourceDocumentCount: fingerprint.sourceDocumentCount,
       sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
       totalCostUsd: 0,
@@ -799,6 +815,7 @@ export function startWorkspaceBundlingJob(
     status: "queued",
     message: "Event bundling is queued for this workspace.",
     bundles: [],
+    folderSignalPolicy: getOpenAiContext().settings.folderSignalPolicy,
     sourceDocumentCount: fingerprint.sourceDocumentCount,
     sourceLatestDocumentUpdateAt: fingerprint.sourceLatestDocumentUpdateAt,
     totalCostUsd: 0,

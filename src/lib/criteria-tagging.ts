@@ -22,7 +22,7 @@ interface CriteriaTaggingStateFile {
 }
 
 const CRITERIA_TAGGING_FILE = "criteria-tagging.json";
-const CRITERIA_TAGGING_VERSION = 4;
+const CRITERIA_TAGGING_VERSION = 5;
 
 declare global {
   var __eb1aActiveTaggingJobs: Set<string> | undefined;
@@ -71,10 +71,14 @@ function writeCriteriaTaggingStateFile(state: CriteriaTaggingStateFile) {
   writeStateFile(CRITERIA_TAGGING_FILE, state);
 }
 
-function promptFingerprint(template: string, candidateName: string) {
+function promptFingerprint(
+  template: string,
+  candidateName: string,
+  folderSignalPolicy: string,
+) {
   return crypto
     .createHash("sha256")
-    .update(JSON.stringify({ template, candidateName }))
+    .update(JSON.stringify({ template, candidateName, folderSignalPolicy }))
     .digest("hex");
 }
 
@@ -142,6 +146,7 @@ function buildSyntheticTaggingState(
     promptFingerprint: promptFingerprint(
       settings.taggingPrompt,
       getJob(jobId)?.candidateName ?? "",
+      settings.folderSignalPolicy,
     ),
     totalCostUsd: 0,
     updatedAt: new Date().toISOString(),
@@ -175,6 +180,7 @@ function buildCanceledTaggingState(
     promptFingerprint: promptFingerprint(
       settings.taggingPrompt,
       getJob(jobId)?.candidateName ?? "",
+      settings.folderSignalPolicy,
     ),
     totalCostUsd: 0,
     updatedAt: new Date().toISOString(),
@@ -211,7 +217,11 @@ async function runWorkspaceCriteriaTaggingJob(
   documents: StoredDocument[],
 ) {
   const settings = getRuntimeSettings();
-  const nextPromptFingerprint = promptFingerprint(settings.taggingPrompt, candidateName);
+  const nextPromptFingerprint = promptFingerprint(
+    settings.taggingPrompt,
+    candidateName,
+    settings.folderSignalPolicy,
+  );
   const reviewableDocuments = documents.filter(
     (document) => document.processingStatus === "completed" && document.summary,
   );
@@ -455,7 +465,11 @@ export function startWorkspaceCriteriaTaggingJob(
     sourceClassificationVersion: classification.version,
     sourceBundleUpdatedAt: eventBundles.updatedAt,
     sourceClassificationUpdatedAt: classification.updatedAt,
-    promptFingerprint: promptFingerprint(settings.taggingPrompt, candidateName),
+    promptFingerprint: promptFingerprint(
+      settings.taggingPrompt,
+      candidateName,
+      settings.folderSignalPolicy,
+    ),
     totalCostUsd: 0,
     updatedAt: new Date().toISOString(),
     error: null,
@@ -480,7 +494,11 @@ export function ensureWorkspaceCriteriaTagging(
   documents: StoredDocument[],
 ) {
   const settings = getRuntimeSettings();
-  const nextPromptFingerprint = promptFingerprint(settings.taggingPrompt, candidateName);
+  const nextPromptFingerprint = promptFingerprint(
+    settings.taggingPrompt,
+    candidateName,
+    settings.folderSignalPolicy,
+  );
   const storedState = getStoredCriteriaTaggingState(jobId);
   const job = getJob(jobId);
 

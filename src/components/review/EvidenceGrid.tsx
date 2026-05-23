@@ -301,7 +301,7 @@ export function EvidenceGrid({
       !existing || existing.state === "disabled"
         ? { state: "enabled" as const, role: "supporting" as const }
         : existing.state === "suggested"
-          ? { state: "enabled" as const, role: "supporting" as const }
+          ? { state: "enabled" as const, role: existing.role }
           : existing.role === "supporting"
             ? { state: "enabled" as const, role: "primary" as const }
             : { state: "disabled" as const, role: existing.role };

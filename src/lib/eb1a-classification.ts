@@ -8,7 +8,11 @@ import {
   eb1aClassificationCandidateSchema,
 } from "@/lib/eb1a-classification-schema";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
-import { buildFolderContext, normalizeFolderSegment } from "@/lib/folder-context";
+import {
+  buildFolderContext,
+  getFolderSignalPolicyInstruction,
+  normalizeFolderSegment,
+} from "@/lib/folder-context";
 import { getOpenAiContext } from "@/lib/openai";
 import { calculateTextModelCost } from "@/lib/openai-pricing";
 import { createOutputPackage } from "@/lib/output-package";
@@ -35,7 +39,7 @@ interface Eb1aClassificationStateFile {
 }
 
 const EB1A_CLASSIFICATION_FILE = "eb1a-classification.json";
-const EB1A_CLASSIFICATION_VERSION = 3;
+const EB1A_CLASSIFICATION_VERSION = 4;
 
 declare global {
   var __eb1aActiveCriterionJobs: Set<string> | undefined;
@@ -62,10 +66,19 @@ function roundUsd(value: number) {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function promptFingerprint(value: string, candidateName: string, outputRootPath: string) {
+function promptFingerprint(
+  value: string,
+  candidateName: string,
+  outputRootPath: string,
+  folderSignalPolicy: string,
+) {
   return crypto
     .createHash("sha256")
-    .update([value.trim(), candidateName.trim(), outputRootPath.trim()].join("\n"))
+    .update(
+      [value.trim(), candidateName.trim(), outputRootPath.trim(), folderSignalPolicy.trim()].join(
+        "\n",
+      ),
+    )
     .digest("hex");
 }
 
@@ -200,6 +213,13 @@ function buildBundleDigest(
 
       return {
         folderHints,
+        folderEvidenceStrength:
+          folderHints.length > 0 && evidenceDocuments.some((document) => {
+            const context = buildFolderContext(document.relativePath, document.folderLabel);
+            return context.folderEvidenceStrength === "strong";
+          })
+            ? "strong"
+            : "weak",
         evidenceDocuments: evidenceDocuments.map((document) => {
           const context = buildFolderContext(document.relativePath, document.folderLabel);
 
@@ -213,6 +233,7 @@ function buildBundleDigest(
             folderPath: context.folderPath,
             folderSegments: context.folderSegments,
             folderHints: context.folderHints,
+            folderEvidenceStrength: context.folderEvidenceStrength,
             tags: document.summary?.tags ?? [],
             organizations: document.summary?.organizations ?? [],
           };
@@ -505,8 +526,9 @@ async function generateEb1aClassification(
                 candidateName: candidateLabel,
                 criteriaCatalog,
               }),
+              getFolderSignalPolicyInstruction(settings.folderSignalPolicy),
               `Candidate context: ${candidateLabel}.`,
-              "Original upload-folder names and dossier folder labels are preserved in the bundle metadata. Use them as organizational hints when they reinforce the bundle summaries, but do not let raw path text override the evidence itself.",
+              "Original upload-folder names and dossier folder labels are preserved in the bundle metadata, along with a strong-or-weak folder evidence hint. Use that signal to decide whether to trust folder structure first or fall back to the bundle evidence.",
               "Ignore any filename-routing concepts such as archive or delete because those bundles are already handled before this AI pass.",
               "Return strict JSON only.",
               "Each bundle must appear at most once in the output decisions array.",
@@ -561,6 +583,7 @@ async function runWorkspaceClassificationJob(
     classificationPrompt,
     candidateName,
     outputRootPath,
+    getRuntimeSettings().folderSignalPolicy,
   );
 
   saveWorkspaceClassificationState(jobId, {
@@ -699,6 +722,7 @@ export function startWorkspaceEb1aClassificationJob(
       classificationPrompt,
       candidateName,
       outputRootPath,
+      getRuntimeSettings().folderSignalPolicy,
     );
 
     saveWorkspaceClassificationState(
@@ -721,6 +745,7 @@ export function startWorkspaceEb1aClassificationJob(
     classificationPrompt,
     candidateName,
     outputRootPath,
+    getRuntimeSettings().folderSignalPolicy,
   );
 
   saveWorkspaceClassificationState(jobId, {
@@ -759,6 +784,7 @@ export function ensureWorkspaceEb1aClassification(
     classificationPrompt,
     candidateName,
     outputRootPath,
+    getRuntimeSettings().folderSignalPolicy,
   );
   const storedState = getStoredClassificationState(jobId);
   const job = getJob(jobId);

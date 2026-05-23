@@ -7,6 +7,7 @@ const settingsInputSchema = z.object({
   bundlingPrompt: z.string().min(1).max(12000),
   classificationPrompt: z.string().min(1).max(12000),
   taggingPrompt: z.string().min(1).max(12000),
+  folderSignalPolicy: z.enum(["balanced", "prefer_folder"]),
   triagePrompt: z.string().min(1).max(12000),
   strategyPrompt: z.string().min(1).max(12000),
   stressTestPrompt: z.string().min(1).max(12000),

@@ -9,7 +9,10 @@ import {
 } from "@/lib/criteria-tagging-schema";
 import { normalizePrimaryDate } from "@/lib/date";
 import { documentSummaryJsonSchema, documentSummarySchema } from "@/lib/document-schema";
-import { buildFolderContextText } from "@/lib/folder-context";
+import {
+  buildFolderContextText,
+  getFolderSignalPolicyInstruction,
+} from "@/lib/folder-context";
 import type { PreparedDocumentInput } from "@/lib/file-processing";
 import { sanitizeDocument } from "@/lib/library";
 import { getOpenAiContext } from "@/lib/openai";
@@ -459,6 +462,7 @@ export async function tagDocumentCriteria(input: {
             type: "input_text",
             text: [
               promptInstructions,
+              getFolderSignalPolicyInstruction(settings.folderSignalPolicy),
               `Candidate context: ${candidateLabel}.`,
               `Current bundle classification context: ${input.classificationContext}.`,
               "Return strict JSON only.",

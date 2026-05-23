@@ -405,7 +405,7 @@ export function describeCriterionTag(tag: EvidenceCriterionTag) {
   }
 
   if (tag.state === "suggested") {
-    return `${label} · suggested`;
+    return `${label} · suggested ${tag.role}`;
   }
 
   return `${label} · disabled`;

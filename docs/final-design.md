@@ -305,7 +305,7 @@ The client review page is now the Evidence Grid:
 
 - one row per document
 - one clickable column per criterion
-- visible off, suggested, supporting, and primary states in every criterion cell
+- visible off, suggested-supporting, suggested-primary, supporting, and primary states in every criterion cell
 - document-level `Reference` and `Archive` toggles
 - quick peek side panel for summary, active tags, preview text, and source metadata
 - autosave with an explicit `Save` button
@@ -314,6 +314,12 @@ The client review page is now the Evidence Grid:
 - a compact fixed-width layout that keeps the full review row visible without left-right scrolling at standard laptop widths
 
 Bundles remain available, but only as convenience groupings and filters. Criterion ownership now lives on independent document-level tags rather than on the bundle itself.
+
+The AI routing layer is folder-aware and configurable:
+
+- `Prefer folder structure first` treats the uploaded root folder, nested folders, and filename as the first routing signal for bundling, classification, and tagging
+- `Balance folder and content` keeps folder names as hints but gives the document text and bundle evidence equal weight immediately
+- each file now carries a strong/weak folder-evidence hint into the backend passes so the model knows when to trust folder structure and when to fall back to content
 
 ### Dense workspace review
 

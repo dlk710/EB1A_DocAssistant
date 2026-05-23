@@ -1,5 +1,9 @@
 import { EXPORT_ROOT, QDRANT_COLLECTION, QDRANT_URL } from "@/lib/constants";
 import {
+  DEFAULT_FOLDER_SIGNAL_POLICY,
+  isFolderSignalPolicy,
+} from "@/lib/folder-context";
+import {
   DEFAULT_BUNDLING_PROMPT_TEMPLATE,
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
@@ -21,7 +25,7 @@ import {
 } from "@/lib/prompt-library";
 import { debugQdrantStoragePath } from "@/lib/qdrant";
 import { readStateFile, writeStateFile } from "@/lib/state-store";
-import type { SettingsSnapshot } from "@/lib/types";
+import type { FolderSignalPolicy, SettingsSnapshot } from "@/lib/types";
 
 export interface RuntimeSettings {
   candidateName: string;
@@ -29,6 +33,7 @@ export interface RuntimeSettings {
   bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  folderSignalPolicy: FolderSignalPolicy;
   triagePrompt: string;
   strategyPrompt: string;
   stressTestPrompt: string;
@@ -51,6 +56,7 @@ interface PersistedSettingsState {
   bundlingPrompt?: string | null;
   classificationPrompt?: string | null;
   taggingPrompt?: string | null;
+  folderSignalPolicy?: FolderSignalPolicy | null;
   triagePrompt?: string | null;
   strategyPrompt?: string | null;
   stressTestPrompt?: string | null;
@@ -83,6 +89,12 @@ function readPersistedSettings() {
   return readStateFile<PersistedSettingsState>(SETTINGS_FILE, {});
 }
 
+function normalizeFolderSignalPolicy(
+  value: PersistedSettingsState["folderSignalPolicy"],
+): FolderSignalPolicy {
+  return value && isFolderSignalPolicy(value) ? value : DEFAULT_FOLDER_SIGNAL_POLICY;
+}
+
 export function getRuntimeSettings(): RuntimeSettings {
   const persisted = readPersistedSettings();
   const normalizedSummaryPrompt =
@@ -105,6 +117,7 @@ export function getRuntimeSettings(): RuntimeSettings {
     persisted.taggingPrompt?.trim() === PRE_FOLDER_AWARE_TAGGING_PROMPT_TEMPLATE
       ? DEFAULT_TAGGING_PROMPT_TEMPLATE
       : persisted.taggingPrompt?.trim();
+  const folderSignalPolicy = normalizeFolderSignalPolicy(persisted.folderSignalPolicy);
 
   return {
     candidateName:
@@ -125,6 +138,7 @@ export function getRuntimeSettings(): RuntimeSettings {
       normalizedTaggingPrompt ||
       process.env.EB1A_TAGGING_PROMPT ||
       DEFAULT_TAGGING_PROMPT_TEMPLATE,
+    folderSignalPolicy,
     triagePrompt:
       persisted.triagePrompt?.trim() ||
       process.env.EB1A_TRIAGE_PROMPT ||
@@ -178,6 +192,7 @@ export function saveRuntimeSettings(input: {
   bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  folderSignalPolicy: FolderSignalPolicy;
   triagePrompt: string;
   strategyPrompt: string;
   stressTestPrompt: string;
@@ -202,6 +217,7 @@ export function saveRuntimeSettings(input: {
     classificationPrompt:
       input.classificationPrompt.trim() || DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
     taggingPrompt: input.taggingPrompt.trim() || DEFAULT_TAGGING_PROMPT_TEMPLATE,
+    folderSignalPolicy: input.folderSignalPolicy,
     triagePrompt: input.triagePrompt.trim() || DEFAULT_TRIAGE_PROMPT_TEMPLATE,
     strategyPrompt: input.strategyPrompt.trim() || DEFAULT_STRATEGY_PROMPT_TEMPLATE,
     stressTestPrompt:
@@ -230,6 +246,7 @@ export function setActiveStyleProfileId(activeStyleProfileId: string) {
     bundlingPrompt: current.bundlingPrompt,
     classificationPrompt: current.classificationPrompt,
     taggingPrompt: current.taggingPrompt,
+    folderSignalPolicy: current.folderSignalPolicy,
     triagePrompt: current.triagePrompt,
     strategyPrompt: current.strategyPrompt,
     stressTestPrompt: current.stressTestPrompt,
@@ -253,6 +270,7 @@ export function getPublicSettings(): SettingsSnapshot {
     bundlingPrompt: settings.bundlingPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
+    folderSignalPolicy: settings.folderSignalPolicy,
     triagePrompt: settings.triagePrompt,
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,

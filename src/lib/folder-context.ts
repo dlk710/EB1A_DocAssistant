@@ -1,3 +1,5 @@
+import type { FolderSignalPolicy } from "@/lib/types";
+
 const GENERIC_FOLDER_SEGMENTS = new Set([
   "__macosx",
   "archive",
@@ -86,6 +88,48 @@ export interface FolderContext {
   folderSegments: string[];
   leafFolder: string | null;
   folderHints: string[];
+  folderEvidenceStrength: "strong" | "weak";
+}
+
+export const FOLDER_SIGNAL_POLICIES: FolderSignalPolicy[] = [
+  "prefer_folder",
+  "balanced",
+];
+
+export const DEFAULT_FOLDER_SIGNAL_POLICY: FolderSignalPolicy = "prefer_folder";
+
+export function getFolderSignalPolicyLabel(policy: FolderSignalPolicy) {
+  switch (policy) {
+    case "prefer_folder":
+      return "Prefer folder structure first";
+    case "balanced":
+    default:
+      return "Balance folder and content";
+  }
+}
+
+export function getFolderSignalPolicyDescription(policy: FolderSignalPolicy) {
+  switch (policy) {
+    case "prefer_folder":
+      return "Treat the uploaded root folder, nested folders, and filename as the first routing signal. Fall back to document content only when folder evidence is weak, generic, conflicting, or absent.";
+    case "balanced":
+    default:
+      return "Use folder names as helpful hints, but let the document content and bundle evidence carry equal weight when the signals differ.";
+  }
+}
+
+export function getFolderSignalPolicyInstruction(policy: FolderSignalPolicy) {
+  switch (policy) {
+    case "prefer_folder":
+      return "Routing policy: Prefer folder structure first. Treat the original root folder, nested folders, and filename as the first routing signal. Preserve those labels when they identify a real dossier, project, event, or work stream. Fall back to document content only when folder evidence is weak, generic, conflicting, or absent.";
+    case "balanced":
+    default:
+      return "Routing policy: Balance folder structure with document content. Use the original root folder, nested folders, and filename as organizational hints, but let the document content resolve ambiguity when the signals differ.";
+  }
+}
+
+export function isFolderSignalPolicy(value: string): value is FolderSignalPolicy {
+  return value === "balanced" || value === "prefer_folder";
 }
 
 export function buildFolderContext(relativePath: string, rootFolder?: string | null): FolderContext {
@@ -99,6 +143,7 @@ export function buildFolderContext(relativePath: string, rootFolder?: string | n
   const meaningfulSegments = uniqueByNormalized(withoutRoot.filter(isMeaningfulFolderSegment));
   const rootHint = cleanedRoot && isMeaningfulFolderSegment(cleanedRoot) ? [cleanedRoot] : [];
   const folderHints = uniqueByNormalized([...rootHint, ...meaningfulSegments]).slice(0, 6);
+  const folderEvidenceStrength = folderHints.length > 0 ? "strong" : "weak";
 
   return {
     rootFolder: cleanedRoot || null,
@@ -106,6 +151,7 @@ export function buildFolderContext(relativePath: string, rootFolder?: string | n
     folderSegments: meaningfulSegments,
     leafFolder: meaningfulSegments[meaningfulSegments.length - 1] ?? rootHint[0] ?? null,
     folderHints,
+    folderEvidenceStrength,
   };
 }
 
@@ -115,6 +161,7 @@ export function buildFolderContextText(relativePath: string, rootFolder?: string
   return [
     `Original root folder: ${context.rootFolder || "Not specified"}`,
     `Nested folders: ${context.folderPath || "None"}`,
+    `Folder evidence strength: ${context.folderEvidenceStrength}`,
     context.folderHints.length
       ? `Preserved folder hints: ${context.folderHints.join(" | ")}`
       : "Preserved folder hints: None",

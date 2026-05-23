@@ -51,6 +51,7 @@ export type CriterionTagSource = "ai" | "manual";
 export type CriterionTagState = "suggested" | "enabled" | "disabled";
 export type CriterionTagOrigin = "ai" | "attorney";
 export type DocumentDisposition = "untouched" | "tagged" | "reference" | "archived";
+export type FolderSignalPolicy = "balanced" | "prefer_folder";
 export type PetitionType = "EB-1A";
 export type ClientStatus =
   | "onboarding"
@@ -282,6 +283,7 @@ export interface SettingsSnapshot {
   bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  folderSignalPolicy: FolderSignalPolicy;
   triagePrompt: string;
   strategyPrompt: string;
   stressTestPrompt: string;
@@ -393,6 +395,7 @@ export interface WorkspaceEventBundleState {
   status: EventBundleStatus;
   message: string;
   bundles: EventBundle[];
+  folderSignalPolicy: FolderSignalPolicy;
   sourceDocumentCount: number;
   sourceLatestDocumentUpdateAt: string | null;
   totalCostUsd: number;

@@ -178,13 +178,14 @@ The client review page is the human-action surface. It is meant to answer:
 The current review UX is a single Evidence Grid:
 
 - one row per document and one criterion column per legal bucket
-- visible criterion-cell states for off, suggested, supporting, and primary
+- visible criterion-cell states for off, suggested-supporting, suggested-primary, supporting, and primary
 - document-level `Reference` and `Archive` toggles
 - quick peek for summary, tags, preview text, and source metadata
 - filters for workspace, bundle, criterion, disposition, AI-unsure, and search
 - bulk actions for tagging, disposition changes, and bundle moves
 - autosave with explicit save-state feedback
 - bundle grouping preserved only as a convenience filter and review hint, not as the owner of criterion classification
+- workspace routing can be set to prefer uploaded folder structure first, with content used as fallback only when the folder evidence is weak, generic, or conflicting
 
 The human-review sequence is intentionally staged:
 
@@ -203,6 +204,9 @@ It now also reports intake cleanup automatically:
 - exact duplicate files are skipped before indexing by checksum
 - macOS `.DS_Store` files are auto-archived immediately
 - the dashboard shows a simple intake report for indexed, skipped, and auto-archived files
+- workspace settings expose a routing policy toggle:
+  - `Prefer folder structure first`
+  - `Balance folder and content`
 
 ### Strategy stage
 

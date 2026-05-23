@@ -56,6 +56,11 @@ import type {
 import { EB1A_CRITERIA_DEFINITIONS, getCriterionDisplayName } from "@/lib/constants";
 import { isReviewableEvidenceFile } from "@/lib/evidence-filters";
 import {
+  FOLDER_SIGNAL_POLICIES,
+  getFolderSignalPolicyDescription,
+  getFolderSignalPolicyLabel,
+} from "@/lib/folder-context";
+import {
   DEFAULT_BUNDLING_PROMPT_TEMPLATE,
   DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
   DEFAULT_DRAFT_PROMPT_TEMPLATE,
@@ -87,6 +92,7 @@ interface SettingsDraft {
   bundlingPrompt: string;
   classificationPrompt: string;
   taggingPrompt: string;
+  folderSignalPolicy: SettingsSnapshot["folderSignalPolicy"];
   triagePrompt: string;
   strategyPrompt: string;
   stressTestPrompt: string;
@@ -791,6 +797,7 @@ function buildSettingsDraft(settings: SettingsSnapshot): SettingsDraft {
     bundlingPrompt: settings.bundlingPrompt,
     classificationPrompt: settings.classificationPrompt,
     taggingPrompt: settings.taggingPrompt,
+    folderSignalPolicy: settings.folderSignalPolicy,
     triagePrompt: settings.triagePrompt,
     strategyPrompt: settings.strategyPrompt,
     stressTestPrompt: settings.stressTestPrompt,
@@ -2717,6 +2724,7 @@ export function EvidenceWorkbench({
           bundlingPrompt: settingsDraft.bundlingPrompt,
           classificationPrompt: settingsDraft.classificationPrompt,
           taggingPrompt: settingsDraft.taggingPrompt,
+          folderSignalPolicy: settingsDraft.folderSignalPolicy,
           triagePrompt: settingsDraft.triagePrompt,
           strategyPrompt: settingsDraft.strategyPrompt,
           stressTestPrompt: settingsDraft.stressTestPrompt,
@@ -6081,6 +6089,36 @@ export function EvidenceWorkbench({
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
                   <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
                     <div className="space-y-4">
+                      <div className="rounded-[18px] border border-[#efe9dc] bg-[#fbf8f1] p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                          Folder-first routing policy
+                        </p>
+                        <p className="mt-2 text-[12px] leading-6 text-[var(--muted)]">
+                          Control how strongly Setu trusts the uploaded folder structure when it
+                          bundles events, classifies criteria, and tags evidence.
+                        </p>
+                        <select
+                          value={settingsDraft.folderSignalPolicy}
+                          onChange={(event) =>
+                            setSettingsDraft((current) => ({
+                              ...current,
+                              folderSignalPolicy:
+                                event.target.value as SettingsDraft["folderSignalPolicy"],
+                            }))
+                          }
+                          className="mt-3 w-full rounded-2xl border border-[#e7e3d9] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+                        >
+                          {FOLDER_SIGNAL_POLICIES.map((policy) => (
+                            <option key={policy} value={policy}>
+                              {getFolderSignalPolicyLabel(policy)}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                          {getFolderSignalPolicyDescription(settingsDraft.folderSignalPolicy)}
+                        </p>
+                      </div>
+
                       {[
                         {
                           label: "Document summary prompt",
@@ -8841,6 +8879,39 @@ export function EvidenceWorkbench({
                   <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
                     Edit the active prompts for summary and EB1A classification. Only the current
                     prompt values are saved.
+                  </p>
+                </div>
+
+                <div className="mt-4 rounded-[18px] border border-white/80 bg-white/88 p-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                      Folder-first routing policy
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                      Controls whether Setu treats the uploaded folder structure as the first
+                      routing signal or balances it with document content immediately.
+                    </p>
+                  </div>
+
+                  <select
+                    value={settingsDraft.folderSignalPolicy}
+                    onChange={(event) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        folderSignalPolicy: event.target.value as SettingsDraft["folderSignalPolicy"],
+                      }))
+                    }
+                    className="mt-3 w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-[11px] outline-none transition focus:border-[var(--brand)]"
+                  >
+                    {FOLDER_SIGNAL_POLICIES.map((policy) => (
+                      <option key={policy} value={policy}>
+                        {getFolderSignalPolicyLabel(policy)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
+                    {getFolderSignalPolicyDescription(settingsDraft.folderSignalPolicy)}
                   </p>
                 </div>
 

@@ -204,6 +204,7 @@ Prompt changes should preserve the contract of the corresponding pass:
 - tagging remains evidence-focused
 - Ask Setu prompts remain grounded to workspace or client evidence
 - Draft mode remains grounded to locked strategy, criterion-scoped evidence, and style exemplars
+- when folder-first routing is enabled, folder, subfolder, and filename structure are the first routing signal and content is used only when folder evidence is weak, generic, conflicting, or absent
 
 Do not introduce prompt behavior that collapses multiple passes into one hidden decision.
 

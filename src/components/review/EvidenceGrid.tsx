@@ -566,7 +566,7 @@ export function EvidenceGrid({
               <col style={{ width: "44px" }} />
               <col style={{ width: "360px" }} />
               {Array.from({ length: 11 }).map((_, index) => (
-                <col key={`criterion-col-${index}`} style={{ width: "50px" }} />
+                <col key={`criterion-col-${index}`} style={{ width: "44px" }} />
               ))}
               <col style={{ width: "72px" }} />
               <col style={{ width: "58px" }} />

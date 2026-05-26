@@ -311,7 +311,7 @@ The client review page is now the Evidence Grid:
 - autosave with an explicit `Save` button
 - filters for workspace, bundle, criterion, disposition, AI-unsure, and search
 - bulk actions for tagging, disposition changes, and bundle moves
-- a compact fixed-width layout that keeps the full review row visible without left-right scrolling at standard laptop widths
+- a compact fixed-width layout with angled criterion headers that keeps the full review row visible without left-right scrolling at standard laptop widths
 
 Bundles remain available, but only as convenience groupings and filters. Criterion ownership now lives on independent document-level tags rather than on the bundle itself.
 

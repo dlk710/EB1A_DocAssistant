@@ -153,7 +153,7 @@ The client review page is now a single Evidence Grid. It emphasizes:
 - filters for workspace, bundle, criterion, disposition, AI-unsure, and search
 - bulk actions for multi-select tagging, disposition changes, and bundle moves
 - bundle grouping preserved as a convenience filter, not as the owner of criterion classification
-- a compact fixed-width layout so the full grid stays visible without left-right scrolling at standard laptop widths
+- a compact fixed-width layout with angled criterion headers so the full grid stays visible without left-right scrolling at standard laptop widths
 - a workspace routing setting that can prefer uploaded folder structure first for bundling, classification, and tagging
 
 The review model is now:

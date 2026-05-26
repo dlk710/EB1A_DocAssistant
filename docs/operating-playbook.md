@@ -137,7 +137,7 @@ Verify:
 - filtering by workspace, bundle, criterion, disposition, AI-unsure, and search narrows the grid correctly
 - bulk tag, disposition, and bundle-move actions operate only on the selected rows
 - enabled tags on `tagged` documents affect coverage; `reference` and `archived` documents do not
-- the review table fits within the main panel without left-right scrolling at standard laptop width
+- the review table fits within the main panel without left-right scrolling at standard laptop width, using angled criterion headers to preserve readability
 
 ### Pipeline behavior
 

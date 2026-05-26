@@ -185,6 +185,7 @@ The current review UX is a single Evidence Grid:
 - bulk actions for tagging, disposition changes, and bundle moves
 - autosave with explicit save-state feedback
 - bundle grouping preserved only as a convenience filter and review hint, not as the owner of criterion classification
+- angled criterion headers that keep the compact grid readable while preserving a full-width, no-horizontal-scroll review surface
 - workspace routing can be set to prefer uploaded folder structure first, with content used as fallback only when the folder evidence is weak, generic, or conflicting
 
 The human-review sequence is intentionally staged:

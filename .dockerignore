@@ -1,0 +1,9 @@
+.git
+.next
+node_modules
+outputs
+tmp
+storage
+npm-debug.log*
+.env.local
+.env.*.local

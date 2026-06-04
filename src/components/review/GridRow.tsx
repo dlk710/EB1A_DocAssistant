@@ -15,6 +15,7 @@ interface GridRowProps {
   onOpenPeek: () => void;
   onCycleCriterion: (criterionCode: string) => void;
   onToggleDisposition: (kind: "reference" | "archived") => void;
+  onRestoreFirstCutArchive: () => void;
 }
 
 function formatConfidence(confidence: number) {
@@ -29,8 +30,12 @@ export function GridRow({
   onOpenPeek,
   onCycleCriterion,
   onToggleDisposition,
+  onRestoreFirstCutArchive,
 }: GridRowProps) {
   const disposition = deriveDocumentDisposition(document);
+  const blueFlagPrompt = document.decisiveness.blueFlags[0]
+    ? `${document.decisiveness.blueFlags[0].indexing} ${document.decisiveness.blueFlags[0].impactMetric}`
+    : null;
 
   return (
     <tr
@@ -79,6 +84,50 @@ export function GridRow({
             <p className="mt-2 line-clamp-1 text-[10px] text-[var(--muted)]">
               {document.folderLabel} · {document.relativePath}
             </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-[var(--paper-secondary)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                {document.decisiveness.tier}
+              </span>
+              <span className="rounded-full bg-[var(--paper-secondary)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                {document.decisiveness.objectiveEvidence}
+              </span>
+              {document.decisiveness.blueFlags.length ? (
+                <span className="rounded-full bg-[var(--state-success-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--state-success)]">
+                  standing proof needed
+                </span>
+              ) : null}
+              {document.decisiveness.redFlags.length ? (
+                <span className="rounded-full bg-[var(--state-danger-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--state-danger)]">
+                  red flag
+                </span>
+              ) : null}
+              {document.firstCutArchive ? (
+                <span
+                  className="rounded-full bg-[var(--brand-amber-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--brand-amber-ink)]"
+                  title={document.firstCutArchive.reason}
+                >
+                  first-cut archive
+                </span>
+              ) : null}
+            </div>
+            {document.firstCutArchive ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onRestoreFirstCutArchive}
+                  className="rounded-[9px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2.5 py-1 text-[10px] font-semibold text-[var(--foreground)]"
+                >
+                  Keep in review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleDisposition("archived")}
+                  className="rounded-[9px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-2.5 py-1 text-[10px] font-semibold text-[var(--muted)]"
+                >
+                  Archive
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </td>
@@ -90,6 +139,7 @@ export function GridRow({
             <CriterionCell
               tag={tag}
               label={criterion.name}
+              blueFlagPrompt={tag ? blueFlagPrompt : null}
               onToggle={() => onCycleCriterion(criterion.code)}
             />
           </td>

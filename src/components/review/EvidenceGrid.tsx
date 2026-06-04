@@ -19,16 +19,26 @@ import {
   setDocumentDisposition,
   upsertCriterionTag,
 } from "@/lib/criterion-tags";
+import {
+  QUEUE_FLOOR_CONFIDENCE,
+  summarizeReviewLoad,
+} from "@/lib/criterion-routing";
 import type { EvidenceGridDocument } from "@/lib/evidence-query";
+import { matchesObjectiveEvidenceFilter } from "@/lib/evidence-filters";
 
 const DEFAULT_FILTERS: EvidenceGridFilters = {
   workspaceId: "",
   bundleId: "",
   criterionCode: "",
   disposition: "",
+  objectiveEvidence: "",
   aiUnsure: false,
+  showAutoTagged: false,
+  showFirstCutArchive: false,
   search: "",
 };
+
+const GRID_COLUMN_COUNT = 16;
 
 function buildSearchHaystack(document: EvidenceGridDocument) {
   return [
@@ -61,12 +71,13 @@ export function EvidenceGrid({
   const [peekDocumentId, setPeekDocumentId] = useState<string | null>(null);
   const [peekPayload, setPeekPayload] = useState<QuickPeekPayload | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
 
   const queueRef = useRef<GridMutation[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushingRef = useRef(false);
 
-  const filteredDocuments = documents.filter((document) => {
+  const scopedDocuments = documents.filter((document) => {
     if (filters.workspaceId && document.jobId !== filters.workspaceId) {
       return false;
     }
@@ -89,10 +100,18 @@ export function EvidenceGrid({
       return false;
     }
 
+    if (
+      !matchesObjectiveEvidenceFilter(document, filters.objectiveEvidence)
+    ) {
+      return false;
+    }
+
     if (filters.aiUnsure) {
       const hasUnsureTag =
         document.criteriaTags.some((tag) => tag.state === "suggested") ||
-        document.criteriaTags.some((tag) => (tag.aiConfidence ?? tag.confidence) < 0.4);
+        document.criteriaTags.some(
+          (tag) => (tag.aiConfidence ?? tag.confidence) < QUEUE_FLOOR_CONFIDENCE,
+        );
 
       if (!hasUnsureTag) {
         return false;
@@ -108,9 +127,30 @@ export function EvidenceGrid({
 
     return true;
   });
-  const peekIndex = filteredDocuments.findIndex((document) => document.id === peekDocumentId);
-  const peekDocument = peekIndex >= 0 ? filteredDocuments[peekIndex] : null;
-  const selectedSet = new Set(selectedIds);
+  const reviewSummary = summarizeReviewLoad(scopedDocuments);
+  const needsReviewDocuments = scopedDocuments.filter(
+    (document) => document.reviewLoadStatus === "needs_review",
+  );
+  const autoTaggedDocuments = scopedDocuments.filter(
+    (document) => document.reviewLoadStatus === "auto_cleared",
+  );
+  const firstCutArchiveDocuments = scopedDocuments.filter(
+    (document) => document.reviewLoadStatus === "first_cut_archived",
+  );
+  const resolvedDocuments = scopedDocuments.filter(
+    (document) => document.reviewLoadStatus === "resolved",
+  );
+  const visibleDocuments = [
+    ...needsReviewDocuments,
+    ...(filters.showFirstCutArchive ? firstCutArchiveDocuments : []),
+    ...(filters.showAutoTagged ? autoTaggedDocuments : []),
+    ...(showResolved ? resolvedDocuments : []),
+  ];
+  const peekIndex = visibleDocuments.findIndex((document) => document.id === peekDocumentId);
+  const peekDocument = peekIndex >= 0 ? visibleDocuments[peekIndex] : null;
+  const visibleDocumentIds = new Set(visibleDocuments.map((document) => document.id));
+  const activeSelectedIds = selectedIds.filter((id) => visibleDocumentIds.has(id));
+  const selectedSet = new Set(activeSelectedIds);
 
   function openPeek(documentId: string) {
     setPeekPayload(null);
@@ -300,18 +340,17 @@ export function EvidenceGrid({
     const nextState =
       !existing || existing.state === "disabled"
         ? { state: "enabled" as const, role: "supporting" as const }
+        : existing.origin === "ai_auto" && existing.state === "enabled"
+          ? { state: "suggested" as const, role: existing.role }
         : existing.state === "suggested"
           ? { state: "enabled" as const, role: existing.role }
           : existing.role === "supporting"
             ? { state: "enabled" as const, role: "primary" as const }
             : { state: "disabled" as const, role: existing.role };
-    const next = upsertCriterionTag(document, criterionCode, nextState);
+    const next = buildLocalDocumentUpdate(document, criterionCode, nextState);
 
-    updateDocumentLocally(document.id, (current) => ({
-      ...current,
-      criteriaTags: next.criteriaTags,
-      disposition: next.disposition,
-      reviewStatus: next.reviewStatus,
+    updateDocumentLocally(document.id, () => ({
+      ...next,
     }));
     enqueueMutation({
       kind: "tag",
@@ -355,8 +394,8 @@ export function EvidenceGrid({
       return;
     }
 
-    const currentIndex = filteredDocuments.findIndex((document) => document.id === documentId);
-    const previousIndex = filteredDocuments.findIndex(
+    const currentIndex = visibleDocuments.findIndex((document) => document.id === documentId);
+    const previousIndex = visibleDocuments.findIndex(
       (document) => document.id === lastSelectedId,
     );
 
@@ -374,7 +413,7 @@ export function EvidenceGrid({
       currentIndex > previousIndex
         ? [previousIndex, currentIndex]
         : [currentIndex, previousIndex];
-    const rangeIds = filteredDocuments.slice(start, end + 1).map((document) => document.id);
+    const rangeIds = visibleDocuments.slice(start, end + 1).map((document) => document.id);
 
     setSelectedIds((current) =>
       checked
@@ -384,8 +423,26 @@ export function EvidenceGrid({
     setLastSelectedId(documentId);
   }
 
+  function buildLocalDocumentUpdate(
+    document: EvidenceGridDocument,
+    criterionCode: string,
+    input: {
+      state: "suggested" | "enabled" | "disabled";
+      role?: "primary" | "supporting";
+    },
+  ) {
+    const next = upsertCriterionTag(document, criterionCode, input);
+
+    return {
+      ...document,
+      criteriaTags: next.criteriaTags,
+      disposition: next.disposition,
+      reviewStatus: next.reviewStatus,
+    };
+  }
+
   function applyBulkTag(criterionCode: string, role: "primary" | "supporting") {
-    if (!selectedIds.length) {
+    if (!activeSelectedIds.length) {
       return;
     }
     if (!criterionCode) {
@@ -414,7 +471,7 @@ export function EvidenceGrid({
     );
     enqueueMutation({
       kind: "bulk-tag",
-      documentIds: [...selectedIds],
+      documentIds: [...activeSelectedIds],
       criterionCode,
       state: "enabled",
       role,
@@ -422,7 +479,7 @@ export function EvidenceGrid({
   }
 
   function applyBulkDisposition(disposition: "reference" | "archived") {
-    if (!selectedIds.length) {
+    if (!activeSelectedIds.length) {
       return;
     }
 
@@ -443,13 +500,13 @@ export function EvidenceGrid({
     );
     enqueueMutation({
       kind: "bulk-disposition",
-      documentIds: [...selectedIds],
+      documentIds: [...activeSelectedIds],
       disposition,
     });
   }
 
   function applyBulkMove(targetBundleId: string) {
-    if (!selectedIds.length) {
+    if (!activeSelectedIds.length) {
       return;
     }
 
@@ -477,9 +534,69 @@ export function EvidenceGrid({
     enqueueMutation({
       kind: "bulk-move",
       jobId: jobIds[0],
-      documentIds: [...selectedIds],
+      documentIds: [...activeSelectedIds],
       targetBundleId,
     });
+  }
+
+  function revertAutoTaggedInScope() {
+    if (!autoTaggedDocuments.length) {
+      return;
+    }
+
+    const nextMutations: GridMutation[] = [];
+
+    setDocuments((current) =>
+      current.map((document) => {
+        if (!autoTaggedDocuments.some((candidate) => candidate.id === document.id)) {
+          return document;
+        }
+
+        let nextDocument = document;
+        let changed = false;
+
+        document.criteriaTags
+          .filter((tag) => tag.origin === "ai_auto" && tag.state === "enabled")
+          .forEach((tag) => {
+            nextDocument = buildLocalDocumentUpdate(nextDocument, tag.code, {
+              state: "suggested",
+              role: tag.role,
+            });
+            nextMutations.push({
+              kind: "tag",
+              documentId: document.id,
+              criterionCode: tag.code,
+              state: "suggested",
+              role: tag.role,
+            });
+            changed = true;
+          });
+
+        return changed ? nextDocument : document;
+      }),
+    );
+
+    nextMutations.forEach((mutation) => enqueueMutation(mutation));
+  }
+
+  async function restoreFirstCutArchive(document: EvidenceGridDocument) {
+    updateDocumentLocally(document.id, (current) => ({
+      ...current,
+      firstCutArchive: null,
+      reviewLoadStatus: "needs_review",
+      needsHumanReview: true,
+    }));
+
+    const response = await fetch(`/api/evidence/${document.id}/first-cut-archive`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore" }),
+    });
+
+    if (!response.ok) {
+      setErrorMessage("The first-cut archive restore could not be saved.");
+      await reloadEvidence();
+    }
   }
 
   useEffect(() => {
@@ -520,12 +637,48 @@ export function EvidenceGrid({
     };
   }, []);
 
+  function renderDocumentRow(document: EvidenceGridDocument) {
+    return (
+      <GridRow
+        key={document.id}
+        document={document}
+        selected={selectedSet.has(document.id)}
+        highlighted={peekDocumentId === document.id}
+        onSelect={(checked, shiftKey) => handleSelect(document.id, checked, shiftKey)}
+        onOpenPeek={() => openPeek(document.id)}
+        onCycleCriterion={(criterionCode) => handleCycleCriterion(document, criterionCode)}
+        onToggleDisposition={(kind) => handleToggleDisposition(document, kind)}
+        onRestoreFirstCutArchive={() => {
+          void restoreFirstCutArchive(document);
+        }}
+      />
+    );
+  }
+
   return (
     <section className="space-y-4">
       <GridToolbar
         clientName={clientName}
-        documentCount={filteredDocuments.length}
+        documentCount={reviewSummary.total}
+        reviewSummary={reviewSummary}
         saveState={saveState}
+        hasAutoTagged={autoTaggedDocuments.length > 0}
+        autoTaggedVisible={filters.showAutoTagged}
+        hasFirstCutArchive={firstCutArchiveDocuments.length > 0}
+        firstCutArchiveVisible={filters.showFirstCutArchive}
+        onToggleAutoTagged={() =>
+          setFilters((current) => ({
+            ...current,
+            showAutoTagged: !current.showAutoTagged,
+          }))
+        }
+        onToggleFirstCutArchive={() =>
+          setFilters((current) => ({
+            ...current,
+            showFirstCutArchive: !current.showFirstCutArchive,
+          }))
+        }
+        onRevertAutoTagged={revertAutoTaggedInScope}
         onSave={() => {
           void flushPendingMutations();
         }}
@@ -538,9 +691,9 @@ export function EvidenceGrid({
         workspaceOptions={workspaceOptions}
       />
 
-      {selectedIds.length > 0 ? (
+      {activeSelectedIds.length > 0 ? (
         <BulkActionBar
-          selectedCount={selectedIds.length}
+          selectedCount={activeSelectedIds.length}
           bundleOptions={bundles}
           onPrimaryTag={(criterionCode) => applyBulkTag(criterionCode, "primary")}
           onSupportingTag={(criterionCode) =>
@@ -574,33 +727,139 @@ export function EvidenceGrid({
             </colgroup>
             <GridHeader />
             <tbody>
-              {filteredDocuments.map((document) => (
-                <GridRow
-                  key={document.id}
-                  document={document}
-                  selected={selectedSet.has(document.id)}
-                  highlighted={peekDocumentId === document.id}
-                  onSelect={(checked, shiftKey) =>
-                    handleSelect(document.id, checked, shiftKey)
-                  }
-                  onOpenPeek={() => openPeek(document.id)}
-                  onCycleCriterion={(criterionCode) =>
-                    handleCycleCriterion(document, criterionCode)
-                  }
-                  onToggleDisposition={(kind) =>
-                    handleToggleDisposition(document, kind)
-                  }
-                />
-              ))}
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--paper-secondary)]">
+                <td colSpan={GRID_COLUMN_COUNT} className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--brand-deep)]">
+                      Needs review ({needsReviewDocuments.length})
+                    </span>
+                    <span className="text-[11px] text-[var(--muted)]">
+                      Ambiguous, attorney-touched, or high-risk evidence stays here.
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              {needsReviewDocuments.length > 0 ? (
+                needsReviewDocuments.map((document) => renderDocumentRow(document))
+              ) : (
+                <tr className="border-b border-[var(--border-secondary)] bg-[var(--paper-primary)]">
+                  <td
+                    colSpan={GRID_COLUMN_COUNT}
+                    className="px-4 py-5 text-[12px] text-[var(--muted)]"
+                  >
+                    Nothing in the current scope needs review.
+                  </td>
+                </tr>
+              )}
+
+              {firstCutArchiveDocuments.length > 0 ? (
+                <>
+                  <tr className="border-b border-[var(--border-secondary)] bg-[var(--paper-secondary)]">
+                    <td colSpan={GRID_COLUMN_COUNT} className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFilters((current) => ({
+                            ...current,
+                            showFirstCutArchive: !current.showFirstCutArchive,
+                          }))
+                        }
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--foreground)]">
+                            Archived first cut ({firstCutArchiveDocuments.length})
+                          </span>
+                          <span className="text-[11px] text-[var(--muted)]">
+                            Low-value or risk-only items Setu routed away from the live queue. Nothing is deleted.
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-medium text-[var(--brand-deep)]">
+                          {filters.showFirstCutArchive ? "Hide" : "Reveal"}
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                  {filters.showFirstCutArchive
+                    ? firstCutArchiveDocuments.map((document) => renderDocumentRow(document))
+                    : null}
+                </>
+              ) : null}
+
+              {autoTaggedDocuments.length > 0 ? (
+                <>
+                  <tr className="border-b border-[var(--border-secondary)] bg-[var(--paper-secondary)]">
+                    <td colSpan={GRID_COLUMN_COUNT} className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFilters((current) => ({
+                            ...current,
+                            showAutoTagged: !current.showAutoTagged,
+                          }))
+                        }
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--foreground)]">
+                            Auto-tagged ({autoTaggedDocuments.length})
+                          </span>
+                          <span className="text-[11px] text-[var(--muted)]">
+                            High-confidence, type-corroborated tags that Setu enabled automatically.
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-medium text-[var(--brand-deep)]">
+                          {filters.showAutoTagged ? "Hide" : "Reveal"}
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                  {filters.showAutoTagged
+                    ? autoTaggedDocuments.map((document) => renderDocumentRow(document))
+                    : null}
+                </>
+              ) : null}
+
+              {resolvedDocuments.length > 0 ? (
+                <>
+                  <tr className="border-b border-[var(--border-secondary)] bg-[var(--paper-secondary)]">
+                    <td colSpan={GRID_COLUMN_COUNT} className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowResolved((current) => !current)}
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--foreground)]">
+                            Reviewed ({resolvedDocuments.length})
+                          </span>
+                          <span className="text-[11px] text-[var(--muted)]">
+                            Confirmed or dispositioned evidence outside the live queue.
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-medium text-[var(--brand-deep)]">
+                          {showResolved ? "Hide" : "Reveal"}
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                  {showResolved
+                    ? resolvedDocuments.map((document) => renderDocumentRow(document))
+                    : null}
+                </>
+              ) : null}
             </tbody>
           </table>
         </div>
 
         <footer className="flex flex-col gap-3 border-t border-[var(--border-secondary)] px-4 py-3 text-[11px] text-[var(--muted)] lg:flex-row lg:items-center lg:justify-between">
-          <span>{filteredDocuments.length} result(s)</span>
+          <span>
+            {visibleDocuments.length} visible · {reviewSummary.total} in current scope
+          </span>
           <div className="flex flex-wrap gap-3">
             <span>Off = visible slot</span>
             <span>Suggested = Setu proposal</span>
+            <span>AI badge = auto-enabled by Setu</span>
             <span>Supporting = corroboration</span>
             <span>Primary = anchor evidence</span>
           </div>
@@ -611,24 +870,24 @@ export function EvidenceGrid({
         document={peekDocument}
         payload={peekPayload}
         activeIndex={peekIndex === -1 ? 0 : peekIndex}
-        total={filteredDocuments.length}
+        total={visibleDocuments.length}
         onClose={closePeek}
         onPrevious={() => {
-          if (!filteredDocuments.length) {
+          if (!visibleDocuments.length) {
             return;
           }
 
-          const nextIndex = peekIndex <= 0 ? filteredDocuments.length - 1 : peekIndex - 1;
-          stepPeek(filteredDocuments[nextIndex]?.id ?? null);
+          const nextIndex = peekIndex <= 0 ? visibleDocuments.length - 1 : peekIndex - 1;
+          stepPeek(visibleDocuments[nextIndex]?.id ?? null);
         }}
         onNext={() => {
-          if (!filteredDocuments.length) {
+          if (!visibleDocuments.length) {
             return;
           }
 
           const nextIndex =
-            peekIndex === -1 || peekIndex >= filteredDocuments.length - 1 ? 0 : peekIndex + 1;
-          stepPeek(filteredDocuments[nextIndex]?.id ?? null);
+            peekIndex === -1 || peekIndex >= visibleDocuments.length - 1 ? 0 : peekIndex + 1;
+          stepPeek(visibleDocuments[nextIndex]?.id ?? null);
         }}
       />
     </section>

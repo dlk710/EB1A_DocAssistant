@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SetuHomeLink } from "@/components/SetuHomeLink";
 import { EvidenceGrid } from "@/components/review/EvidenceGrid";
+import { PreliminaryStrategyPanel } from "@/components/review/PreliminaryStrategyPanel";
+import { ReviewDecisionLedger } from "@/components/review/ReviewDecisionLedger";
 import { getClient, getClientStageNumber, listClientJobs, listClients, updateClient } from "@/lib/clients";
 import { buildLibrarySnapshot } from "@/lib/library";
-import { ensureClientTimelineEvent } from "@/lib/timeline";
+import { ensureClientTimelineEvent, listClientTimeline } from "@/lib/timeline";
 import type { ClientStatus, LibrarySnapshot } from "@/lib/types";
 import { queryClientEvidence } from "@/lib/evidence-query";
+import { buildPreliminaryStrategyGuidance } from "@/lib/preliminary-strategy";
 
 interface ClientReviewPageProps {
   params: Promise<{
@@ -43,10 +46,7 @@ function deriveClientStatus(input: {
     return "onboarding" satisfies ClientStatus;
   }
 
-  if (input.needsAttentionCount > 0) {
-    return "reviewing" satisfies ClientStatus;
-  }
-
+  // Strategy should unlock once AI review is ready; exception cleanup can continue in parallel.
   return "strategizing" satisfies ClientStatus;
 }
 
@@ -140,14 +140,21 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
 
   if (derivedStatus === "strategizing") {
     ensureClientTimelineEvent({
-      id: `${clientId}:review-completed`,
+      id:
+        needsAttentionCount > 0
+          ? `${clientId}:strategy-unlocked`
+          : `${clientId}:review-completed`,
       clientId,
       occurredAt: new Date().toISOString(),
-      kind: "review-completed",
+      kind: needsAttentionCount > 0 ? "strategy-unlocked" : "review-completed",
       workspaceId: null,
-      summary: "All evidence grid review actions have been resolved.",
+      summary:
+        needsAttentionCount > 0
+          ? `AI preliminary review unlocked Strategy with ${needsAttentionCount} exception document(s) remaining.`
+          : "All evidence grid review actions have been resolved.",
       metadata: {
         clientId,
+        needsAttentionCount,
       },
     });
   }
@@ -155,6 +162,8 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
   const clients = listClients();
   const denseWorkbenchHref = snapshots[0]?.activeJobId ? `/review/${snapshots[0].activeJobId}` : null;
   const strategyHref = `/clients/${clientId}/strategy`;
+  const preliminaryGuidance = buildPreliminaryStrategyGuidance(evidence.documents);
+  const timelineEvents = listClientTimeline(clientId);
 
   return (
     <div className="min-h-screen bg-[var(--background)] px-3 py-4 xl:px-4">
@@ -246,23 +255,23 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                    Human review
+                    AI preliminary review
                   </p>
                   <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-                    Evidence grid
+                    Case map and evidence grid
                   </h1>
                   <p className="mt-2 max-w-4xl text-[12px] leading-6 text-[var(--muted)]">
-                    Every document is a row. Every criterion is an independent tag. You can
-                    confirm, disable, re-role, reference, archive, and bulk-edit the case without
-                    forcing a document into just one criterion lane.
+                    Setu makes preliminary criterion, role, and packet-weight decisions first.
+                    Review the exceptions, override anything questionable, and move into Strategy
+                    to brainstorm the petition theory without confirming every low-risk tag.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 lg:ml-auto">
                   <span className="rounded-full border border-[var(--brand)]/20 bg-[var(--brand-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--brand-deep)]">
-                    {needsAttentionCount} need attention
+                    {needsAttentionCount} exceptions
                   </span>
                   <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--foreground)]">
-                    {taggedCount} tagged
+                    {taggedCount} tagged or auto-set
                   </span>
                 </div>
               </div>
@@ -278,7 +287,7 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
                   AI proposes
                 </span>
                 <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-3 py-1">
-                  Attorney confirms
+                  Attorney overrides
                 </span>
                 <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-3 py-1">
                   Bundles remain convenience groups
@@ -291,6 +300,18 @@ export default async function ClientReviewPage({ params }: ClientReviewPageProps
                 </Link>
               </div>
             </section>
+
+            <PreliminaryStrategyPanel
+              guidance={preliminaryGuidance}
+              strategyHref={strategyHref}
+            />
+
+            <ReviewDecisionLedger
+              clientId={clientId}
+              documents={evidence.documents}
+              guidance={preliminaryGuidance}
+              timelineEvents={timelineEvents}
+            />
 
             <EvidenceGrid
               clientId={clientId}

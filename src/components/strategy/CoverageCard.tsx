@@ -4,6 +4,8 @@ export function CoverageCard(props: { coverage: WorkspaceCoverage | null }) {
   const criteria = props.coverage?.criteria ?? [];
   const strongCount = props.coverage?.strongCount ?? 0;
   const totalCriteria = criteria.length || 11;
+  const buildAround = props.coverage?.recommendations?.buildAround ?? [];
+  const drop = props.coverage?.recommendations?.drop ?? [];
 
   return (
     <section className="rounded-[24px] bg-[var(--brand-charcoal)] px-5 py-5 text-white shadow-[0_24px_50px_rgba(15,23,42,0.18)]">
@@ -57,6 +59,55 @@ export function CoverageCard(props: { coverage: WorkspaceCoverage | null }) {
           empty
         </span>
       </div>
+
+      {buildAround.length > 0 ? (
+        <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.06] p-4">
+          <div className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--brand)]">
+              Setu strategy recommendation
+            </p>
+            <p className="text-[10px] text-white/62">
+              Attorney selects at Lock; nothing is auto-dropped.
+            </p>
+          </div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            {buildAround.slice(0, 5).map((entry) => (
+              <div
+                key={entry.criterionCode}
+                className="rounded-[14px] border border-white/10 bg-black/12 px-3 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-white">
+                      {entry.legalCode} · {entry.name}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-white/68">
+                      {entry.rationale}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[var(--brand)]/16 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
+                    {entry.role}
+                  </span>
+                </div>
+                <p className="mt-2 text-[10px] text-white/55">
+                  {entry.decisiveIndependentCount} decisive independent ·{" "}
+                  {entry.liabilityCount} liability · score {entry.score}
+                </p>
+              </div>
+            ))}
+          </div>
+          {drop.length > 0 ? (
+            <p className="mt-3 text-[11px] leading-5 text-white/62">
+              Defer for now:{" "}
+              {drop
+                .slice(0, 4)
+                .map((entry) => entry.name)
+                .join(", ")}
+              {drop.length > 4 ? ` +${drop.length - 4} more` : ""}.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

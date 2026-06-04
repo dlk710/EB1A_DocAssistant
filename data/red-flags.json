@@ -1,0 +1,62 @@
+[
+  {
+    "id": "red-press-release-wire",
+    "category": "non_independent_media",
+    "matcher": {
+      "type": "keyword",
+      "values": ["press release", "pr newswire", "ein presswire", "globenewswire", "business wire"]
+    },
+    "severity": "medium",
+    "rationale": "Syndicated press releases may show publicity but often need independent authorship and venue proof before carrying petition weight.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "red-sponsored-interview",
+    "category": "self_solicited",
+    "matcher": {
+      "type": "keyword",
+      "values": ["sponsored interview", "paid interview", "media placement", "feature placement", "advertorial"]
+    },
+    "severity": "high",
+    "rationale": "Sponsored or paid placements can undermine independence and should be reviewed before use as published material.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "red-self-published-blog",
+    "category": "non_objective",
+    "matcher": {
+      "type": "keyword",
+      "values": ["medium.com", "personal blog", "self published", "company blog", "linkedin article"]
+    },
+    "severity": "medium",
+    "rationale": "Self-published or employer-controlled content is usually weaker than independent third-party evidence.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "red-unknown-review-method",
+    "category": "venue_standing_unproven",
+    "matcher": {
+      "type": "heuristic",
+      "values": ["unknown_review_or_editorial_only"]
+    },
+    "severity": "medium",
+    "rationale": "Publication evidence with unknown or editorial-only review needs venue and review-method corroboration.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "red-dead-or-unverified-link",
+    "category": "unverifiable",
+    "matcher": {
+      "type": "heuristic",
+      "values": ["urls_present_not_checked"]
+    },
+    "severity": "low",
+    "rationale": "URLs should be checked and preserved because officers may verify the source path.",
+    "source": "attorney-seeded",
+    "enabled": true
+  }
+]

@@ -1,4 +1,6 @@
 import { buildLibrarySnapshot } from "@/lib/library";
+import { getJob } from "@/lib/jobs";
+import { appendClientTimelineEvent } from "@/lib/timeline";
 import {
   clearBundleCriterionDecision,
   clearDocumentBundleDecisions,
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         jobId: payload.jobId,
         targetBundleId: payload.targetBundleId,
+        suppressTimeline: true,
       }),
     });
   }
@@ -57,6 +60,26 @@ export async function POST(request: Request) {
             }
           : subBundle,
       ),
+    });
+  }
+
+  const job = getJob(payload.jobId);
+
+  if (job?.clientId) {
+    appendClientTimelineEvent({
+      id: `${payload.jobId}:bulk-bundle-move:${payload.targetBundleId}:${Date.now()}`,
+      clientId: job.clientId,
+      occurredAt: new Date().toISOString(),
+      kind: "manual-override",
+      workspaceId: payload.jobId,
+      summary: `Attorney moved ${documentIds.length} evidence file(s) to bundle '${payload.targetBundleId}'.`,
+      metadata: {
+        actor: "attorney",
+        action: "bulk-bundle-move",
+        documentIds,
+        targetBundleId: payload.targetBundleId,
+        workspaceId: payload.jobId,
+      },
     });
   }
 

@@ -16,6 +16,7 @@ import {
   saveWorkspaceReviewState,
 } from "@/lib/review-state";
 import { getRuntimeSettings } from "@/lib/settings";
+import { appendClientTimelineEvent } from "@/lib/timeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function POST(
     jobId?: string;
     targetBundleId?: string;
     targetSubBundleId?: string | null;
+    suppressTimeline?: boolean;
   } | null;
 
   if (!payload?.jobId || !payload.targetBundleId) {
@@ -71,6 +73,7 @@ export async function POST(
 
   const baseLookup = buildDocumentBundleLookup(eventBundles.bundles);
   const baseBundleId = baseLookup.get(id);
+  const document = documents.find((entry) => entry.id === id);
 
   if (!baseBundleId) {
     return Response.json({ ok: false, error: { code: "not_found", message: "Document is not attached to a bundle." } }, { status: 404 });
@@ -122,6 +125,29 @@ export async function POST(
       ),
     };
     saveWorkspaceReviewState(job.id, nextReviewState);
+  }
+
+  if (!payload.suppressTimeline && job.clientId) {
+    const targetBundle = eventBundles.bundles.find(
+      (bundle) => bundle.id === payload.targetBundleId,
+    );
+
+    appendClientTimelineEvent({
+      id: `${id}:bundle-move:${payload.targetBundleId}:${Date.now()}`,
+      clientId: job.clientId,
+      occurredAt: new Date().toISOString(),
+      kind: "manual-override",
+      workspaceId: job.id,
+      summary: `Attorney moved '${document?.summary?.title || document?.fileName || id}' to bundle '${targetBundle?.name ?? payload.targetBundleId}'.`,
+      metadata: {
+        actor: "attorney",
+        action: "bundle-move",
+        documentId: id,
+        fromBundleId: baseBundleId,
+        targetBundleId: payload.targetBundleId,
+        workspaceId: job.id,
+      },
+    });
   }
 
   return Response.json(await buildLibrarySnapshot({ jobId: job.id }));

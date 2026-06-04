@@ -7,7 +7,10 @@ export interface EvidenceGridFilters {
   bundleId: string;
   criterionCode: string;
   disposition: string;
+  objectiveEvidence: "" | "objective" | "subjective" | "mixed";
   aiUnsure: boolean;
+  showAutoTagged: boolean;
+  showFirstCutArchive: boolean;
   search: string;
 }
 

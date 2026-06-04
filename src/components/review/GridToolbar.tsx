@@ -3,17 +3,40 @@
 import { SaveStateIndicator } from "@/components/review/SaveStateIndicator";
 import type { SaveState } from "@/components/review/evidence-grid-types";
 
+interface ReviewSummary {
+  autoTagged: number;
+  firstCutArchived: number;
+  needsReview: number;
+  total: number;
+}
+
 interface GridToolbarProps {
   clientName: string;
   documentCount: number;
+  reviewSummary: ReviewSummary;
   saveState: SaveState;
+  hasAutoTagged: boolean;
+  autoTaggedVisible: boolean;
+  hasFirstCutArchive: boolean;
+  firstCutArchiveVisible: boolean;
+  onToggleAutoTagged: () => void;
+  onToggleFirstCutArchive: () => void;
+  onRevertAutoTagged: () => void;
   onSave: () => void;
 }
 
 export function GridToolbar({
   clientName,
   documentCount,
+  reviewSummary,
   saveState,
+  hasAutoTagged,
+  autoTaggedVisible,
+  hasFirstCutArchive,
+  firstCutArchiveVisible,
+  onToggleAutoTagged,
+  onToggleFirstCutArchive,
+  onRevertAutoTagged,
   onSave,
 }: GridToolbarProps) {
   return (
@@ -26,14 +49,42 @@ export function GridToolbar({
           {clientName}
         </h2>
         <p className="mt-1 text-[12px] leading-6 text-[var(--muted)]">
-          Review every document row directly. Tags are independent, bundles are convenience
-          groupings, and nothing is finalized until you confirm it.
+          Review by exception. Setu auto-enables safe tags, keeps high-risk evidence in the live
+          queue, and every tag remains reversible.
+        </p>
+        <p className="mt-2 text-[11px] font-medium text-[var(--brand-deep)]">
+          Auto-tagged {reviewSummary.autoTagged} of {reviewSummary.total} ·{" "}
+          {reviewSummary.firstCutArchived} first-cut archived · {reviewSummary.needsReview} need review.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2 lg:justify-end">
         <span className="rounded-full border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)]">
           {documentCount} documents
         </span>
+        <button
+          type="button"
+          onClick={onToggleAutoTagged}
+          disabled={!hasAutoTagged}
+          className="inline-flex items-center rounded-[10px] border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-4 py-2 text-[11px] font-semibold text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {autoTaggedVisible ? "Hide auto-tagged" : "Reveal auto-tagged"}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleFirstCutArchive}
+          disabled={!hasFirstCutArchive}
+          className="inline-flex items-center rounded-[10px] border border-[var(--border-primary)] bg-[var(--paper-secondary)] px-4 py-2 text-[11px] font-semibold text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {firstCutArchiveVisible ? "Hide first cut" : "Reveal first cut"}
+        </button>
+        <button
+          type="button"
+          onClick={onRevertAutoTagged}
+          disabled={!hasAutoTagged}
+          className="inline-flex items-center rounded-[10px] border border-[var(--brand)] bg-[var(--brand-soft)] px-4 py-2 text-[11px] font-semibold text-[var(--brand-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Revert all AI-tagged
+        </button>
         <SaveStateIndicator state={saveState} />
         <button
           type="button"

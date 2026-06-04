@@ -20,7 +20,7 @@ export function FilterBar({
 }: FilterBarProps) {
   return (
     <div className="rounded-[18px] border border-[var(--border-secondary)] bg-[var(--paper-primary)] px-4 py-4">
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(0,0.8fr))_auto]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(6,minmax(0,0.8fr))_auto]">
         <label className="relative block">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
           <input
@@ -82,6 +82,22 @@ export function FilterBar({
           <option value="archived">Archived</option>
         </select>
 
+        <select
+          value={filters.objectiveEvidence}
+          onChange={(event) =>
+            onChange({
+              ...filters,
+              objectiveEvidence: event.target.value as EvidenceGridFilters["objectiveEvidence"],
+            })
+          }
+          className="rounded-[12px] border border-[var(--border-primary)] bg-[var(--paper-primary)] px-3 py-2.5 text-[12px] text-[var(--foreground)]"
+        >
+          <option value="">Objective lens</option>
+          <option value="objective">Objective only</option>
+          <option value="mixed">Mixed</option>
+          <option value="subjective">Subjective only</option>
+        </select>
+
         <button
           type="button"
           onClick={() => onChange({ ...filters, aiUnsure: !filters.aiUnsure })}
@@ -96,13 +112,28 @@ export function FilterBar({
 
         <button
           type="button"
+          onClick={() => onChange({ ...filters, showAutoTagged: !filters.showAutoTagged })}
+          className={`rounded-[12px] border px-3 py-2.5 text-[12px] font-medium ${
+            filters.showAutoTagged
+              ? "border-[var(--brand-charcoal)] bg-[var(--brand-charcoal)] text-white"
+              : "border-[var(--border-primary)] bg-[var(--paper-primary)] text-[var(--foreground)]"
+          }`}
+        >
+          {filters.showAutoTagged ? "Hide auto-tagged" : "Show auto-tagged"}
+        </button>
+
+        <button
+          type="button"
           onClick={() =>
             onChange({
               workspaceId: "",
               bundleId: "",
               criterionCode: "",
               disposition: "",
+              objectiveEvidence: "",
               aiUnsure: false,
+              showAutoTagged: false,
+              showFirstCutArchive: false,
               search: "",
             })
           }

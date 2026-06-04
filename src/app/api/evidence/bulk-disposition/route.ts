@@ -1,5 +1,7 @@
 import { getDocument, setDocumentPayload } from "@/lib/qdrant";
 import { setDocumentDisposition } from "@/lib/criterion-tags";
+import { getJob } from "@/lib/jobs";
+import { appendClientTimelineEvent } from "@/lib/timeline";
 import type { StoredDocument } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -30,6 +32,7 @@ export async function POST(request: Request) {
   const documents = existingDocuments.filter(
     (document): document is StoredDocument => Boolean(document),
   );
+  const now = new Date().toISOString();
 
   await Promise.all(
     documents.map(async (document) => {
@@ -41,10 +44,31 @@ export async function POST(request: Request) {
         reviewStatus: next.reviewStatus,
         reviewStatusSource: "manual",
         reviewStatusReason: null,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
     }),
   );
+
+  const firstDocument = documents[0] ?? null;
+  const job = firstDocument ? getJob(firstDocument.jobId) : null;
+
+  if (firstDocument && job?.clientId) {
+    appendClientTimelineEvent({
+      id: `${firstDocument.jobId}:bulk-disposition:${payload.disposition}:${Date.now()}`,
+      clientId: job.clientId,
+      occurredAt: now,
+      kind: "review-action-taken",
+      workspaceId: firstDocument.jobId,
+      summary: `Attorney marked ${documents.length} evidence file(s) as ${payload.disposition}.`,
+      metadata: {
+        actor: "attorney",
+        action: "bulk-disposition",
+        documentIds: documents.map((document) => document.id),
+        disposition: payload.disposition,
+        workspaceId: firstDocument.jobId,
+      },
+    });
+  }
 
   return Response.json({ ok: true, updated: documents.length });
 }

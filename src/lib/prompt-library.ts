@@ -181,6 +181,7 @@ export const DEFAULT_STRATEGY_PROMPT_TEMPLATE = [
   "You are recommending a petition strategy for {{candidateName}}'s EB1A workspace.",
   "Use the criterion catalog: {{criteriaCatalog}}.",
   "Workspace coverage state: {{coverageBlock}}.",
+  "AI evidence weighting guidance: {{evidenceWeightingBlock}}.",
   "Kept documents and their tags: {{keptDocsBlock}}.",
   "Pending (not yet human-reviewed) documents: {{pendingDocsBlock}}.",
   "Produce a StrategyMemo JSON object matching the schema {{strategySchema}}.",

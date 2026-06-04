@@ -1,0 +1,44 @@
+[
+  {
+    "id": "blue-springer",
+    "category": "independent_publication",
+    "matcher": {
+      "type": "venue-name",
+      "values": ["springer", "springer nature"]
+    },
+    "strength": "high",
+    "rationale": "Springer/Springer Nature venues may support independent scholarly publication when venue standing is documented.",
+    "indexing": "Attach record-specific indexing evidence such as Scopus, Web of Science, DBLP, Google Scholar, or venue page.",
+    "impactMetric": "Attach citation, acceptance, publisher, or venue-impact evidence from the record where available.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "blue-igi-global",
+    "category": "independent_publication",
+    "matcher": {
+      "type": "venue-name",
+      "values": ["igi global", "igi-global"]
+    },
+    "strength": "medium",
+    "rationale": "IGI Global may support authorship/publication evidence when indexing and review method are documented.",
+    "indexing": "Attach publisher indexing, catalog, or database listing evidence specific to the publication.",
+    "impactMetric": "Attach citation, adoption, chapter-download, or venue-standing evidence where available.",
+    "source": "attorney-seeded",
+    "enabled": true
+  },
+  {
+    "id": "blue-frontiers",
+    "category": "independent_publication",
+    "matcher": {
+      "type": "venue-name",
+      "values": ["frontiers", "frontiers in"]
+    },
+    "strength": "medium",
+    "rationale": "Frontiers venues may support peer-reviewed authorship evidence when the article and venue standing are documented.",
+    "indexing": "Attach indexing evidence for the specific Frontiers journal or article.",
+    "impactMetric": "Attach article metrics, citations, journal page, or other standing proof from the record.",
+    "source": "attorney-seeded",
+    "enabled": true
+  }
+]

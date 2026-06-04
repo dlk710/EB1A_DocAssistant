@@ -49,7 +49,8 @@ export type EvidenceReviewStatus = "kept" | "pending" | "reference" | "archived"
 export type CriterionTagRole = "primary" | "supporting";
 export type CriterionTagSource = "ai" | "manual";
 export type CriterionTagState = "suggested" | "enabled" | "disabled";
-export type CriterionTagOrigin = "ai" | "attorney";
+// "ai_auto" = AI suggestion that cleared the auto-enable bar (confidence + type prior agree).
+export type CriterionTagOrigin = "ai" | "ai_auto" | "attorney";
 export type DocumentDisposition = "untouched" | "tagged" | "reference" | "archived";
 export type FolderSignalPolicy = "balanced" | "prefer_folder";
 export type PetitionType = "EB-1A";
@@ -136,6 +137,7 @@ export interface EvidenceCriterionTag {
   state?: CriterionTagState;
   confidence: number;
   aiConfidence?: number | null;
+  autoTagReason?: string | null;
   reasoning: string;
   taggedAt: string;
   createdAt?: string;
@@ -161,6 +163,28 @@ export interface DocumentSummaryPayload {
   possibleCriteria: string[];
   missingContext: string[];
   riskFlags: string[];
+  objectiveEvidence: "objective" | "subjective" | "mixed";
+  publicationVenue: string | null;
+  publicationType:
+    | "peer_reviewed_journal"
+    | "conference_paper"
+    | "preprint"
+    | "editorial_or_opinion"
+    | "trade_press"
+    | "mainstream_media"
+    | "interview_or_placement"
+    | "press_release"
+    | "blog_or_self_published"
+    | "not_a_publication";
+  reviewType:
+    | "double_blind"
+    | "single_blind"
+    | "open_review"
+    | "editorial_only"
+    | "unknown"
+    | "not_applicable";
+  urls: string[];
+  selfSolicitationSignals: string[];
 }
 
 export interface DocumentMetadata {
@@ -430,12 +454,34 @@ export interface WorkspaceCoverageCriterion {
   keptCount: number;
   primaryCount: number;
   supportingCount: number;
+  decisiveIndependentCount?: number;
+  liabilityCount?: number;
+  redFlagCount?: number;
+  strategyScore?: number;
+  strategyRationale?: string;
+}
+
+export interface WorkspaceCriterionRecommendation {
+  criterionCode: string;
+  legalCode: string;
+  name: string;
+  role: "primary" | "supporting" | "drop";
+  score: number;
+  decisiveIndependentCount: number;
+  liabilityCount: number;
+  redFlagCount: number;
+  anchorDocIds: string[];
+  rationale: string;
 }
 
 export interface WorkspaceCoverage {
   strongCount: number;
   meetsMinimum: boolean;
   criteria: WorkspaceCoverageCriterion[];
+  recommendations?: {
+    buildAround: WorkspaceCriterionRecommendation[];
+    drop: WorkspaceCriterionRecommendation[];
+  };
 }
 
 export interface WorkspaceManualOverrideState {
@@ -468,6 +514,12 @@ export interface WorkspaceReviewState {
     {
       status: "accepted" | "other";
       criterionCode: string | null;
+      updatedAt: string;
+    }
+  >;
+  firstCutArchiveRestores: Record<
+    string,
+    {
       updatedAt: string;
     }
   >;

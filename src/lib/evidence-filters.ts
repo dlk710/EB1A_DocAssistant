@@ -1,21 +1,48 @@
-interface EvidencePathLike {
-  fileName: string;
-  relativePath: string;
-}
+import type { EvidenceGridDocument } from "@/lib/evidence-query";
+import type { ClientDocument, StoredDocument } from "@/lib/types";
 
-const IGNORED_PATH_SEGMENTS = new Set(["__MACOSX"]);
+export type ObjectiveEvidenceFilter = "" | "objective" | "subjective" | "mixed";
 
-export function isReviewableEvidenceFile(input: EvidencePathLike) {
-  if (!input.fileName || input.fileName.startsWith(".")) {
+type ReviewableEvidenceFile = Pick<
+  StoredDocument | ClientDocument,
+  "fileName" | "extension" | "mimeType" | "disposition" | "reviewStatus"
+>;
+
+const SYSTEM_FILE_NAMES = new Set([
+  ".ds_store",
+  "thumbs.db",
+  "desktop.ini",
+  "__macosx",
+]);
+
+const NON_PROBATIVE_EXTENSIONS = new Set(["tmp", "temp", "ini", "db"]);
+
+export function isReviewableEvidenceFile(document: ReviewableEvidenceFile) {
+  const fileName = document.fileName.trim().toLowerCase();
+  const extension = document.extension.toLowerCase().replace(/^\./, "");
+
+  if (!fileName || SYSTEM_FILE_NAMES.has(fileName)) {
     return false;
   }
 
-  const pathSegments = input.relativePath
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+  if (fileName.startsWith("._") || fileName.includes("__macosx")) {
+    return false;
+  }
 
-  return !pathSegments.some(
-    (segment) => segment.startsWith(".") || IGNORED_PATH_SEGMENTS.has(segment),
-  );
+  if (NON_PROBATIVE_EXTENSIONS.has(extension)) {
+    return false;
+  }
+
+  if (document.disposition === "archived" || document.reviewStatus === "archived") {
+    return false;
+  }
+
+  return true;
+}
+
+export function matchesObjectiveEvidenceFilter(
+  document: Pick<EvidenceGridDocument, "decisiveness">,
+  filter: ObjectiveEvidenceFilter,
+) {
+  return !filter || document.decisiveness.objectiveEvidence === filter;
 }

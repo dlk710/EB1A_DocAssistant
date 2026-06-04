@@ -6,6 +6,19 @@ import {
   normalizeCriterionTags,
   normalizeStoredDocument,
 } from "@/lib/criterion-tags";
+import {
+  classifyDocumentReviewLoad,
+  QUEUE_FLOOR_CONFIDENCE,
+  type ReviewLoadStatus,
+} from "@/lib/criterion-routing";
+import {
+  assessEvidenceDecisiveness,
+  type EvidenceDecisivenessAssessment,
+} from "@/lib/evidence-decisiveness";
+import {
+  suggestFirstCutArchive,
+  type FirstCutArchiveSuggestion,
+} from "@/lib/first-cut-archive";
 import { ensureWorkspaceEb1aClassification } from "@/lib/eb1a-classification";
 import { ensureWorkspaceEventBundles } from "@/lib/event-bundles";
 import {
@@ -13,6 +26,7 @@ import {
   getWorkspaceManualOverrideState,
 } from "@/lib/manual-overrides";
 import { getDocumentsForJobs } from "@/lib/qdrant";
+import { getWorkspaceReviewState } from "@/lib/review-state";
 import { getRuntimeSettings } from "@/lib/settings";
 import type {
   ClientDocument,
@@ -27,6 +41,9 @@ export interface EvidenceGridDocument extends ClientDocument {
   confidenceScore: number;
   contentPreview: string;
   needsHumanReview: boolean;
+  reviewLoadStatus: ReviewLoadStatus;
+  decisiveness: EvidenceDecisivenessAssessment;
+  firstCutArchive: FirstCutArchiveSuggestion | null;
 }
 
 export interface EvidenceGridBundleOption {
@@ -43,6 +60,7 @@ export interface EvidenceGridQuery {
   disposition?: DocumentDisposition | null;
   search?: string | null;
   aiUnsure?: boolean;
+  objectiveEvidence?: "" | "objective" | "subjective" | "mixed" | null;
 }
 
 function buildSearchHaystack(document: EvidenceGridDocument) {
@@ -128,17 +146,49 @@ export async function queryClientEvidence(
     jobs.length > 0 ? await getDocumentsForJobs(jobs.map((job) => job.id)) : [];
   const normalized = documents.map((document) => normalizeStoredDocument(document).document);
   const bundleState = buildBundleLookup(normalized);
+  const settings = getRuntimeSettings();
+  const reviewStatesByJob = new Map(
+    jobs.map((job) => [job.id, getWorkspaceReviewState(job.id)]),
+  );
   const mapped: EvidenceGridDocument[] = normalized.map((document) => {
     const bundle = bundleState.bundleLookup.get(document.id);
     const disposition = deriveDocumentDisposition(document);
     const tags = normalizeCriterionTags(document);
-    const needsHumanReview =
-      disposition === "untouched" ||
-      tags.some((tag) => tag.state === "suggested") ||
-      (disposition === "tagged" && tags.every((tag) => tag.state !== "enabled"));
+    const decisiveness = assessEvidenceDecisiveness({
+      ...document,
+      criteriaTags: tags,
+    });
+    const riskFlags =
+      document.summary && decisiveness.redFlags.length > 0
+        ? [
+            ...document.summary.riskFlags,
+            ...decisiveness.redFlags.map((hit) => `${hit.category}: ${hit.rationale}`),
+          ]
+        : document.summary?.riskFlags;
+    const firstCutArchive = suggestFirstCutArchive({
+      document,
+      decisiveness,
+      archiveConfidenceFloor: settings.archiveConfidenceFloor,
+    });
+    const firstCutRestored = Boolean(
+      reviewStatesByJob.get(document.jobId)?.firstCutArchiveRestores[document.id],
+    );
+    const reviewLoadStatus: ReviewLoadStatus =
+      disposition === "reference" || disposition === "archived"
+        ? "resolved"
+        : firstCutArchive.shouldArchive && !firstCutRestored
+          ? "first_cut_archived"
+          : classifyDocumentReviewLoad(tags);
+    const needsHumanReview = reviewLoadStatus === "needs_review";
 
     return {
       ...document,
+      summary: document.summary
+        ? {
+            ...document.summary,
+            riskFlags: riskFlags ? [...new Set(riskFlags)].slice(0, 12) : [],
+          }
+        : null,
       disposition,
       criteriaTags: tags,
       bundleId: bundle?.id ?? null,
@@ -150,6 +200,9 @@ export async function queryClientEvidence(
         document.summary?.shortSummary ||
         "Preview unavailable.",
       needsHumanReview,
+      reviewLoadStatus,
+      decisiveness,
+      firstCutArchive: firstCutArchive.shouldArchive && !firstCutRestored ? firstCutArchive : null,
     };
   });
 
@@ -179,10 +232,19 @@ export async function queryClientEvidence(
       return false;
     }
 
+    if (
+      query.objectiveEvidence &&
+      document.decisiveness.objectiveEvidence !== query.objectiveEvidence
+    ) {
+      return false;
+    }
+
     if (query.aiUnsure) {
       const hasUncertainSuggestion =
         hasSuggestedCriterionTag(document) ||
-        document.criteriaTags.some((tag) => (tag.aiConfidence ?? tag.confidence) < 0.4);
+        document.criteriaTags.some(
+          (tag) => (tag.aiConfidence ?? tag.confidence) < QUEUE_FLOOR_CONFIDENCE,
+        );
 
       if (!hasUncertainSuggestion) {
         return false;

@@ -10,6 +10,7 @@ export async function GET(
   const { clientId } = await context.params;
   const { searchParams } = new URL(request.url);
   const disposition = searchParams.get("disposition");
+  const objectiveEvidence = searchParams.get("objectiveEvidence");
 
   const result = await queryClientEvidence(clientId, {
     workspaceId: searchParams.get("workspaceId"),
@@ -22,6 +23,12 @@ export async function GET(
       disposition === "reference" ||
       disposition === "archived"
         ? disposition
+        : null,
+    objectiveEvidence:
+      objectiveEvidence === "objective" ||
+      objectiveEvidence === "subjective" ||
+      objectiveEvidence === "mixed"
+        ? objectiveEvidence
         : null,
     search: searchParams.get("search"),
     aiUnsure:

@@ -8,7 +8,11 @@ import {
   criteriaTaggingSchema,
 } from "@/lib/criteria-tagging-schema";
 import { normalizePrimaryDate } from "@/lib/date";
-import { documentSummaryJsonSchema, documentSummarySchema } from "@/lib/document-schema";
+import {
+  documentSummaryJsonSchema,
+  documentSummarySchema,
+  normalizeDocumentSummaryCandidate,
+} from "@/lib/document-schema";
 import {
   buildFolderContextText,
   getFolderSignalPolicyInstruction,
@@ -58,18 +62,6 @@ function clampString(value: unknown, maxLength: number, fallback = "") {
 
   const trimmed = value.trim();
   return trimmed.length <= maxLength ? trimmed : trimmed.slice(0, maxLength).trim();
-}
-
-function clampStringArray(value: unknown, maxItems: number, maxLength: number) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => clampString(entry, maxLength))
-    .filter(Boolean)
-    .slice(0, maxItems);
 }
 
 function normalizeLooseText(value: string) {
@@ -186,39 +178,6 @@ function inferFallbackCriteriaTags(document: StoredDocument) {
   }
 
   return inferred;
-}
-
-function sanitizeSummaryCandidate(raw: unknown) {
-  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-
-  return {
-    title: clampString(value.title, 160, "Untitled evidence"),
-    shortSummary: clampString(value.shortSummary, 220, "Summary unavailable."),
-    detailedSummary: clampString(value.detailedSummary, 1400, "Detailed summary unavailable."),
-    evidenceValue: clampString(value.evidenceValue, 520, "Evidence value unavailable."),
-    recommendedUse: clampString(value.recommendedUse, 420, "Recommended use unavailable."),
-    documentType: clampString(value.documentType, 80, "Evidence file"),
-    confidence: Math.min(
-      100,
-      Math.max(0, Math.round(typeof value.confidence === "number" ? value.confidence : 0)),
-    ),
-    primaryDate:
-      value.primaryDate === null ? null : clampString(value.primaryDate, 32) || null,
-    primaryDateReason: clampString(
-      value.primaryDateReason,
-      180,
-      "No primary evidence date was confidently identified.",
-    ),
-    notableFacts: clampStringArray(value.notableFacts, 8, 220),
-    people: clampStringArray(value.people, 10, 120),
-    organizations: clampStringArray(value.organizations, 10, 160),
-    dates: clampStringArray(value.dates, 10, 120),
-    locations: clampStringArray(value.locations, 10, 120),
-    tags: clampStringArray(value.tags, 12, 48),
-    possibleCriteria: clampStringArray(value.possibleCriteria, 6, 80),
-    missingContext: clampStringArray(value.missingContext, 6, 180),
-    riskFlags: clampStringArray(value.riskFlags, 6, 180),
-  };
 }
 
 function sanitizeCriteriaTaggingCandidate(raw: unknown) {
@@ -341,6 +300,12 @@ function buildEmbeddingText(summary: DocumentSummaryPayload, preparedInput: Prep
     summary.dates.join(", "),
     summary.tags.join(", "),
     summary.possibleCriteria.join(", "),
+    summary.objectiveEvidence,
+    summary.publicationVenue || "",
+    summary.publicationType,
+    summary.reviewType,
+    summary.urls.join(", "),
+    summary.selfSolicitationSignals.join("\n"),
     preparedInput.preview,
   ]
     .filter(Boolean)
@@ -379,6 +344,12 @@ export async function summarizeDocument(
               "primaryDate must be an ISO date string in YYYY-MM-DD when the exact day is knowable, otherwise null.",
               "primaryDateReason should briefly explain why that latest date was chosen.",
               "possibleCriteria must be an empty array at this stage.",
+              "objectiveEvidence must classify whether this file is objective third-party proof, subjective/self-serving proof, or mixed.",
+              "publicationVenue must name the outlet, journal, publisher, conference, blog, or media venue when applicable, otherwise null.",
+              "publicationType must use the schema enum; use not_a_publication when this is not publication/media evidence.",
+              "reviewType must identify peer-review method only when the document itself supports it; otherwise use unknown or not_applicable.",
+              "urls must include every URL visible in the extracted text or image. Do not invent URLs.",
+              "selfSolicitationSignals must include short phrases that suggest author-solicited coverage/publication; keep them minimal and omit full email bodies.",
             ].join(" "),
           },
         ],
@@ -407,7 +378,7 @@ export async function summarizeDocument(
   });
 
   const parsed = documentSummarySchema.parse(
-    sanitizeSummaryCandidate(JSON.parse(response.output_text)),
+    normalizeDocumentSummaryCandidate(JSON.parse(response.output_text)),
   );
   parsed.primaryDate = normalizePrimaryDate(parsed.primaryDate);
 

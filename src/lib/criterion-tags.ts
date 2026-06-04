@@ -29,6 +29,12 @@ const TAG_ROLE_PRIORITY: Record<CriterionTagRole, number> = {
   supporting: 1,
 };
 
+const TAG_ORIGIN_PRIORITY: Record<CriterionTagOrigin, number> = {
+  attorney: 3,
+  ai_auto: 2,
+  ai: 1,
+};
+
 function clampConfidence(value: unknown) {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return 0;
@@ -59,6 +65,10 @@ function normalizeTagOrigin(entry: Partial<EvidenceCriterionTag>): CriterionTagO
 
   if (entry.source === "manual") {
     return "attorney";
+  }
+
+  if (entry.origin === "ai_auto") {
+    return "ai_auto";
   }
 
   return "ai";
@@ -99,7 +109,7 @@ function buildNormalizedTag(
       ? null
       : typeof entry.aiConfidence === "number"
         ? clampConfidence(entry.aiConfidence)
-        : origin === "ai"
+        : origin === "ai" || origin === "ai_auto"
           ? confidence
           : null;
 
@@ -117,6 +127,8 @@ function buildNormalizedTag(
     state,
     confidence,
     aiConfidence,
+    autoTagReason:
+      typeof entry.autoTagReason === "string" ? entry.autoTagReason : null,
     reasoning: typeof entry.reasoning === "string" ? entry.reasoning : "",
     taggedAt: entry.taggedAt ?? createdAt,
     createdAt,
@@ -128,6 +140,13 @@ function pickPreferredTag(
   left: EvidenceCriterionTag,
   right: EvidenceCriterionTag,
 ) {
+  const leftOriginRank = TAG_ORIGIN_PRIORITY[left.origin ?? "ai"];
+  const rightOriginRank = TAG_ORIGIN_PRIORITY[right.origin ?? "ai"];
+
+  if (leftOriginRank !== rightOriginRank) {
+    return leftOriginRank > rightOriginRank ? left : right;
+  }
+
   const leftStateRank = TAG_STATE_PRIORITY[left.state ?? "suggested"];
   const rightStateRank = TAG_STATE_PRIORITY[right.state ?? "suggested"];
 
@@ -322,6 +341,7 @@ export function upsertCriterionTag(
     state: CriterionTagState;
     origin?: CriterionTagOrigin;
     aiConfidence?: number | null;
+    autoTagReason?: string | null;
     reasoning?: string;
   },
 ) {
@@ -349,9 +369,11 @@ export function upsertCriterionTag(
     state: input.state,
     confidence: input.aiConfidence ?? existing?.confidence ?? 0,
     aiConfidence:
-      origin === "ai"
+      origin === "ai" || origin === "ai_auto"
         ? input.aiConfidence ?? existing?.aiConfidence ?? existing?.confidence ?? 0
         : existing?.aiConfidence ?? null,
+    autoTagReason:
+      origin === "attorney" ? null : input.autoTagReason ?? existing?.autoTagReason ?? null,
     reasoning: input.reasoning ?? existing?.reasoning ?? "",
     taggedAt: existing?.taggedAt ?? now,
     createdAt: existing?.createdAt ?? now,

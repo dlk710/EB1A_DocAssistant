@@ -5143,13 +5143,21 @@ export function EvidenceWorkbench({
                                                           }
                                                           className="h-3.5 w-3.5 rounded border-slate-300"
                                                         />
-                                                        <button
-                                                          type="button"
+                                                        <div
+                                                          role="button"
+                                                          tabIndex={0}
                                                           onClick={() => {
                                                             selectEvidenceDocument(document.id, "replace");
                                                             openPreview(document.id);
                                                           }}
-                                                          className="min-w-0 text-left"
+                                                          onKeyDown={(event) => {
+                                                            if (event.key === "Enter" || event.key === " ") {
+                                                              event.preventDefault();
+                                                              selectEvidenceDocument(document.id, "replace");
+                                                              openPreview(document.id);
+                                                            }
+                                                          }}
+                                                          className="min-w-0 cursor-pointer text-left"
                                                         >
                                                           <p className="truncate text-[12px] font-semibold text-[var(--foreground)]">
                                                             {document.summary?.title || document.fileName}
@@ -5175,7 +5183,7 @@ export function EvidenceWorkbench({
                                                   </button>
                                                             ))}
                                                           </div>
-                                                        </button>
+                                                        </div>
                                                         <span className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] ${reviewStatusTone(document.reviewStatus)}`}>
                                                           {document.reviewStatus}
                                                         </span>
@@ -5367,13 +5375,21 @@ export function EvidenceWorkbench({
                                               }
                                               className="h-3.5 w-3.5 rounded border-slate-300"
                                             />
-                                            <button
-                                              type="button"
+                                            <div
+                                              role="button"
+                                              tabIndex={0}
                                               onClick={() => {
                                                 selectEvidenceDocument(document.id, "replace");
                                                 openPreview(document.id);
                                               }}
-                                              className="min-w-0 text-left"
+                                              onKeyDown={(event) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                  event.preventDefault();
+                                                  selectEvidenceDocument(document.id, "replace");
+                                                  openPreview(document.id);
+                                                }
+                                              }}
+                                              className="min-w-0 cursor-pointer text-left"
                                             >
                                               <div className="flex flex-wrap items-center gap-2">
                                                 <p className="truncate text-[12px] font-semibold text-[var(--foreground)]">
@@ -5410,7 +5426,7 @@ export function EvidenceWorkbench({
                                                   </button>
                                                 ))}
                                               </div>
-                                            </button>
+                                            </div>
                                             <button
                                               type="button"
                                               onClick={() => void persistEvidenceStatus([document.id], "kept")}

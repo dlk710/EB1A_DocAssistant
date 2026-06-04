@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { tagDocumentCriteria } from "@/lib/ai";
+import { boundedConcurrency, runWithConcurrency } from "@/lib/concurrency";
 import { normalizeCriterionTags } from "@/lib/criterion-tags";
+import {
+  decideTagDisposition,
+  normalizeDocumentType,
+} from "@/lib/criterion-routing";
 import { buildFolderContextText } from "@/lib/folder-context";
 import {
   clearJobCancellationRequest,
@@ -11,6 +16,8 @@ import { readStateFile, writeStateFile } from "@/lib/state-store";
 import { getRuntimeSettings } from "@/lib/settings";
 import { setDocumentPayload } from "@/lib/qdrant";
 import type {
+  CriterionTagOrigin,
+  CriterionTagState,
   StoredDocument,
   WorkspaceCriteriaTaggingState,
   WorkspaceEb1aClassificationState,
@@ -22,7 +29,12 @@ interface CriteriaTaggingStateFile {
 }
 
 const CRITERIA_TAGGING_FILE = "criteria-tagging.json";
-const CRITERIA_TAGGING_VERSION = 5;
+const CRITERIA_TAGGING_VERSION = 6;
+const CRITERIA_TAGGING_CONCURRENCY = boundedConcurrency(
+  process.env.EB1A_TAGGING_CONCURRENCY,
+  4,
+  8,
+);
 
 declare global {
   var __eb1aActiveTaggingJobs: Set<string> | undefined;
@@ -40,18 +52,32 @@ function buildSuggestedTags(document: StoredDocument, tags: StoredDocument["crit
   const existingStableTags = normalizeCriterionTags(document).filter(
     (tag) => tag.origin === "attorney" || tag.state === "enabled" || tag.state === "disabled",
   );
-  const suggestedTags = tags.map((tag) => ({
-    ...tag,
-    id: tag.id ?? `${document.id}:${tag.code}`,
-    documentId: document.id,
-    workspaceId: document.jobId,
-    criterionCode: tag.code,
-    origin: "ai" as const,
-    state: "suggested" as const,
-    aiConfidence: tag.confidence,
-    createdAt: tag.createdAt ?? tag.taggedAt ?? now,
-    updatedAt: now,
-  }));
+  const documentType = normalizeDocumentType(document.summary?.documentType);
+  const suggestedTags = tags.map((tag) => {
+    const decision = decideTagDisposition({
+      bundleId: document.id,
+      proposedCriterionCode: tag.code,
+      modelConfidence: typeof tag.confidence === "number" ? tag.confidence : 0,
+      documentType,
+    });
+    const autoEnabled = decision.disposition === "auto_enable";
+    const origin: CriterionTagOrigin = autoEnabled ? "ai_auto" : "ai";
+    const state: CriterionTagState = autoEnabled ? "enabled" : "suggested";
+
+    return {
+      ...tag,
+      id: tag.id ?? `${document.id}:${tag.code}`,
+      documentId: document.id,
+      workspaceId: document.jobId,
+      criterionCode: tag.code,
+      origin,
+      state,
+      aiConfidence: tag.confidence,
+      autoTagReason: decision.reason,
+      createdAt: tag.createdAt ?? tag.taggedAt ?? now,
+      updatedAt: now,
+    };
+  });
 
   return normalizeCriterionTags({
     ...document,
@@ -278,20 +304,11 @@ async function runWorkspaceCriteriaTaggingJob(
     let completedCount = 0;
     let totalCostUsd = 0;
     const failedDocumentIds: string[] = [];
+    let canceledDuringTagging = false;
 
-    for (const document of reviewableDocuments) {
-      if (isJobCancellationRequested(jobId)) {
-        saveWorkspaceCriteriaTaggingState(
-          jobId,
-          buildCanceledTaggingState(
-            jobId,
-            documents,
-            eventBundles,
-            classification,
-            "Evidence tagging was canceled during the AI tagging pass.",
-          ),
-        );
-        clearJobCancellationRequest(jobId);
+    await runWithConcurrency(reviewableDocuments, CRITERIA_TAGGING_CONCURRENCY, async (document) => {
+      if (canceledDuringTagging || isJobCancellationRequested(jobId)) {
+        canceledDuringTagging = true;
         return;
       }
 
@@ -343,6 +360,10 @@ async function runWorkspaceCriteriaTaggingJob(
         });
       }
 
+      if (isJobCancellationRequested(jobId)) {
+        canceledDuringTagging = true;
+      }
+
       saveWorkspaceCriteriaTaggingState(jobId, {
         version: CRITERIA_TAGGING_VERSION,
         jobId,
@@ -364,6 +385,21 @@ async function runWorkspaceCriteriaTaggingJob(
         updatedAt: new Date().toISOString(),
         error: null,
       });
+    });
+
+    if (canceledDuringTagging || isJobCancellationRequested(jobId)) {
+      saveWorkspaceCriteriaTaggingState(
+        jobId,
+        buildCanceledTaggingState(
+          jobId,
+          documents,
+          eventBundles,
+          classification,
+          "Evidence tagging was canceled during the AI tagging pass.",
+        ),
+      );
+      clearJobCancellationRequest(jobId);
+      return;
     }
 
     saveWorkspaceCriteriaTaggingState(jobId, {

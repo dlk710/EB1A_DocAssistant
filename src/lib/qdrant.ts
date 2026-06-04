@@ -5,13 +5,13 @@ import {
   QDRANT_URL,
 } from "@/lib/constants";
 import { compareIsoDatesDescending } from "@/lib/date";
+import { normalizeDocumentSummaryCandidate } from "@/lib/document-schema";
 import { ensureStorageRoots } from "@/lib/state-store";
 import type {
   CriterionTagOrigin,
   CriterionTagState,
   DocumentDisposition,
   DocumentMetadata,
-  DocumentSummaryPayload,
   DocumentUsage,
   EvidenceCriterionTag,
   EvidenceReviewStatus,
@@ -49,7 +49,7 @@ function pointIdToString(id: string | number) {
 }
 
 function parseSummary(value: unknown) {
-  return (value ?? null) as DocumentSummaryPayload | null;
+  return value ? normalizeDocumentSummaryCandidate(value) : null;
 }
 
 function parseMetadata(value: unknown) {
@@ -94,6 +94,8 @@ function parseCriteriaTags(value: unknown) {
       origin:
         record.origin === "attorney"
           ? ("attorney" satisfies CriterionTagOrigin)
+          : record.origin === "ai_auto"
+            ? ("ai_auto" satisfies CriterionTagOrigin)
           : record.origin === "ai"
             ? ("ai" satisfies CriterionTagOrigin)
             : undefined,
@@ -110,6 +112,12 @@ function parseCriteriaTags(value: unknown) {
           ? null
           : typeof record.aiConfidence === "number"
             ? Math.max(0, Math.min(1, record.aiConfidence))
+            : undefined,
+      autoTagReason:
+        record.autoTagReason === null
+          ? null
+          : typeof record.autoTagReason === "string"
+            ? record.autoTagReason
             : undefined,
       reasoning: String(record.reasoning ?? ""),
       taggedAt: String(record.taggedAt ?? new Date(0).toISOString()),

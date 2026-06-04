@@ -48,6 +48,10 @@ export interface RuntimeSettings {
   qdrantUrl: string;
   qdrantCollection: string;
   outputRootPath: string;
+  archiveConfidenceFloor: number;
+  linkCheckTimeoutMs: number;
+  researchRecencyDays: number;
+  flagsDbVersion: string;
 }
 
 interface PersistedSettingsState {
@@ -69,6 +73,10 @@ interface PersistedSettingsState {
   embeddingModel?: string | null;
   embeddingDimensions?: number | null;
   outputRootPath?: string | null;
+  archiveConfidenceFloor?: number | null;
+  linkCheckTimeoutMs?: number | null;
+  researchRecencyDays?: number | null;
+  flagsDbVersion?: string | null;
 }
 
 const SETTINGS_FILE = "settings.json";
@@ -183,6 +191,19 @@ export function getRuntimeSettings(): RuntimeSettings {
     qdrantCollection: QDRANT_COLLECTION,
     outputRootPath:
       persisted.outputRootPath?.trim() || process.env.EB1A_OUTPUT_ROOT || EXPORT_ROOT,
+    archiveConfidenceFloor: Number(
+      persisted.archiveConfidenceFloor ??
+        process.env.SETU_ARCHIVE_CONFIDENCE_FLOOR ??
+        "0.28",
+    ),
+    linkCheckTimeoutMs: Number(
+      persisted.linkCheckTimeoutMs ?? process.env.SETU_LINK_CHECK_TIMEOUT_MS ?? "3500",
+    ),
+    researchRecencyDays: Number(
+      persisted.researchRecencyDays ?? process.env.SETU_RESEARCH_RECENCY_DAYS ?? "180",
+    ),
+    flagsDbVersion:
+      persisted.flagsDbVersion?.trim() || process.env.SETU_FLAGS_DB_VERSION || "2026-06-02",
   };
 }
 

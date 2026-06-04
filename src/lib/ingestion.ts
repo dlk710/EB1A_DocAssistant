@@ -3,6 +3,7 @@ import {
   mergeDocumentUsage,
   summarizeDocument,
 } from "@/lib/ai";
+import { boundedConcurrency, runWithConcurrency } from "@/lib/concurrency";
 import { startWorkspaceBundlingJob } from "@/lib/event-bundles";
 import { prepareDocumentInput } from "@/lib/file-processing";
 import {
@@ -23,6 +24,11 @@ declare global {
 
 const activeJobs = globalThis.__eb1aActiveJobs ?? new Set<string>();
 globalThis.__eb1aActiveJobs = activeJobs;
+const INDEXING_CONCURRENCY = boundedConcurrency(
+  process.env.EB1A_INDEXING_CONCURRENCY,
+  3,
+  6,
+);
 
 const zeroVectorCache: Record<number, number[]> = {};
 
@@ -134,10 +140,11 @@ export function startIngestionJob(jobId: string) {
         (document) => document.processingStatus === "queued",
       );
 
-      for (const document of queuedDocuments) {
-        if (isJobCancellationRequested(jobId)) {
-          await markPendingDocumentsCanceled(jobId);
-          cancelJob(jobId, "Canceled by user during document indexing.");
+      let canceledDuringIndexing = false;
+
+      await runWithConcurrency(queuedDocuments, INDEXING_CONCURRENCY, async (document) => {
+        if (canceledDuringIndexing || isJobCancellationRequested(jobId)) {
+          canceledDuringIndexing = true;
           return;
         }
 
@@ -163,10 +170,14 @@ export function startIngestionJob(jobId: string) {
         }
 
         if (isJobCancellationRequested(jobId)) {
-          await markPendingDocumentsCanceled(jobId);
-          cancelJob(jobId, "Canceled by user during document indexing.");
-          return;
+          canceledDuringIndexing = true;
         }
+      });
+
+      if (canceledDuringIndexing || isJobCancellationRequested(jobId)) {
+        await markPendingDocumentsCanceled(jobId);
+        cancelJob(jobId, "Canceled by user during document indexing.");
+        return;
       }
 
       if (isJobCancellationRequested(jobId)) {

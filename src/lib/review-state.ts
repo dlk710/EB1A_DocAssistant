@@ -28,6 +28,7 @@ export function createEmptyWorkspaceReviewState(jobId: string): WorkspaceReviewS
     subBundles: [],
     documentBundleDecisions: {},
     bundleCriterionDecisions: {},
+    firstCutArchiveRestores: {},
   };
 }
 
@@ -84,6 +85,22 @@ export function getWorkspaceReviewState(jobId: string) {
                   status: value.status === "other" ? "other" : "accepted",
                   criterionCode:
                     typeof value.criterionCode === "string" ? value.criterionCode : null,
+                  updatedAt:
+                    typeof value.updatedAt === "string"
+                      ? value.updatedAt
+                      : new Date(0).toISOString(),
+                },
+              ]),
+          )
+        : {},
+    firstCutArchiveRestores:
+      state.firstCutArchiveRestores && typeof state.firstCutArchiveRestores === "object"
+        ? Object.fromEntries(
+            Object.entries(state.firstCutArchiveRestores)
+              .filter(([, value]) => Boolean(value && typeof value === "object"))
+              .map(([documentId, value]) => [
+                documentId,
+                {
                   updatedAt:
                     typeof value.updatedAt === "string"
                       ? value.updatedAt
@@ -257,6 +274,22 @@ export function clearDocumentBundleDecisions(jobId: string, documentIds: string[
     ...current,
     updatedAt: new Date().toISOString(),
     documentBundleDecisions: nextDecisions,
+  });
+}
+
+export function restoreFirstCutArchiveDocument(jobId: string, documentId: string) {
+  const current = getWorkspaceReviewState(jobId);
+  const now = new Date().toISOString();
+
+  saveWorkspaceReviewState(jobId, {
+    ...current,
+    updatedAt: now,
+    firstCutArchiveRestores: {
+      ...current.firstCutArchiveRestores,
+      [documentId]: {
+        updatedAt: now,
+      },
+    },
   });
 }
 

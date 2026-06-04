@@ -36,6 +36,7 @@ export interface TagDispositionDecision {
   modelConfidence: number;
   documentType: DocumentType;
   priorCriterionCode: string | null;
+  sourcePriorCriterionCode: string | null;
   disposition: TagDisposition;
   reason: string;
 }
@@ -187,15 +188,23 @@ export function decideTagDisposition(input: {
   proposedCriterionCode: string;
   modelConfidence: number;
   documentType: DocumentType;
+  sourcePriorCriterionCode?: string | null;
+  sourcePriorReason?: string | null;
+  sourcePriorMinimumConfidence?: number | null;
 }): TagDispositionDecision {
   const modelConfidence = clampConfidence(input.modelConfidence);
   const priorCriterionCode = getPriorCriterionCode(input.documentType);
+  const sourcePriorCriterionCode = input.sourcePriorCriterionCode ?? null;
+  const sourcePriorMinimumConfidence = clampConfidence(
+    input.sourcePriorMinimumConfidence ?? AUTO_ENABLE_CONFIDENCE,
+  );
 
   if (isAlwaysHumanCriterion(input.proposedCriterionCode)) {
     return {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "needs_review",
       reason: "high-risk criterion; always routed to human review.",
     };
@@ -206,6 +215,7 @@ export function decideTagDisposition(input: {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "needs_review",
       reason: "spans criteria (05/08); content decides.",
     };
@@ -219,8 +229,23 @@ export function decideTagDisposition(input: {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "auto_enable",
       reason: `high confidence (${formatConfidence(modelConfidence)}) and document-type prior agree.`,
+    };
+  }
+
+  if (
+    modelConfidence >= sourcePriorMinimumConfidence &&
+    sourcePriorCriterionCode === input.proposedCriterionCode
+  ) {
+    return {
+      ...input,
+      modelConfidence,
+      priorCriterionCode,
+      sourcePriorCriterionCode,
+      disposition: "auto_enable",
+      reason: `high confidence (${formatConfidence(modelConfidence)}) and success-source prior agree: ${input.sourcePriorReason ?? "criterion-specific source pattern matched"}.`,
     };
   }
 
@@ -229,6 +254,7 @@ export function decideTagDisposition(input: {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "needs_review",
       reason: `confidence ${formatConfidence(modelConfidence)} is below the review floor.`,
     };
@@ -239,18 +265,34 @@ export function decideTagDisposition(input: {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "needs_review",
       reason: `document-type prior points to criterion ${priorCriterionCode}, so this needs human review.`,
     };
   }
 
-  if (!priorCriterionCode) {
+  if (
+    sourcePriorCriterionCode &&
+    sourcePriorCriterionCode !== input.proposedCriterionCode
+  ) {
     return {
       ...input,
       modelConfidence,
       priorCriterionCode,
+      sourcePriorCriterionCode,
       disposition: "needs_review",
-      reason: "document type does not provide a safe auto-enable prior.",
+      reason: `success-source prior points to criterion ${sourcePriorCriterionCode}, so this needs human review.`,
+    };
+  }
+
+  if (!priorCriterionCode && !sourcePriorCriterionCode) {
+    return {
+      ...input,
+      modelConfidence,
+      priorCriterionCode,
+      sourcePriorCriterionCode,
+      disposition: "needs_review",
+      reason: "document type and success-source patterns do not provide a safe auto-enable prior.",
     };
   }
 
@@ -258,6 +300,7 @@ export function decideTagDisposition(input: {
     ...input,
     modelConfidence,
     priorCriterionCode,
+    sourcePriorCriterionCode,
     disposition: "needs_review",
     reason: `confidence ${formatConfidence(modelConfidence)} did not clear the auto-enable threshold.`,
   };

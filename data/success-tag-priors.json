@@ -1,0 +1,107 @@
+[
+  {
+    "id": "success-awards-records",
+    "criterionCode": "01",
+    "label": "Awards and recognitions",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(award|honou?r|recognition|winner|finalist|medal|prize|excellence)\\b"
+      ]
+    },
+    "minimumConfidence": 0.8,
+    "rationale": "Successful public petition examples organize awards as discrete exhibit-backed recognition evidence.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-membership-records",
+    "criterionCode": "02",
+    "label": "Memberships",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(member|membership|fellow|association|society|senior member)\\b"
+      ]
+    },
+    "minimumConfidence": 0.8,
+    "rationale": "Successful examples keep membership proof mapped directly to the USCIS membership criterion.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-judging-reviewer-records",
+    "criterionCode": "04",
+    "label": "Judging",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(peer review|peer reviewer|review invitation|review completion|reviewer certificate|judge|judging|program committee|technical committee)\\b"
+      ]
+    },
+    "minimumConfidence": 0.78,
+    "rationale": "Successful public petitions commonly treat peer-review and judging records as direct criterion evidence when document type and file context agree.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-original-contribution-records",
+    "criterionCode": "05",
+    "label": "Original Contributions",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(original contribution|major significance|impact|adoption|implemented|architecture|patent|citation|used by|commercialized|deployed|product impact)\\b"
+      ]
+    },
+    "minimumConfidence": 0.82,
+    "rationale": "Successful examples emphasize contribution significance with objective adoption, impact, citation, or implementation evidence.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-authorship-publication-records",
+    "criterionCode": "06",
+    "label": "Authorship",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(publication|scholarly article|journal article|conference paper|book chapter|manuscript|author|coauthor|doi|isbn|proceedings)\\b"
+      ]
+    },
+    "minimumConfidence": 0.78,
+    "rationale": "Successful examples use publication packages and templates to map scholarly authorship, venue, and exhibit citations cleanly.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-critical-role-records",
+    "criterionCode": "08",
+    "label": "Leading or Critical Role",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(critical role|leading role|leadership|architect|principal|led|owner|head of|senior .* role|recommendation letter|reference letter|manager letter)\\b"
+      ]
+    },
+    "minimumConfidence": 0.82,
+    "rationale": "Successful examples map role letters, project leadership, and organizational impact into exhibit-backed leading or critical role arguments.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  },
+  {
+    "id": "success-high-salary-records",
+    "criterionCode": "09",
+    "label": "High Salary",
+    "matcher": {
+      "type": "regex",
+      "values": [
+        "\\b(salary|compensation|w-?2|pay statement|earnings|bonus|equity|stock grant|offer letter|total rewards)\\b"
+      ]
+    },
+    "minimumConfidence": 0.8,
+    "rationale": "Successful examples isolate compensation records so salary evidence can be evaluated without manual file-by-file triage.",
+    "source": "EB1A_Public_Sources_for_AI_Petition_Builder.pdf",
+    "enabled": true
+  }
+]

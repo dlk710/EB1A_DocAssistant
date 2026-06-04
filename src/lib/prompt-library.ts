@@ -19,6 +19,9 @@ export const DEFAULT_SUMMARY_PROMPT_TEMPLATE = [
   "detailedSummary should explain what the document is and what it appears to prove.",
   "evidenceValue should explain why the document may matter in the broader evidence record without giving legal advice.",
   "recommendedUse should suggest how the evidence may be organized, grouped, or referenced in later review steps.",
+  "Preserve whether the document is exhibit-ready criterion evidence, supporting context, a visual artifact, a reference letter, an administrative filing record, or source/strategy material.",
+  "Call out final-merits usefulness when the file provides objective, third-party, measurable, or independently verifiable proof.",
+  "If the file is mostly administrative, duplicative, visual-only, or weakly probative, say that clearly so downstream review can de-emphasize it.",
 ].join(" ");
 
 export const PRE_FOLDER_AWARE_SUMMARY_PROMPT_TEMPLATE = [
@@ -153,6 +156,9 @@ export const DEFAULT_TAGGING_PROMPT_TEMPLATE = [
   "The original folder context is: {{folderContext}}.",
   "The document summary context is: {{documentSummary}}.",
   "Tag only the criteria that are genuinely supported by this one document, even if the parent bundle supports more.",
+  "Think like the successful public EB-1A petition examples: map evidence to clear USCIS criteria, exhibit value, and final-merits usefulness.",
+  "Prefer objective, exhibit-backed records such as judging invitations/completions, scholarly publications, compensation records, membership proof, award proof, role-impact letters, and contribution-impact records.",
+  "Do not tag administrative forms, copies of filed forms, IDs, or generic screenshots as petition evidence unless they directly support a criterion.",
   "Be conservative, avoid inflating evidence across multiple criteria, and prefer pending review when support is weak or ambiguous.",
   "Return a concise keep/pending/archive suggestion based on how usable this one file is in petition drafting.",
 ].join(" ");
@@ -187,6 +193,9 @@ export const DEFAULT_STRATEGY_PROMPT_TEMPLATE = [
   "Produce a StrategyMemo JSON object matching the schema {{strategySchema}}.",
   "Recommend at most 5 criteria total across primary and supporting.",
   "For each primary recommendation, identify 2-3 anchor docs that carry the argument.",
+  "Use successful public EB-1A petition examples only as structural patterns: evidence index, criteria map, exhibit linking, final-merits story, and filing checklist. Do not copy their prose.",
+  "Prioritize criteria that can support a sustained-acclaim/top-of-field final merits narrative, not merely criteria with the most files.",
+  "Use USCIS policy, RFE-template logic, and AAO-style denial patterns to identify weak or unsupported claims.",
   "Flag any gap where evidence is thin, missing, or non-independent.",
   "Disclose in pendingDocsConsidered how many pending docs informed the recommendation.",
   "Do not give legal advice. Do not predict outcomes.",

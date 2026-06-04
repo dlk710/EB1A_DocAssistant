@@ -1,0 +1,66 @@
+[
+  {
+    "id": "razvan-marinescu-eb1a",
+    "kind": "successful_public_example",
+    "title": "Razvan Marinescu EB-1A petition example and GitHub template",
+    "url": "https://razvanmarinescu.github.io/green-card-I-140/",
+    "useInProduct": "Evidence indexing, criteria mapping, exhibit linking, LaTeX/PDF assembly, and strategy notes.",
+    "caution": "Reference structure only; do not copy petition text."
+  },
+  {
+    "id": "ryan-rhys-eb1a",
+    "kind": "successful_public_example",
+    "title": "Ryan-Rhys Griffiths EB1A repository and blog",
+    "url": "https://github.com/Ryan-Rhys/EB1A",
+    "useInProduct": "Multiple document types, petition source, reference letters, auxiliary exhibits, and review evidence organization.",
+    "caution": "Reference workflow only; verify current USCIS policy."
+  },
+  {
+    "id": "alexey-inkin-eb1a",
+    "kind": "successful_public_example",
+    "title": "Alexey Inkin EB-1A article and GitHub petition package",
+    "url": "https://github.com/alexeyinkin/eb-1a",
+    "useInProduct": "Technology/software petition storytelling, process steps, evidence selection, drafting, and filing checklist.",
+    "caution": "Reference public process and structure only; attorney review required."
+  },
+  {
+    "id": "kirill-nikitin-eb1a",
+    "kind": "successful_public_example",
+    "title": "Kirill Nikitin EB-1A GitHub template",
+    "url": "https://github.com/nikirill/eb1a",
+    "useInProduct": "Pattern comparison across public approved technology/science petition templates.",
+    "caution": "Use as pattern comparison, not a legal authority."
+  },
+  {
+    "id": "andrey-chemist-eb1a",
+    "kind": "successful_public_example",
+    "title": "Andrey Chemist EB-1A example",
+    "url": "https://andreychemist.github.io/",
+    "useInProduct": "Science-domain petition structure and evidence organization.",
+    "caution": "Older sample; verify against current policy."
+  },
+  {
+    "id": "uscis-policy-manual-eb1a",
+    "kind": "official_policy",
+    "title": "USCIS Policy Manual Volume 6, Part F, Chapter 2",
+    "url": "https://www.uscis.gov/policy-manual/volume-6-part-f-chapter-2",
+    "useInProduct": "Canonical criteria checklist and final merits evaluator baseline.",
+    "caution": "Official policy should supersede older public petition templates."
+  },
+  {
+    "id": "uscis-e11-rfe-template",
+    "kind": "official_rfe_pattern",
+    "title": "USCIS E11 RFE template",
+    "url": "https://www.uscis.gov/sites/default/files/document/outreach-engagements/E11_RFE_Template_1-10-11.pdf",
+    "useInProduct": "RFE-risk simulator and unsupported-evidence challenge generation.",
+    "caution": "Use as risk framework, not as a filing prediction."
+  },
+  {
+    "id": "uscis-aao-decisions",
+    "kind": "official_denial_patterns",
+    "title": "USCIS AAO non-precedent decisions",
+    "url": "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non-precedent-decisions",
+    "useInProduct": "Denial patterns, rejected arguments, and adjudicator reasoning for stress testing.",
+    "caution": "AAO decisions are mostly failure-mode references, not public approved-petition data."
+  }
+]

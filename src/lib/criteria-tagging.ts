@@ -7,6 +7,7 @@ import {
   normalizeDocumentType,
 } from "@/lib/criterion-routing";
 import { buildFolderContextText } from "@/lib/folder-context";
+import { findSuccessTagPriorForCriterion } from "@/lib/success-patterns";
 import {
   clearJobCancellationRequest,
   getJob,
@@ -54,11 +55,15 @@ function buildSuggestedTags(document: StoredDocument, tags: StoredDocument["crit
   );
   const documentType = normalizeDocumentType(document.summary?.documentType);
   const suggestedTags = tags.map((tag) => {
+    const successPrior = findSuccessTagPriorForCriterion(document, tag.code);
     const decision = decideTagDisposition({
       bundleId: document.id,
       proposedCriterionCode: tag.code,
       modelConfidence: typeof tag.confidence === "number" ? tag.confidence : 0,
       documentType,
+      sourcePriorCriterionCode: successPrior?.criterionCode ?? null,
+      sourcePriorReason: successPrior?.rationale ?? null,
+      sourcePriorMinimumConfidence: successPrior?.minimumConfidence ?? null,
     });
     const autoEnabled = decision.disposition === "auto_enable";
     const origin: CriterionTagOrigin = autoEnabled ? "ai_auto" : "ai";

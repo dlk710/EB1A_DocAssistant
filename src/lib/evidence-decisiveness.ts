@@ -5,6 +5,7 @@ import {
   type BlueFlagHit,
   type RedFlagHit,
 } from "@/lib/flag-rules";
+import { findSuccessTagPriorHits } from "@/lib/success-patterns";
 import type { ClientDocument, StoredDocument } from "@/lib/types";
 
 export type EvidenceDecisivenessTier =
@@ -78,6 +79,7 @@ export function assessEvidenceDecisiveness(
   const suggestedTags = tags.filter((tag) => tag.state === "suggested");
   const redFlags = findRedFlagHits(document);
   const blueFlags = findBlueFlagHits(document);
+  const successPatternHits = findSuccessTagPriorHits(document);
   const objectiveEvidence = document.summary?.objectiveEvidence ?? "mixed";
   const independent =
     objectiveEvidence === "objective" ||
@@ -97,13 +99,20 @@ export function assessEvidenceDecisiveness(
     (score, hit) => score + (hit.strength === "high" ? 0.14 : 0.09),
     0,
   );
+  const successPatternScore = successPatternHits.length > 0 ? 0.08 : 0;
   const redPenalty = redFlags.reduce(
     (score, hit) =>
       score + (hit.severity === "high" ? 0.42 : hit.severity === "medium" ? 0.24 : 0.1),
     0,
   );
   const loadBearingScore = clampScore(
-    confidence * 0.36 + tagScore + roleScore + objectiveScore + blueScore - redPenalty,
+    confidence * 0.36 +
+      tagScore +
+      roleScore +
+      objectiveScore +
+      blueScore +
+      successPatternScore -
+      redPenalty,
   );
   const tier = tierFor(loadBearingScore, redFlags);
   const rfeRisk =
@@ -126,6 +135,8 @@ export function assessEvidenceDecisiveness(
         ? redFlags.map((hit) => hit.rationale).join(" ")
         : blueFlags.length > 0
           ? `${blueFlags[0].rationale} Attach indexing or impact proof before relying on the venue.`
+          : successPatternHits.length > 0
+            ? `Matches public EB-1A source pattern for criterion ${successPatternHits[0].criterionCode}: ${successPatternHits[0].rationale}`
           : independent
             ? "Objective or independent evidence signal supports petition use."
             : "Evidence appears contextual or subjective and should be corroborated.",

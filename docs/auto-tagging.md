@@ -3,10 +3,14 @@
 ## Guardrails
 
 - Auto-enable is only considered when model confidence clears the threshold **and** the
-  normalized document type points to the same criterion.
+  normalized document type points to the same criterion, or when model confidence clears the
+  criterion-specific threshold **and** a validated public-success source prior points to the
+  same criterion.
 - Criteria `03` (Published Material), `07` (Exhibitions), and `11` (Comparable Evidence)
   are always routed to a human.
 - Reference letters are always routed to a human because they often span criteria `05` and `08`.
+- Public EB-1A petition examples are used only as structural and evidence-routing references;
+  Setu does not copy petition prose or treat public examples as approval guarantees.
 
 ## Current threshold
 
@@ -15,6 +19,9 @@
 
 This remains the active threshold in `/src/lib/criterion-routing.ts`. It is intentionally
 conservative until a larger attorney-labeled benchmark is available.
+
+Public-source priors live in `/data/success-tag-priors.json`. Each prior has its own
+`minimumConfidence` and is ignored for always-human criteria.
 
 ## Calibration script
 
